@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Luxury RSVP Engine"
+description = "A mobile-first luxury wedding invitation platform with tokenized guest RSVPs, an interactive host studio, and a concierge QR scanner, powered by persistent demo data."
+version = "1.0.0"
+id = "artifacts/luxury-rsvp-engine"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 20526
+
+[services.development]
+run = "pnpm --filter @workspace/luxury-rsvp-engine run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/luxury-rsvp-engine", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/luxury-rsvp-engine/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20526"
+BASE_PATH = "/"
