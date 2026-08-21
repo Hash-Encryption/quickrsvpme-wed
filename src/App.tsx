@@ -1,8 +1,5 @@
 import { type ReactNode, type ComponentType, useContext, useEffect, useMemo, useState, createContext } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
-import { Toaster } from '@/components/ui/toaster';
-import { TooltipProvider } from '@/components/ui/tooltip';
 import { AnimatePresence, motion, Reorder } from 'framer-motion';
 import {
   ArrowDownToLine, ArrowLeft, CalendarDays, Check, CheckCircle2, ChevronDown,
@@ -13,8 +10,6 @@ import {
 import { Link, Route, Switch, Router as WouterRouter, useLocation, useParams } from 'wouter';
 import { WeddingInvitationRenderer, WeddingStudio } from '@/wedding/WeddingMode';
 import { defaultWeddingEvent, defaultWeddingGuest, mergeWeddingEvent, type EventMode, type WeddingEventData, type WeddingGuestData, type WeddingRsvp } from '@/wedding/model';
-
-const queryClient = new QueryClient();
 
 type RSVPStatus = 'pending' | 'accepted' | 'declined';
 type BlockKey = 'catering' | 'dress' | 'schedule' | 'registry' | 'song' | 'faq';
@@ -336,7 +331,7 @@ function Router() {
 }
 
 function App() {
-  return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><EngineProvider><Router /></EngineProvider></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>;
+  return <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><EngineProvider><Router /></EngineProvider></WouterRouter>;
 }
 
 export default App;
