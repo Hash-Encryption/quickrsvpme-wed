@@ -1,0 +1,992 @@
+@import url("https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=Reem+Kufi:wght@400;500;600&display=swap");
+
+.wedding-stage {
+  position: relative;
+  display: grid;
+  width: 100%;
+  min-height: 100dvh;
+  place-items: center;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--wedding-accent) 16%, #e9e4dc);
+  color: #4e4d4a;
+  font-family: var(--wedding-body);
+  isolation: isolate;
+}
+.wedding-stage button,
+.wedding-stage a,
+.wedding-studio button {
+  touch-action: manipulation;
+}
+.wedding-stage button:focus-visible,
+.wedding-stage a:focus-visible,
+.wedding-studio button:focus-visible,
+.wedding-studio input:focus-visible,
+.wedding-studio textarea:focus-visible,
+.wedding-studio select:focus-visible {
+  outline: 2px solid var(--wedding-accent, #71808d);
+  outline-offset: 3px;
+}
+
+.wedding-paper {
+  position: relative;
+  width: min(100vw, calc(100dvh * 0.5625));
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--wedding-bg);
+  box-shadow: 0 22px 70px rgb(56 50 43 / 0.2);
+}
+
+.wedding-paper-texture {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(
+      circle at 20% 12%,
+      rgb(255 255 255 / 0.72),
+      transparent 26%
+    ),
+    radial-gradient(
+      circle at 80% 78%,
+      color-mix(in srgb, var(--wedding-petal-soft) 28%, transparent),
+      transparent 30%
+    ),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.75' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.08'/%3E%3C/svg%3E");
+  opacity: 0.62;
+  mix-blend-mode: multiply;
+}
+
+.wedding-background-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.12;
+}
+
+.wedding-floral-frame {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  animation: wedding-frame-arrive 2.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.wedding-arch {
+  fill: none;
+  stroke: #b99a63;
+  stroke-width: 0.85;
+  opacity: 0.58;
+  stroke-dasharray: 1530;
+  stroke-dashoffset: 1530;
+  animation: wedding-draw-arch 3.2s 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.wedding-stem {
+  fill: none;
+  stroke: var(--wedding-leaf);
+  stroke-width: 1.2;
+  opacity: 0.72;
+}
+
+.wedding-botanical--top {
+  transform-origin: 0 0;
+  animation: wedding-bloom-top 2.2s 0.15s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.wedding-botanical--bottom {
+  transform-origin: 390px 693px;
+  animation: wedding-bloom-bottom 2.4s 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.wedding-content {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  grid-template-rows: auto auto minmax(130px, 1fr) auto auto;
+  height: 100%;
+  padding: clamp(64px, 9dvh, 92px) 58px clamp(52px, 7dvh, 72px);
+  text-align: center;
+}
+
+.wedding-reveal {
+  opacity: 0;
+  transform: translateY(10px);
+  filter: blur(3px);
+  transition:
+    opacity 1.15s ease,
+    transform 1.15s cubic-bezier(0.16, 1, 0.3, 1),
+    filter 1s ease;
+}
+.wedding-reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
+}
+
+.wedding-opening {
+  align-self: start;
+  color: color-mix(in srgb, var(--wedding-accent) 82%, #3e4346);
+}
+.wedding-opening p {
+  margin: 3px 0 0;
+  font-family: var(--wedding-display);
+  font-size: clamp(14px, 2dvh, 18px);
+  line-height: 1.6;
+}
+.wedding-ornament {
+  display: block;
+  color: #b99a63;
+  font-size: 11px;
+}
+
+.wedding-hosts {
+  align-self: center;
+  margin-top: 7px;
+  font-size: clamp(9px, 1.35dvh, 12px);
+  line-height: 1.85;
+}
+.wedding-hosts p {
+  margin: 0;
+}
+.wedding-host-name {
+  color: var(--wedding-accent);
+  font-weight: 600;
+}
+
+.wedding-principals {
+  display: grid;
+  min-height: 0;
+  place-items: center;
+  align-self: stretch;
+  padding: 4px 0;
+}
+.wedding-name-stack {
+  position: relative;
+  display: grid;
+  width: 100%;
+  gap: 2px;
+  place-items: center;
+  color: var(--wedding-accent);
+  font-family: var(--wedding-display);
+}
+.wedding-name-stack span {
+  display: block;
+  max-width: 100%;
+  font-size: clamp(37px, 7.2dvh, 66px);
+  line-height: 0.98;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+.wedding-name-stack--1 span {
+  font-size: clamp(34px, 6.3dvh, 58px);
+  line-height: 1.15;
+}
+.wedding-name-stack.is-long span {
+  font-size: clamp(27px, 4.7dvh, 43px);
+  line-height: 1.04;
+}
+.wedding-name-stack.is-very-long span {
+  font-size: clamp(19px, 3.3dvh, 30px);
+  line-height: 1.02;
+}
+.wedding-name-stack i {
+  position: absolute;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--wedding-accent) 38%, transparent);
+  border-radius: 50%;
+  background: var(--wedding-bg);
+  color: #b99a63;
+  font-size: 13px;
+  font-style: normal;
+}
+.wedding-custom-copy {
+  max-width: 240px;
+  margin: 0;
+  font-family: var(--wedding-display);
+  font-size: clamp(24px, 4.7dvh, 42px);
+  line-height: 1.45;
+  text-wrap: balance;
+}
+
+.wedding-details {
+  align-self: end;
+  font-size: clamp(8px, 1.15dvh, 11px);
+}
+.wedding-date-rule {
+  width: 56px;
+  height: 1px;
+  margin: 0 auto 9px;
+  background: #b99a63;
+  opacity: 0.6;
+}
+.wedding-date-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr 1fr;
+  align-items: center;
+}
+.wedding-date-grid > * {
+  padding: 0 7px;
+}
+.wedding-date-grid > :not(:last-child) {
+  border-left: 1px solid rgb(185 154 99 / 0.38);
+}
+.wedding-date-grid strong {
+  color: var(--wedding-accent);
+  font-family: var(--wedding-display);
+  font-size: clamp(14px, 2dvh, 19px);
+  font-weight: 400;
+}
+.wedding-date-grid small {
+  display: block;
+  font-family: var(--wedding-body);
+  font-size: 8px;
+  font-weight: 500;
+}
+.wedding-venue {
+  margin: 10px 0 0;
+  color: var(--wedding-accent);
+  font-family: var(--wedding-display);
+  font-size: clamp(15px, 2.15dvh, 21px);
+  font-weight: 700;
+}
+.wedding-city {
+  margin: 0;
+  font-size: 9px;
+}
+.wedding-schedule {
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  margin-top: 7px;
+}
+.wedding-schedule span {
+  display: grid;
+}
+.wedding-schedule b {
+  color: var(--wedding-accent);
+  font-weight: 500;
+}
+.wedding-map {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  color: var(--wedding-accent);
+  font-size: 9px;
+  text-decoration: none;
+}
+.wedding-map::after {
+  position: absolute;
+  inset: -12px -14px;
+  content: "";
+}
+
+.wedding-rsvp-reveal {
+  align-self: end;
+  padding-top: 10px;
+}
+.wedding-rsvp-button {
+  display: inline-grid;
+  min-width: 154px;
+  min-height: 48px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--wedding-accent) 58%, #b99a63);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wedding-bg) 78%, transparent);
+  color: var(--wedding-accent);
+  box-shadow: 0 7px 22px rgb(74 67 58 / 0.1);
+  font-family: var(--wedding-body);
+}
+.wedding-rsvp-button span {
+  font-size: 12px;
+  font-weight: 600;
+}
+.wedding-rsvp-button small {
+  margin-top: -8px;
+  color: #77716a;
+  font-size: 7px;
+}
+
+.wedding-controls {
+  position: absolute;
+  z-index: 8;
+  top: max(14px, env(safe-area-inset-top));
+  left: 14px;
+  display: flex;
+  gap: 6px;
+  direction: ltr;
+}
+.wedding-controls button {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid rgb(113 128 141 / 0.25);
+  border-radius: 50%;
+  background: rgb(255 253 248 / 0.72);
+  color: var(--wedding-accent);
+  box-shadow: 0 5px 16px rgb(71 64 56 / 0.08);
+  backdrop-filter: blur(10px);
+}
+.wedding-controls button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.wedding-controls svg {
+  width: 15px;
+  height: 15px;
+}
+.wedding-progress {
+  position: absolute;
+  z-index: 8;
+  right: 50%;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  display: flex;
+  gap: 5px;
+  transform: translateX(50%);
+}
+.wedding-progress span {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgb(113 128 141 / 0.24);
+  transition:
+    width 0.4s ease,
+    background 0.4s ease;
+}
+.wedding-progress span.is-active {
+  width: 18px;
+  background: var(--wedding-accent);
+}
+
+.wedding-drawer-backdrop {
+  position: absolute;
+  z-index: 20;
+  inset: 0;
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  background: rgb(50 47 43 / 0.38);
+  backdrop-filter: blur(4px);
+}
+.wedding-drawer {
+  position: relative;
+  width: 100%;
+  max-height: 88%;
+  overflow-y: auto;
+  padding: 16px 24px max(24px, env(safe-area-inset-bottom));
+  border-radius: 28px 28px 0 0;
+  background: #faf6ef;
+  color: #4d4b47;
+  box-shadow: 0 -20px 50px rgb(47 42 37 / 0.16);
+}
+.wedding-drawer-handle {
+  display: block;
+  width: 36px;
+  height: 4px;
+  margin: 0 auto 18px;
+  border-radius: 9px;
+  background: #d5ccc0;
+}
+.wedding-drawer-close {
+  position: absolute;
+  top: 15px;
+  left: 18px;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #77716a;
+}
+.wedding-drawer-close svg {
+  width: 18px;
+}
+.wedding-drawer-eyebrow {
+  margin: 0;
+  color: var(--wedding-accent);
+  font-size: 10px;
+  font-weight: 600;
+}
+.wedding-drawer h2 {
+  margin: 4px 0 18px;
+  color: var(--wedding-accent);
+  font-family: var(--wedding-display);
+  font-size: 30px;
+  line-height: 1.35;
+}
+.wedding-attendance-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.wedding-attendance-options button {
+  display: flex;
+  min-height: 50px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid #d7cec2;
+  border-radius: 14px;
+  background: transparent;
+  color: #716c65;
+  font-size: 11px;
+}
+.wedding-attendance-options button.is-selected {
+  border-color: var(--wedding-accent);
+  background: color-mix(in srgb, var(--wedding-accent) 10%, white);
+  color: var(--wedding-accent);
+  font-weight: 600;
+}
+.wedding-attendance-options svg {
+  width: 15px;
+}
+.wedding-companions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid #e3d9cd;
+  border-radius: 14px;
+}
+.wedding-companions strong,
+.wedding-companions small {
+  display: block;
+}
+.wedding-companions strong {
+  color: var(--wedding-accent);
+  font-size: 11px;
+}
+.wedding-companions small {
+  margin-top: 2px;
+  color: #89827a;
+  font-size: 8px;
+}
+.wedding-counter {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  direction: ltr;
+}
+.wedding-counter button {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid #d7cec2;
+  border-radius: 50%;
+  background: #fffdf9;
+  color: var(--wedding-accent);
+}
+.wedding-counter button:disabled {
+  opacity: 0.35;
+}
+.wedding-counter svg {
+  width: 14px;
+}
+.wedding-message {
+  display: block;
+  margin-top: 14px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.wedding-message small {
+  color: #999188;
+  font-weight: 400;
+}
+.wedding-message textarea {
+  width: 100%;
+  margin-top: 6px;
+  resize: none;
+  border: 1px solid #ded4c8;
+  border-radius: 14px;
+  background: #fffdf9;
+  padding: 11px;
+  color: #4d4b47;
+  font-family: var(--wedding-body);
+  font-size: 12px;
+  outline: none;
+}
+.wedding-submit {
+  width: 100%;
+  min-height: 49px;
+  margin-top: 13px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--wedding-accent);
+  color: #fff;
+  font-family: var(--wedding-body);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.wedding-stage--preview {
+  min-height: 0;
+  border-radius: 26px;
+  background: #ded8cf;
+}
+.wedding-stage--preview .wedding-paper {
+  width: auto;
+  height: min(72vh, 640px);
+  min-height: 520px;
+  aspect-ratio: 9 / 16;
+}
+.wedding-stage--preview .wedding-content {
+  padding-right: 50px;
+  padding-left: 50px;
+}
+.wedding-stage--preview .wedding-drawer {
+  padding-bottom: 20px;
+}
+
+.wedding-studio {
+  margin-top: 28px;
+}
+.wedding-stepper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 2px 13px;
+  scrollbar-width: none;
+}
+.wedding-stepper button {
+  display: flex;
+  min-height: 44px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgb(185 154 99 / 0.35);
+  border-radius: 999px;
+  background: rgb(255 253 249 / 0.48);
+  padding: 5px 12px 5px 15px;
+  color: #71685f;
+  font-family: "IBM Plex Sans Arabic", sans-serif;
+  font-size: 11px;
+}
+.wedding-stepper button span {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 50%;
+  background: #ece4da;
+  color: #8b7b69;
+  font-size: 9px;
+}
+.wedding-stepper button.is-active {
+  border-color: #71808d;
+  background: #71808d;
+  color: white;
+}
+.wedding-stepper button.is-active span {
+  background: rgb(255 255 255 / 0.18);
+  color: white;
+}
+.wedding-stepper-tail {
+  flex: 0 0 auto;
+  color: #8a8178;
+  font-size: 10px;
+}
+.wedding-studio-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(310px, 430px);
+  gap: 24px;
+  align-items: start;
+}
+.wedding-editor-panel {
+  min-height: 590px;
+  padding: 28px;
+  border: 1px solid rgb(185 154 99 / 0.48);
+  border-radius: 28px;
+  background: rgb(255 253 249 / 0.66);
+  box-shadow: 0 16px 38px rgb(53 46 39 / 0.08);
+  backdrop-filter: blur(12px);
+}
+.wedding-step-heading span {
+  color: #a98262;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+.wedding-step-heading h2 {
+  margin: 6px 0 4px;
+  color: #53616b;
+  font-family: "Amiri", serif;
+  font-size: 36px;
+  line-height: 1.2;
+}
+.wedding-step-heading p {
+  max-width: 560px;
+  margin: 0 0 22px;
+  color: #736d66;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.wedding-template-list {
+  display: grid;
+  gap: 12px;
+}
+.wedding-template-list > button {
+  display: grid;
+  grid-template-columns: 72px 1fr auto;
+  align-items: center;
+  gap: 15px;
+  min-height: 92px;
+  border: 1px solid #ddd3c6;
+  border-radius: 20px;
+  background: #fffdf8;
+  padding: 11px;
+  color: #4f4a45;
+  text-align: right;
+}
+.wedding-template-list > button.is-selected {
+  border-color: #71808d;
+  box-shadow: 0 0 0 3px rgb(113 128 141 / 0.11);
+}
+.wedding-template-list b,
+.wedding-template-list small {
+  display: block;
+}
+.wedding-template-list small {
+  margin-top: 3px;
+  color: #8a8178;
+  font-size: 9px;
+}
+.wedding-template-list svg {
+  width: 18px;
+  color: #71808d;
+}
+.wedding-template-swatch {
+  position: relative;
+  display: block;
+  height: 68px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #f7f1e7;
+}
+.wedding-template-swatch i {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #d8aea9;
+  box-shadow:
+    11px 3px 0 #f0dcd5,
+    4px 15px 0 #8195a4;
+}
+.wedding-template-swatch i:nth-child(1) {
+  top: -5px;
+  right: -5px;
+}
+.wedding-template-swatch i:nth-child(2) {
+  bottom: -7px;
+  left: -6px;
+  transform: scale(0.8);
+}
+.wedding-template-swatch i:nth-child(3) {
+  top: 17px;
+  left: 8px;
+  width: 4px;
+  height: 38px;
+  border-radius: 99px;
+  background: #8d9a84;
+  transform: rotate(34deg);
+  box-shadow: none;
+}
+.wedding-registry-note {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border-right: 2px solid #b99a63;
+  background: rgb(185 154 99 / 0.07);
+  color: #7d756c;
+  font-size: 10px;
+  line-height: 1.8;
+}
+.wedding-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 13px;
+}
+.wedding-fields label {
+  display: block;
+  min-width: 0;
+}
+.wedding-fields label.is-wide {
+  grid-column: 1 / -1;
+}
+.wedding-fields label > span,
+.wedding-style-section > b {
+  display: block;
+  margin: 0 0 6px;
+  color: #68615a;
+  font-size: 10px;
+  font-weight: 600;
+}
+.wedding-fields input,
+.wedding-fields textarea,
+.wedding-fields select {
+  width: 100%;
+  min-height: 45px;
+  border: 1px solid #ded4c8;
+  border-radius: 13px;
+  background: #fffdf9;
+  padding: 9px 12px;
+  color: #4b4844;
+  font-family: "IBM Plex Sans Arabic", sans-serif;
+  font-size: 12px;
+  outline: none;
+}
+.wedding-fields textarea {
+  resize: vertical;
+}
+.wedding-fields input:focus,
+.wedding-fields textarea:focus,
+.wedding-fields select:focus {
+  border-color: #71808d;
+  box-shadow: 0 0 0 3px rgb(113 128 141 / 0.1);
+}
+.wedding-style-section {
+  margin-bottom: 18px;
+}
+.wedding-color-options {
+  display: flex;
+  gap: 10px;
+}
+.wedding-color-options button {
+  width: 44px;
+  height: 44px;
+  border: 1px solid #cfc4b8;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 4px #fffdf9;
+}
+.wedding-color-options button.is-selected {
+  outline: 2px solid #71808d;
+  outline-offset: 3px;
+}
+.wedding-preview-copy span {
+  color: #a98262;
+  font-size: 9px;
+  font-weight: 700;
+}
+.wedding-preview-copy h2 {
+  max-width: 500px;
+  margin: 8px 0;
+  color: #53616b;
+  font-family: "Amiri", serif;
+  font-size: 42px;
+  line-height: 1.25;
+}
+.wedding-preview-copy p {
+  max-width: 540px;
+  color: #716b65;
+  font-size: 13px;
+  line-height: 1.9;
+}
+.wedding-editor-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid rgb(185 154 99 / 0.22);
+}
+.wedding-editor-nav button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #d9cfc2;
+  border-radius: 999px;
+  background: transparent;
+  padding: 0 17px;
+  color: #6f675f;
+  font-family: "IBM Plex Sans Arabic", sans-serif;
+  font-size: 11px;
+}
+.wedding-editor-nav button.is-primary {
+  border-color: #71808d;
+  background: #71808d;
+  color: white;
+}
+.wedding-editor-nav button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.wedding-editor-nav svg {
+  width: 14px;
+}
+.wedding-live-preview {
+  position: sticky;
+  top: 16px;
+  overflow: hidden;
+  border: 1px solid rgb(185 154 99 / 0.42);
+  border-radius: 30px;
+  background: #e8e1d7;
+  padding: 10px;
+  box-shadow: 0 22px 55px rgb(53 46 39 / 0.13);
+}
+.wedding-phone-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 5px 9px;
+  color: #746c63;
+  direction: ltr;
+  font-size: 9px;
+}
+.wedding-phone-label b {
+  font-family: "IBM Plex Sans Arabic", sans-serif;
+  font-weight: 500;
+}
+
+@keyframes wedding-frame-arrive {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes wedding-draw-arch {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes wedding-bloom-top {
+  from {
+    opacity: 0;
+    transform: translate(-16px, -18px) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0) scale(1);
+  }
+}
+@keyframes wedding-bloom-bottom {
+  from {
+    opacity: 0;
+    transform: translate(18px, 22px) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0) scale(1);
+  }
+}
+
+@media (max-width: 980px) {
+  .wedding-studio-grid {
+    grid-template-columns: 1fr;
+  }
+  .wedding-live-preview {
+    position: relative;
+    top: 0;
+    max-width: 440px;
+    margin: 0 auto;
+  }
+}
+
+@media (max-width: 520px) {
+  .wedding-content {
+    padding-right: 48px;
+    padding-left: 48px;
+  }
+  .wedding-stage--preview .wedding-paper {
+    height: min(68vh, 610px);
+    min-height: 500px;
+  }
+  .wedding-editor-panel {
+    min-height: 0;
+    padding: 20px 16px;
+    border-radius: 22px;
+  }
+  .wedding-fields {
+    grid-template-columns: 1fr;
+  }
+  .wedding-fields label.is-wide {
+    grid-column: auto;
+  }
+  .wedding-attendance-options {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-height: 620px) {
+  .wedding-content {
+    grid-template-rows: auto auto minmax(74px, 1fr) auto auto;
+    padding: 26px 34px 18px;
+  }
+  .wedding-opening p {
+    font-size: 10px;
+  }
+  .wedding-hosts {
+    margin-top: 1px;
+    font-size: 7px;
+    line-height: 1.45;
+  }
+  .wedding-name-stack span,
+  .wedding-name-stack--1 span {
+    font-size: 24px;
+  }
+  .wedding-name-stack.is-long span,
+  .wedding-name-stack.is-very-long span {
+    font-size: 17px;
+  }
+  .wedding-name-stack i {
+    width: 20px;
+    height: 20px;
+    font-size: 10px;
+  }
+  .wedding-details {
+    font-size: 6px;
+  }
+  .wedding-date-rule {
+    margin-bottom: 3px;
+  }
+  .wedding-date-grid strong,
+  .wedding-venue {
+    font-size: 10px;
+  }
+  .wedding-date-grid small,
+  .wedding-city,
+  .wedding-map {
+    font-size: 6px;
+  }
+  .wedding-venue,
+  .wedding-schedule,
+  .wedding-map {
+    margin-top: 2px;
+  }
+  .wedding-rsvp-reveal {
+    padding-top: 2px;
+  }
+  .wedding-rsvp-button {
+    min-width: 126px;
+  }
+  .wedding-controls {
+    top: 7px;
+    left: 7px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wedding-floral-frame,
+  .wedding-arch,
+  .wedding-botanical--top,
+  .wedding-botanical--bottom {
+    animation: none;
+  }
+  .wedding-reveal {
+    transition: none;
+  }
+}
