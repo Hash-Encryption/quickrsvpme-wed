@@ -230,3 +230,45 @@ export function clampGuestCount(
     Math.min(1 + Math.max(0, allowedCompanions), Math.round(value)),
   );
 }
+
+export function isValidGuestToken(
+  token?: string,
+  customGuestToken?: string,
+): boolean {
+  if (!token) return false;
+  const clean = token.trim().toLowerCase();
+  if (clean === "demo" || clean === "k82f9x") return true;
+  if (customGuestToken && clean === customGuestToken.trim().toLowerCase()) {
+    return true;
+  }
+  return false;
+}
+
+export function getWhatsAppShareUrl(
+  mode: EventMode,
+  eventName: string,
+  phone: string,
+  invitationUrl: string,
+): string {
+  const cleanPhone = phone.replace(/\D/g, "");
+  const text =
+    mode === "wedding"
+      ? `يسر ${eventName} دعوتكم لحضور حفل الزواج. دعوتكم الخاصة: ${invitationUrl}`
+      : `${eventName} would love to celebrate with you. Your private invitation: ${invitationUrl}`;
+  return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
+}
+
+export function resolveInvitationTitle(
+  mode: EventMode,
+  weddingEvent: WeddingEventData,
+  standardTitle = "Maya & Liam",
+): string {
+  if (mode === "wedding") {
+    return (
+      [weddingEvent.groomName, weddingEvent.brideName]
+        .filter(Boolean)
+        .join(" و ") || "دعوة زفاف"
+    );
+  }
+  return standardTitle;
+}

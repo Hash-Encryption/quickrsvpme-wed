@@ -9,7 +9,18 @@ import {
 } from 'lucide-react';
 import { Link, Route, Switch, Router as WouterRouter, useLocation, useParams } from 'wouter';
 import { WeddingInvitationRenderer, WeddingStudio } from '@/wedding/WeddingMode';
-import { defaultWeddingEvent, defaultWeddingGuest, mergeWeddingEvent, type EventMode, type WeddingEventData, type WeddingGuestData, type WeddingRsvp } from '@/wedding/model';
+import {
+  defaultWeddingEvent,
+  defaultWeddingGuest,
+  getWhatsAppShareUrl,
+  isValidGuestToken,
+  mergeWeddingEvent,
+  resolveInvitationTitle,
+  type EventMode,
+  type WeddingEventData,
+  type WeddingGuestData,
+  type WeddingRsvp,
+} from '@/wedding/model';
 
 type RSVPStatus = 'pending' | 'accepted' | 'declined';
 type BlockKey = 'catering' | 'dress' | 'schedule' | 'registry' | 'song' | 'faq';
@@ -140,7 +151,7 @@ function Monogram({ compact = false }: { compact?: boolean }) {
 
 function QuietHeader({ studio = false }: { studio?: boolean }) {
   return <header className="relative z-20 flex items-center justify-between px-5 py-6 sm:px-10 lg:px-16">
-    <Link href={studio ? '/i/demo' : '/studio'} data-testid={`link-${studio ? 'guest-preview' : 'studio'}`} className="focus-ring"><Monogram compact={studio} /></Link>
+    <Link href={studio ? '/studio' : '/studio'} data-testid={`link-${studio ? 'studio-hub' : 'studio'}`} className="focus-ring"><Monogram compact={studio} /></Link>
     <div className="flex items-center gap-3">
       <Eyebrow className="hidden sm:block">{studio ? 'HOST STUDIO / 01' : 'A PERSONAL INVITATION'}</Eyebrow>
       {studio ? <Link href="/scanner" data-testid="link-scanner" className="focus-ring rounded-full border border-[#D4AF37]/60 bg-[#FFFDF9]/40 p-2.5 text-[#0A2E23] transition hover:bg-[#FFFDF9]"><QrCode size={17} /></Link> : <Link href="/studio" data-testid="link-open-studio" className="focus-ring rounded-full border border-[#D4AF37]/60 bg-[#FFFDF9]/40 px-3 py-2 text-[10px] font-semibold uppercase tracking-[.15em] text-[#0A2E23] transition hover:bg-[#FFFDF9]">Studio</Link>}
@@ -167,7 +178,7 @@ function GuestPage() {
   const { state, ready, setRsvp, setSong, setMeal, submitWeddingRsvp } = useEngine();
   const { token } = useParams<{ token: string }>();
   const [openFaq, setOpenFaq] = useState<number | null>(0);
-  const validToken = token === 'demo' || token === 'k82f9x' || token === state.weddingGuest.token;
+  const validToken = isValidGuestToken(token, state.weddingGuest.token);
   const visibleBlocks = state.blocks.filter((block) => block.enabled);
   if (!ready) return <LoadingPage />;
   if (!validToken) return <TokenError />;
@@ -241,43 +252,315 @@ function TokenError() {
   return <div className="grain flex min-h-[100dvh] items-center justify-center bg-[#FAF7F2] p-6 text-center"><div className="gold-thread" /><SuiteCard className="relative z-10 max-w-md p-10"><XCircle className="mx-auto text-[#A98219]" size={34} strokeWidth={1.3} /><h1 className="mt-5 font-display text-4xl text-[#0A2E23]">This invitation has moved.</h1><p className="mt-3 text-sm leading-6 text-[#2D2421]/65">Please check the link from your invitation or ask the hosts to send it again.</p><Link href="/i/demo" data-testid="link-demo-invitation" className="focus-ring mt-6 inline-flex rounded-full bg-[#0A2E23] px-5 py-3 text-[11px] font-bold uppercase tracking-[.12em] text-[#FFFDF9]">Open demo invitation</Link></SuiteCard></div>;
 }
 
-function StudioPage() {
-  const { state, ready, toggleBlock, reorderBlocks, updateBlock, setMode, setWeddingEvent } = useEngine();
+function StudioHubPage() {
+  const { ready } = useEngine();
+  if (!ready) return <LoadingPage />;
+
+  return (
+    <div className="grain min-h-[100dvh] bg-[#FAF7F2] text-[#2D2421]">
+      <div className="gold-thread" />
+      <QuietHeader studio />
+      <main className="relative z-10 mx-auto max-w-5xl px-5 pb-20 sm:px-8 lg:px-12">
+        <FadeIn>
+          <div className="border-b border-[#D4AF37]/35 pb-8 text-center sm:text-left">
+            <div className="flex flex-col justify-between gap-6 sm:flex-row sm:items-end">
+              <div>
+                <Eyebrow>QUICKRSVP STUDIO · SELECTION</Eyebrow>
+                <h1 className="mt-3 font-display text-5xl leading-[.9] text-[#0A2E23] sm:text-6xl lg:text-7xl">
+                  Choose your<br />
+                  <span className="text-[#D4AF37]">invitation studio.</span>
+                </h1>
+                <p className="mt-4 max-w-xl text-sm leading-6 text-[#2D2421]/65">
+                  Select a dedicated creation experience. Standard parties and Wedding suites operate independently while sharing your RSVP tracking, guest tokens, and door check-in.
+                </p>
+              </div>
+              <div className="flex justify-center gap-2 sm:justify-start">
+                <Link href="/i/demo" data-testid="link-preview-invitation" className="focus-ring inline-flex items-center gap-2 rounded-full border border-[#D4AF37]/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23]">
+                  <ExternalLink size={14} /> Preview
+                </Link>
+                <Link href="/scanner" data-testid="link-open-scanner" className="focus-ring inline-flex items-center gap-2 rounded-full bg-[#0A2E23] px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#FFFDF9]">
+                  <QrCode size={14} /> Door scanner
+                </Link>
+              </div>
+            </div>
+          </div>
+        </FadeIn>
+
+        <div className="mt-10 grid gap-8 md:grid-cols-2">
+          <FadeIn delay={0.1}>
+            <div className="suite-card flex h-full flex-col justify-between p-7 sm:p-9 transition hover:border-[#D4AF37]">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="rounded-full border border-[#0A2E23]/25 bg-[#0A2E23]/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[.14em] text-[#0A2E23]">
+                    Party &amp; Events
+                  </span>
+                  <Sparkles size={18} className="text-[#A98219]" />
+                </div>
+                <h2 className="mt-5 font-display text-3xl text-[#0A2E23] sm:text-4xl">
+                  Standard Invitation
+                </h2>
+                <p className="mt-1 font-body text-xs font-semibold text-[#A98219]">
+                  أعياد ميلاد · عشاء خاص · تخرج · مناسبات عامة
+                </p>
+                <p className="mt-4 text-xs leading-6 text-[#2D2421]/70">
+                  Tailored for birthdays, dinners, graduations, and celebrations. Features modular blocks for catering, dress code, schedule, registry, and song requests.
+                </p>
+                <div className="mt-6 flex flex-wrap gap-2">
+                  <span className="rounded-full border border-[#D4AF37]/40 bg-[#FFFDF9]/60 px-3 py-1 text-[10px] font-medium text-[#2D2421]/70">
+                    Modular Blocks
+                  </span>
+                  <span className="rounded-full border border-[#D4AF37]/40 bg-[#FFFDF9]/60 px-3 py-1 text-[10px] font-medium text-[#2D2421]/70">
+                    Menu &amp; Swatches
+                  </span>
+                  <span className="rounded-full border border-[#D4AF37]/40 bg-[#FFFDF9]/60 px-3 py-1 text-[10px] font-medium text-[#2D2421]/70">
+                    Song Requests
+                  </span>
+                  <span className="rounded-full border border-[#D4AF37]/40 bg-[#FFFDF9]/60 px-3 py-1 text-[10px] font-medium text-[#2D2421]/70">
+                    Pass &amp; RSVP
+                  </span>
+                </div>
+              </div>
+              <div className="mt-8">
+                <Link
+                  href="/studio/party"
+                  data-testid="link-studio-party"
+                  className="focus-ring inline-flex w-full items-center justify-center gap-2 rounded-full border border-[#0A2E23] bg-[#0A2E23] px-6 py-3.5 text-xs font-semibold tracking-[.08em] text-[#FFFDF9] transition hover:bg-[#174839]"
+                >
+                  Open Party Studio <ArrowLeft className="rotate-180" size={14} />
+                </Link>
+              </div>
+            </div>
+          </FadeIn>
+
+          <FadeIn delay={0.15}>
+            <div className="suite-card flex h-full flex-col justify-between p-7 sm:p-9 transition hover:border-[#71808D]">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="rounded-full border border-[#71808D]/40 bg-[#71808D]/15 px-3 py-1 text-[10px] font-bold uppercase tracking-[.14em] text-[#53616B]">
+                    Wedding Suite · زفاف
+                  </span>
+                  <Heart size={18} className="text-[#A98219]" />
+                </div>
+                <h2 className="mt-5 font-display text-3xl text-[#0A2E23] sm:text-4xl">
+                  Wedding Invitation
+                </h2>
+                <p className="mt-1 font-body text-xs font-semibold text-[#A98219]">
+                  دعوة زفاف سينمائية وتجربة عربية فاخرة
+                </p>
+                <p className="mt-4 text-xs leading-6 text-[#2D2421]/70">
+                  Dedicated Arabic-first luxury wedding suite. Includes 9:16 mobile presentation, botanical animations, host &amp; family wording, guest variant overrides, and companion controls.
+                </p>
+                <div className="mt-6 flex flex-wrap gap-2">
+                  <span className="rounded-full border border-[#71808D]/40 bg-[#FFFDF9]/60 px-3 py-1 text-[10px] font-medium text-[#2D2421]/70">
+                    9:16 Mobile First
+                  </span>
+                  <span className="rounded-full border border-[#71808D]/40 bg-[#FFFDF9]/60 px-3 py-1 text-[10px] font-medium text-[#2D2421]/70">
+                    Arabic Typography
+                  </span>
+                  <span className="rounded-full border border-[#71808D]/40 bg-[#FFFDF9]/60 px-3 py-1 text-[10px] font-medium text-[#2D2421]/70">
+                    Guest Variants
+                  </span>
+                  <span className="rounded-full border border-[#71808D]/40 bg-[#FFFDF9]/60 px-3 py-1 text-[10px] font-medium text-[#2D2421]/70">
+                    RSVP Drawer
+                  </span>
+                </div>
+              </div>
+              <div className="mt-8">
+                <Link
+                  href="/studio/wedding"
+                  data-testid="link-studio-wedding"
+                  className="focus-ring inline-flex w-full items-center justify-center gap-2 rounded-full border border-[#71808D] bg-[#71808D] px-6 py-3.5 text-xs font-semibold tracking-[.08em] text-white transition hover:bg-[#5f6e7a]"
+                >
+                  Open Wedding Studio <ArrowLeft className="rotate-180" size={14} />
+                </Link>
+              </div>
+            </div>
+          </FadeIn>
+        </div>
+
+        <div className="mt-10 rounded-2xl border border-[#D4AF37]/35 bg-[#FFFDF9]/40 p-4 text-center text-xs text-[#2D2421]/60">
+          Shared RSVP state, tokenized guest URLs (<span className="font-mono font-semibold">/i/:token</span>), and door scanner remain synced across both studios.
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function PartyStudioPage() {
+  const { state, ready, toggleBlock, reorderBlocks, updateBlock, setMode } = useEngine();
   const [activeEditor, setActiveEditor] = useState<BlockKey | null>(null);
   const activeBlock = state.blocks.find((b) => b.key === activeEditor);
   const accepted = state.rsvp === 'accepted';
+
+  useEffect(() => {
+    if (ready && state.mode !== 'standard') {
+      setMode('standard');
+    }
+  }, [ready, state.mode, setMode]);
+
   if (!ready) return <LoadingPage />;
-  return <div className="grain min-h-[100dvh] bg-[#FAF7F2] text-[#2D2421]"><div className="gold-thread" /><QuietHeader studio />
-    <main className="relative z-10 mx-auto max-w-7xl px-5 pb-20 sm:px-8 lg:px-14">
-      <FadeIn><div className="flex flex-col justify-between gap-7 border-b border-[#D4AF37]/35 pb-8 md:flex-row md:items-end"><div><Eyebrow>{state.mode === 'wedding' ? 'QUICKRSVP / WEDDING MODE' : 'HOST STUDIO / STANDARD MODE'}</Eyebrow><h1 className="mt-3 font-display text-6xl leading-[.82] text-[#0A2E23] sm:text-7xl">{state.mode === 'wedding' ? <>Wedding mode,<br /><span className="text-[#D4AF37]">Arabic first.</span></> : <>Your suite,<br /><span className="text-[#D4AF37]">in your hands.</span></>}</h1><p className="mt-5 max-w-lg text-sm leading-6 text-[#2D2421]/65">{state.mode === 'wedding' ? 'أنشئ دعوة سينمائية فاخرة مع الحفاظ على روابط الضيوف والردود وبطاقة الدخول نفسها.' : 'Shape the guest experience, then send a private link that feels like yours.'}</p></div><div className="flex gap-2"><Link href="/i/demo" data-testid="link-preview-invitation" className="focus-ring inline-flex items-center gap-2 rounded-full border border-[#D4AF37]/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23]"><ExternalLink size={14} /> Preview</Link><Link href="/scanner" data-testid="link-open-scanner" className="focus-ring inline-flex items-center gap-2 rounded-full bg-[#0A2E23] px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#FFFDF9]"><QrCode size={14} /> Door scanner</Link></div></div></FadeIn>
-      <EventModePicker mode={state.mode} setMode={setMode} />
-      {state.mode === 'wedding' ? <>
-        <WeddingStudio event={state.weddingEvent} guest={state.weddingGuest} rsvpStatus={state.rsvp} onChange={setWeddingEvent} />
-        <div className="mt-8"><GuestManager /></div>
-      </> : <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_340px]">
-        <div className="space-y-8">
-          <div className="grid gap-3 sm:grid-cols-3"><StudioStat label="Invitation status" value="Live" detail="private link active" icon={Sparkles} /><StudioStat label="Responses" value={accepted ? '1 / 1' : '0 / 1'} detail={accepted ? 'Hashim confirmed' : 'awaiting first reply'} icon={ClipboardCheck} /><StudioStat label="Door pass" value={state.checkedIn ? 'Used' : 'Ready'} detail={state.checkedIn ? 'checked in' : 'web QR enabled'} icon={TicketCheck} /></div>
-          <div className="suite-card p-6 sm:p-8"><div className="flex items-end justify-between gap-4"><div><Eyebrow>GUEST EXPERIENCE</Eyebrow><h2 className="mt-2 font-display text-4xl text-[#0A2E23]">Invitation blocks</h2></div><span className="text-[10px] font-bold uppercase tracking-[.14em] text-[#2D2421]/45">{state.blocks.filter((b) => b.enabled).length} visible</span></div><p className="mt-2 text-sm text-[#2D2421]/60">Drag to set the pace. Toggle anything that does not belong.</p>
-            <Reorder.Group axis="y" values={state.blocks} onReorder={reorderBlocks} className="mt-7 space-y-3">
-              {state.blocks.map((block) => <Reorder.Item key={block.key} value={block} className={`flex items-center gap-3 rounded-2xl border p-3 transition ${block.enabled ? 'border-[#D4AF37]/55 bg-[#FFFDF9]/50' : 'border-[#2D2421]/10 bg-[#2D2421]/[.03] opacity-55'}`}><GripVertical data-testid={`grip-${block.key}`} size={18} className="shrink-0 cursor-grab text-[#A98219]" /><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0A2E23] text-[#D4AF37]"><BlockIcon block={block.key} /></div><div className="min-w-0 flex-1"><p className="text-sm font-semibold text-[#0A2E23]">{block.label}</p><p className="truncate text-[11px] text-[#2D2421]/55">{block.content.heading}</p></div><button onClick={() => setActiveEditor(block.key)} data-testid={`button-edit-${block.key}`} aria-label={`Edit ${block.label}`} className="focus-ring rounded-full border border-[#D4AF37]/55 p-2 text-[#0A2E23] hover:bg-[#D4AF37]/10"><Edit3 size={14} /></button><button onClick={() => toggleBlock(block.key)} data-testid={`button-toggle-${block.key}`} aria-label={`${block.enabled ? 'Hide' : 'Show'} ${block.label}`} className={`focus-ring relative h-6 w-11 rounded-full transition ${block.enabled ? 'bg-[#0A2E23]' : 'bg-[#2D2421]/20'}`}><span className={`absolute top-1 h-4 w-4 rounded-full border border-[#D4AF37] bg-[#FFFDF9] transition-transform ${block.enabled ? 'left-6' : 'left-1'}`} /></button></Reorder.Item>)}
-            </Reorder.Group>
+
+  return (
+    <div className="grain min-h-[100dvh] bg-[#FAF7F2] text-[#2D2421]">
+      <div className="gold-thread" />
+      <QuietHeader studio />
+      <main className="relative z-10 mx-auto max-w-7xl px-5 pb-20 sm:px-8 lg:px-14">
+        <FadeIn>
+          <div className="flex flex-col justify-between gap-7 border-b border-[#D4AF37]/35 pb-8 md:flex-row md:items-end">
+            <div>
+              <Eyebrow>HOST STUDIO / STANDARD MODE</Eyebrow>
+              <h1 className="mt-3 font-display text-6xl leading-[.82] text-[#0A2E23] sm:text-7xl">
+                Your suite,<br />
+                <span className="text-[#D4AF37]">in your hands.</span>
+              </h1>
+              <p className="mt-5 max-w-lg text-sm leading-6 text-[#2D2421]/65">
+                Shape the guest experience, then send a private link that feels like yours.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link href="/studio" data-testid="link-switch-studio" className="focus-ring inline-flex items-center gap-1.5 rounded-full border border-[#D4AF37]/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23] hover:bg-[#D4AF37]/10">
+                <ArrowLeft size={13} /> Switch Type
+              </Link>
+              <Link href="/i/demo" data-testid="link-preview-invitation" className="focus-ring inline-flex items-center gap-2 rounded-full border border-[#D4AF37]/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23]">
+                <ExternalLink size={14} /> Preview
+              </Link>
+              <Link href="/scanner" data-testid="link-open-scanner" className="focus-ring inline-flex items-center gap-2 rounded-full bg-[#0A2E23] px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#FFFDF9]">
+                <QrCode size={14} /> Door scanner
+              </Link>
+            </div>
           </div>
-          <GuestManager />
+        </FadeIn>
+
+        <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_340px]">
+          <div className="space-y-8">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <StudioStat label="Invitation status" value="Live" detail="private link active" icon={Sparkles} />
+              <StudioStat label="Responses" value={accepted ? '1 / 1' : '0 / 1'} detail={accepted ? 'Hashim confirmed' : 'awaiting first reply'} icon={ClipboardCheck} />
+              <StudioStat label="Door pass" value={state.checkedIn ? 'Used' : 'Ready'} detail={state.checkedIn ? 'checked in' : 'web QR enabled'} icon={TicketCheck} />
+            </div>
+            <div className="suite-card p-6 sm:p-8">
+              <div className="flex items-end justify-between gap-4">
+                <div>
+                  <Eyebrow>GUEST EXPERIENCE</Eyebrow>
+                  <h2 className="mt-2 font-display text-4xl text-[#0A2E23]">Invitation blocks</h2>
+                </div>
+                <span className="text-[10px] font-bold uppercase tracking-[.14em] text-[#2D2421]/45">
+                  {state.blocks.filter((b) => b.enabled).length} visible
+                </span>
+              </div>
+              <p className="mt-2 text-sm text-[#2D2421]/60">
+                Drag to set the pace. Toggle anything that does not belong.
+              </p>
+              <Reorder.Group axis="y" values={state.blocks} onReorder={reorderBlocks} className="mt-7 space-y-3">
+                {state.blocks.map((block) => (
+                  <Reorder.Item key={block.key} value={block} className={`flex items-center gap-3 rounded-2xl border p-3 transition ${block.enabled ? 'border-[#D4AF37]/55 bg-[#FFFDF9]/50' : 'border-[#2D2421]/10 bg-[#2D2421]/[.03] opacity-55'}`}>
+                    <GripVertical data-testid={`grip-${block.key}`} size={18} className="shrink-0 cursor-grab text-[#A98219]" />
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0A2E23] text-[#D4AF37]">
+                      <BlockIcon block={block.key} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-[#0A2E23]">{block.label}</p>
+                      <p className="truncate text-[11px] text-[#2D2421]/55">{block.content.heading}</p>
+                    </div>
+                    <button onClick={() => setActiveEditor(block.key)} data-testid={`button-edit-${block.key}`} aria-label={`Edit ${block.label}`} className="focus-ring rounded-full border border-[#D4AF37]/55 p-2 text-[#0A2E23] hover:bg-[#D4AF37]/10">
+                      <Edit3 size={14} />
+                    </button>
+                    <button onClick={() => toggleBlock(block.key)} data-testid={`button-toggle-${block.key}`} aria-label={`${block.enabled ? 'Hide' : 'Show'} ${block.label}`} className={`focus-ring relative h-6 w-11 rounded-full transition ${block.enabled ? 'bg-[#0A2E23]' : 'bg-[#2D2421]/20'}`}>
+                      <span className={`absolute top-1 h-4 w-4 rounded-full border border-[#D4AF37] bg-[#FFFDF9] transition-transform ${block.enabled ? 'left-6' : 'left-1'}`} />
+                    </button>
+                  </Reorder.Item>
+                ))}
+              </Reorder.Group>
+            </div>
+            <GuestManager />
+          </div>
+          <aside className="space-y-6">
+            <SuiteCard className="p-6">
+              <Eyebrow>THE EVENT</Eyebrow>
+              <div className="mt-3 flex items-start gap-3">
+                <CalendarDays className="mt-1 text-[#A98219]" size={18} />
+                <div>
+                  <p className="font-display text-3xl text-[#0A2E23]">14 Oct 2026</p>
+                  <p className="mt-1 text-xs text-[#2D2421]/60">The Grand Palace Hall<br />Jeddah, Saudi Arabia</p>
+                </div>
+              </div>
+              <div className="fine-rule my-5" />
+              <div className="flex items-center gap-2 text-xs text-[#2D2421]/65">
+                <MapPin size={14} className="text-[#A98219]" /> Garden ceremony · 7:00 PM
+              </div>
+            </SuiteCard>
+            <AnimatePresence mode="wait">
+              {activeBlock ? (
+                <EditorPanel key={activeBlock.key} block={activeBlock} close={() => setActiveEditor(null)} updateBlock={updateBlock} />
+              ) : (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-panel rounded-[28px] p-6">
+                  <Edit3 className="text-[#A98219]" size={18} />
+                  <p className="mt-4 font-display text-2xl text-[#0A2E23]">Make it personal.</p>
+                  <p className="mt-2 text-xs leading-5 text-[#2D2421]/60">Select any block to edit its language, menu, colors, or questions.</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </aside>
         </div>
-        <aside className="space-y-6">
-          <SuiteCard className="p-6"><Eyebrow>THE EVENT</Eyebrow><div className="mt-3 flex items-start gap-3"><CalendarDays className="mt-1 text-[#A98219]" size={18} /><div><p className="font-display text-3xl text-[#0A2E23]">14 Oct 2026</p><p className="mt-1 text-xs text-[#2D2421]/60">The Grand Palace Hall<br />Jeddah, Saudi Arabia</p></div></div><div className="fine-rule my-5" /><div className="flex items-center gap-2 text-xs text-[#2D2421]/65"><MapPin size={14} className="text-[#A98219]" /> Garden ceremony · 7:00 PM</div></SuiteCard>
-          <AnimatePresence mode="wait">{activeBlock ? <EditorPanel key={activeBlock.key} block={activeBlock} close={() => setActiveEditor(null)} updateBlock={updateBlock} /> : <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-panel rounded-[28px] p-6"><Edit3 className="text-[#A98219]" size={18} /><p className="mt-4 font-display text-2xl text-[#0A2E23]">Make it personal.</p><p className="mt-2 text-xs leading-5 text-[#2D2421]/60">Select any block to edit its language, menu, colors, or questions.</p></motion.div>}</AnimatePresence>
-        </aside>
-      </div>}
-    </main>
-  </div>;
+      </main>
+    </div>
+  );
 }
 
-function EventModePicker({ mode, setMode }: { mode: EventMode; setMode: (mode: EventMode) => void }) {
-  return <section className="mt-7 rounded-[24px] border border-[#D4AF37]/35 bg-[#FFFDF9]/55 p-4" aria-labelledby="event-mode-heading">
-    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><Eyebrow>STEP 1 · EVENT TYPE</Eyebrow><h2 id="event-mode-heading" className="mt-1 font-display text-2xl text-[#0A2E23]">Choose the building experience</h2></div><div className="grid grid-cols-2 gap-2" role="group" aria-label="Event type"><button onClick={() => setMode('standard')} aria-pressed={mode === 'standard'} className={`focus-ring min-h-11 rounded-full border px-4 text-xs font-semibold transition ${mode === 'standard' ? 'border-[#0A2E23] bg-[#0A2E23] text-white' : 'border-[#D4AF37]/55 bg-white/55 text-[#2D2421]'}`} data-testid="button-mode-standard">Birthday / Party</button><button onClick={() => setMode('wedding')} aria-pressed={mode === 'wedding'} className={`focus-ring min-h-11 rounded-full border px-4 text-xs font-semibold transition ${mode === 'wedding' ? 'border-[#71808D] bg-[#71808D] text-white' : 'border-[#D4AF37]/55 bg-white/55 text-[#2D2421]'}`} data-testid="button-mode-wedding">Wedding · زفاف</button></div></div>
-    <p className="mt-3 text-[10px] text-[#2D2421]/55">Graduation and corporate events continue through Standard Mode in V1.</p>
-  </section>;
+function WeddingStudioPage() {
+  const { state, ready, setMode, setWeddingEvent } = useEngine();
+
+  useEffect(() => {
+    if (ready && state.mode !== 'wedding') {
+      setMode('wedding');
+    }
+  }, [ready, state.mode, setMode]);
+
+  if (!ready) return <LoadingPage />;
+
+  return (
+    <div className="grain min-h-[100dvh] bg-[#FAF7F2] text-[#2D2421]">
+      <div className="gold-thread" />
+      <QuietHeader studio />
+      <main className="relative z-10 mx-auto max-w-7xl px-5 pb-20 sm:px-8 lg:px-14">
+        <FadeIn>
+          <div className="flex flex-col justify-between gap-7 border-b border-[#D4AF37]/35 pb-8 md:flex-row md:items-end">
+            <div>
+              <Eyebrow>QUICKRSVP / WEDDING MODE</Eyebrow>
+              <h1 className="mt-3 font-display text-6xl leading-[.82] text-[#0A2E23] sm:text-7xl">
+                Wedding mode,<br />
+                <span className="text-[#D4AF37]">Arabic first.</span>
+              </h1>
+              <p className="mt-5 max-w-lg text-sm leading-6 text-[#2D2421]/65">
+                أنشئ دعوة سينمائية فاخرة مع الحفاظ على روابط الضيوف والردود وبطاقة الدخول نفسها.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link href="/studio" data-testid="link-switch-studio" className="focus-ring inline-flex items-center gap-1.5 rounded-full border border-[#D4AF37]/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23] hover:bg-[#D4AF37]/10">
+                <ArrowLeft size={13} /> Switch Type
+              </Link>
+              <Link href="/i/demo" data-testid="link-preview-invitation" className="focus-ring inline-flex items-center gap-2 rounded-full border border-[#D4AF37]/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23]">
+                <ExternalLink size={14} /> Preview
+              </Link>
+              <Link href="/scanner" data-testid="link-open-scanner" className="focus-ring inline-flex items-center gap-2 rounded-full bg-[#0A2E23] px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#FFFDF9]">
+                <QrCode size={14} /> Door scanner
+              </Link>
+            </div>
+          </div>
+        </FadeIn>
+
+        <WeddingStudio
+          event={state.weddingEvent}
+          guest={state.weddingGuest}
+          rsvpStatus={state.rsvp}
+          onChange={setWeddingEvent}
+        />
+        <div className="mt-8">
+          <GuestManager />
+        </div>
+      </main>
+    </div>
+  );
 }
 
 function BlockIcon({ block }: { block: BlockKey }) { const Icon = blockIcons[block]; return <Icon size={15} strokeWidth={1.6} />; }
@@ -301,9 +584,20 @@ function GuestManager() {
   const guest = wedding ? state.weddingGuest : { ...defaultWeddingGuest, name: 'Hashim Alnimari', allowedCompanions: 0 };
   const partySize = wedding && state.rsvp === 'accepted' ? state.weddingResponse.guestCount : 1;
   const invitationUrl = `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}/i/${guest.token}`;
-  const eventName = wedding ? [state.weddingEvent.groomName, state.weddingEvent.brideName].filter(Boolean).join(' و ') : 'Maya & Liam';
-  const sendWhatsApp = () => { const message = encodeURIComponent(wedding ? `يسر ${eventName} دعوتكم لحضور حفل الزواج. دعوتكم الخاصة: ${invitationUrl}` : `${eventName} would love to celebrate with you. Your private invitation: ${invitationUrl}`); window.open(`https://wa.me/${guest.phone.replace(/\D/g, '')}?text=${message}`, '_blank', 'noopener,noreferrer'); };
-  const exportGuests = () => { const csv = `Guest,Plus ones,RSVP,Checked in\n${guest.name.replaceAll(',', ' ')},${Math.max(0, partySize - 1)},${state.rsvp},${state.checkedIn}\n`; const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); const link = document.createElement('a'); link.href = url; link.download = 'quickrsvp-guest-list.csv'; link.click(); URL.revokeObjectURL(url); };
+  const eventName = resolveInvitationTitle(state.mode, state.weddingEvent);
+  const sendWhatsApp = () => {
+    const url = getWhatsAppShareUrl(state.mode, eventName, guest.phone, invitationUrl);
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+  const exportGuests = () => {
+    const csv = `Guest,Plus ones,RSVP,Checked in\n${guest.name.replaceAll(',', ' ')},${Math.max(0, partySize - 1)},${state.rsvp},${state.checkedIn}\n`;
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'quickrsvp-guest-list.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
   return <div className="suite-card overflow-hidden p-6 sm:p-8"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><Eyebrow>GUEST LIST / 01</Eyebrow><h2 className="mt-2 font-display text-4xl text-[#0A2E23]">The people who matter.</h2></div><Button variant="ivory" icon={ArrowDownToLine} onClick={exportGuests}>Caterer export</Button></div><div className="mt-6 overflow-x-auto"><table className="w-full min-w-[590px] text-left"><thead><tr className="border-b border-[#D4AF37]/35 text-[10px] uppercase tracking-[.12em] text-[#2D2421]/50"><th className="pb-3 font-semibold">Guest</th><th className="pb-3 font-semibold">Party</th><th className="pb-3 font-semibold">Response</th><th className="pb-3 text-right font-semibold">Invite</th></tr></thead><tbody><tr className="border-b border-[#D4AF37]/20"><td className="py-4"><div className="flex items-center gap-3"><InitialsAvatar /><div><p className="text-sm font-semibold text-[#0A2E23]" data-testid="row-guest-hashim">{guest.name}</p><p className="text-[10px] text-[#2D2421]/50">{guest.token}</p></div></div></td><td className="py-4 text-sm">{partySize} {partySize === 1 ? 'guest' : 'guests'}</td><td className="py-4"><span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-[.1em] ${state.rsvp === 'accepted' ? 'bg-[#0A2E23]/10 text-[#0A2E23]' : 'bg-[#D4AF37]/15 text-[#8A6712]'}`}>{state.rsvp}</span></td><td className="py-4 text-right"><button onClick={sendWhatsApp} data-testid="button-whatsapp-hashim" className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-full border border-[#D4AF37]/60 px-3 py-2 text-[10px] font-bold uppercase tracking-[.08em] text-[#0A2E23] hover:bg-[#D4AF37]/10"><MessageCircle size={14} /> WhatsApp</button></td></tr></tbody></table></div><p className="mt-5 flex items-center gap-2 text-[10px] text-[#2D2421]/50"><Link2 size={12} className="text-[#A98219]" /> Personal link ready · /i/{guest.token}</p></div>;
 }
 
@@ -311,7 +605,7 @@ function ScannerPage() {
   const { state, ready, setCheckedIn } = useEngine();
   const [token, setToken] = useState('');
   const [scan, setScan] = useState<'idle' | 'verified' | 'rejected'>('idle');
-  const verify = () => setScan([state.weddingGuest.token.toLowerCase(), 'k82f9x', 'demo'].includes(token.trim().toLowerCase()) ? 'verified' : 'rejected');
+  const verify = () => setScan(isValidGuestToken(token, state.weddingGuest.token) ? 'verified' : 'rejected');
   if (!ready) return <LoadingPage />;
   return <div className="grain min-h-[100dvh] bg-[#0A2E23] text-[#FFFDF9]"><div className="gold-thread opacity-45" /><header className="relative z-10 flex items-center justify-between px-5 py-6 sm:px-10"><Link href="/studio" data-testid="link-scanner-back" className="focus-ring flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.16em] text-[#FFFDF9]/70"><ArrowLeft size={15} /> Studio</Link><div className="flex items-center gap-2"><div className="font-display text-2xl text-[#D4AF37]">M<span className="text-[#FFFDF9]">&amp;</span>L</div><Eyebrow>DOOR / 01</Eyebrow></div></header><main className="relative z-10 mx-auto max-w-2xl px-5 pb-16 pt-10 sm:pt-16"><FadeIn><div className="text-center"><Eyebrow>CONCIERGE CHECK-IN</Eyebrow><h1 className="mt-4 font-display text-6xl leading-[.85] text-[#FFFDF9] sm:text-7xl">Welcome them<br /><span className="text-[#D4AF37]">by name.</span></h1><p className="mx-auto mt-5 max-w-sm text-sm leading-6 text-[#FFFDF9]/60">Scan a guest’s private pass or enter their token to verify the evening.</p></div></FadeIn><div className="relative mx-auto mt-12 aspect-[1.2] max-w-lg overflow-hidden rounded-[30px] border border-[#D4AF37]/70 bg-[#071f18] shadow-[0_18px_50px_rgba(0,0,0,.3)]"><div className="absolute inset-5 rounded-2xl border border-[#D4AF37]/80"><span className="absolute -left-px -top-px h-10 w-10 border-l-2 border-t-2 border-[#D4AF37]" /><span className="absolute -right-px -top-px h-10 w-10 border-r-2 border-t-2 border-[#D4AF37]" /><span className="absolute -bottom-px -left-px h-10 w-10 border-b-2 border-l-2 border-[#D4AF37]" /><span className="absolute -bottom-px -right-px h-10 w-10 border-b-2 border-r-2 border-[#D4AF37]" /><motion.div animate={{ y: ['12%', '86%', '12%'] }} transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }} className="absolute left-[10%] right-[10%] h-px bg-[#D4AF37] shadow-[0_0_12px_rgba(212,175,55,.7)]" /></div><div className="absolute inset-0 flex items-center justify-center"><QrCode size={72} strokeWidth={.55} className="text-[#FFFDF9]/20" /></div><div className="absolute bottom-5 left-0 right-0 text-center text-[9px] font-bold uppercase tracking-[.2em] text-[#D4AF37]/75">camera viewfinder · ready</div></div><div className="mx-auto mt-8 max-w-lg"><div className="flex gap-2"><input value={token} onChange={(e) => { setToken(e.target.value); setScan('idle'); }} onKeyDown={(e) => e.key === 'Enter' && verify()} data-testid="input-scanner-token" placeholder={`Enter guest token · ${state.weddingGuest.token}`} className="focus-ring min-w-0 flex-1 rounded-full border border-[#D4AF37]/50 bg-[#FFFDF9]/10 px-5 py-3 text-sm text-[#FFFDF9] outline-none placeholder:text-[#FFFDF9]/35" /><Button variant="gold" icon={Search} onClick={verify}>Verify</Button></div><p className="mt-3 text-center text-[10px] uppercase tracking-[.15em] text-[#FFFDF9]/40">Demo mode · no camera permission required</p></div><AnimatePresence>{scan !== 'idle' && <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className={`mx-auto mt-8 max-w-lg rounded-[28px] border p-6 ${scan === 'verified' ? 'border-[#D4AF37] bg-[#D4AF37]/10' : 'border-[#d58c78] bg-[#d58c78]/10'}`}>{scan === 'verified' ? <div className="flex items-center gap-4"><div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#D4AF37] text-[#0A2E23]"><Check size={23} /></div><div className="min-w-0 flex-1"><Eyebrow>VERIFIED · {state.mode === 'wedding' ? state.weddingGuest.name : 'HASHIM ALNIMARI'}</Eyebrow><p className="mt-1 text-sm text-[#FFFDF9]/75">Invitation for {state.mode === 'wedding' ? Math.max(1, state.weddingResponse.guestCount) : 1} · {state.mode === 'wedding' ? state.weddingEvent.venue : 'The Grand Palace Hall'}</p></div>{state.checkedIn ? <span className="text-right text-[10px] font-bold uppercase tracking-[.1em] text-[#D4AF37]">Checked in</span> : <Button variant="gold" icon={Check} onClick={setCheckedIn}>Check in</Button>}</div> : <div className="flex items-center gap-4"><XCircle className="text-[#d58c78]" size={30} /><div><Eyebrow className="text-[#d58c78]">NOT RECOGNIZED</Eyebrow><p className="mt-1 text-sm text-[#FFFDF9]/70">Try the guest token again.</p></div></div>}</motion.div>}</AnimatePresence></main></div>;
 }
@@ -327,7 +621,19 @@ function NotFound() {
 }
 
 function Router() {
-  return <ErrorBoundary resetKey={window.location.pathname}><Switch><Route path="/" component={RedirectHome} /><Route path="/i/:token" component={GuestPage} /><Route path="/studio" component={StudioPage} /><Route path="/scanner" component={ScannerPage} /><Route component={NotFound} /></Switch></ErrorBoundary>;
+  return (
+    <ErrorBoundary resetKey={window.location.pathname}>
+      <Switch>
+        <Route path="/" component={RedirectHome} />
+        <Route path="/i/:token" component={GuestPage} />
+        <Route path="/studio/party" component={PartyStudioPage} />
+        <Route path="/studio/wedding" component={WeddingStudioPage} />
+        <Route path="/studio" component={StudioHubPage} />
+        <Route path="/scanner" component={ScannerPage} />
+        <Route component={NotFound} />
+      </Switch>
+    </ErrorBoundary>
+  );
 }
 
 function App() {
