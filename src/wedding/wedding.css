@@ -105,48 +105,37 @@
   position: relative;
   z-index: 3;
   display: grid;
-  grid-template-rows: auto auto minmax(130px, 1fr) auto auto;
   height: 100%;
+  place-items: center;
   padding: clamp(64px, 9dvh, 92px) 58px clamp(52px, 7dvh, 72px);
   text-align: center;
 }
 
-.wedding-reveal {
-  opacity: 0;
-  transform: translateY(10px);
-  filter: blur(3px);
-  transition:
-    opacity 1.15s ease,
-    transform 1.15s cubic-bezier(0.16, 1, 0.3, 1),
-    filter 1s ease;
-}
-.wedding-reveal.is-visible {
-  opacity: 1;
-  transform: translateY(0);
-  filter: blur(0);
+.wedding-scene {
+  width: 100%;
+  animation: wedding-scene-arrive 0.45s ease-out both;
 }
 
 .wedding-opening {
-  align-self: start;
   color: color-mix(in srgb, var(--wedding-accent) 82%, #3e4346);
 }
 .wedding-opening p {
-  margin: 3px 0 0;
+  margin: 8px 0 0;
   font-family: var(--wedding-display);
-  font-size: clamp(14px, 2dvh, 18px);
+  font-size: clamp(26px, 4.5dvh, 42px);
   line-height: 1.6;
+  text-wrap: balance;
 }
 .wedding-ornament {
   display: block;
   color: #b99a63;
-  font-size: 11px;
+  font-size: 16px;
 }
 
 .wedding-hosts {
-  align-self: center;
-  margin-top: 7px;
-  font-size: clamp(9px, 1.35dvh, 12px);
-  line-height: 1.85;
+  font-size: clamp(15px, 2.2dvh, 20px);
+  line-height: 2;
+  text-wrap: balance;
 }
 .wedding-hosts p {
   margin: 0;
@@ -160,7 +149,6 @@
   display: grid;
   min-height: 0;
   place-items: center;
-  align-self: stretch;
   padding: 4px 0;
 }
 .wedding-name-stack {
@@ -215,8 +203,7 @@
 }
 
 .wedding-details {
-  align-self: end;
-  font-size: clamp(8px, 1.15dvh, 11px);
+  font-size: clamp(10px, 1.4dvh, 13px);
 }
 .wedding-date-rule {
   width: 56px;
@@ -227,7 +214,8 @@
 }
 .wedding-date-grid {
   display: grid;
-  grid-template-columns: 1fr 1.4fr 1fr;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
   align-items: center;
 }
 .wedding-date-grid > * {
@@ -289,8 +277,13 @@
 }
 
 .wedding-rsvp-reveal {
-  align-self: end;
-  padding-top: 10px;
+  padding-top: 0;
+}
+.wedding-rsvp-guest {
+  margin: 0 0 16px;
+  color: var(--wedding-accent);
+  font-family: var(--wedding-display);
+  font-size: clamp(19px, 3dvh, 27px);
 }
 .wedding-rsvp-button {
   display: inline-grid;
@@ -347,21 +340,31 @@
   position: absolute;
   z-index: 8;
   right: 50%;
-  bottom: max(14px, env(safe-area-inset-bottom));
+  bottom: max(0px, env(safe-area-inset-bottom));
   display: flex;
-  gap: 5px;
+  gap: 8px;
   transform: translateX(50%);
 }
-.wedding-progress span {
+.wedding-progress button {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  background: transparent;
+}
+.wedding-progress button::after {
   width: 5px;
   height: 5px;
   border-radius: 999px;
   background: rgb(113 128 141 / 0.24);
+  content: "";
   transition:
     width 0.4s ease,
     background 0.4s ease;
 }
-.wedding-progress span.is-active {
+.wedding-progress button.is-active::after {
   width: 18px;
   background: var(--wedding-accent);
 }
@@ -858,6 +861,16 @@
     opacity: 1;
   }
 }
+@keyframes wedding-scene-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 @keyframes wedding-draw-arch {
   to {
     stroke-dashoffset: 0;
@@ -923,16 +936,14 @@
 
 @media (max-height: 620px) {
   .wedding-content {
-    grid-template-rows: auto auto minmax(74px, 1fr) auto auto;
     padding: 26px 34px 18px;
   }
   .wedding-opening p {
-    font-size: 10px;
+    font-size: 18px;
   }
   .wedding-hosts {
-    margin-top: 1px;
-    font-size: 7px;
-    line-height: 1.45;
+    font-size: 11px;
+    line-height: 1.7;
   }
   .wedding-name-stack span,
   .wedding-name-stack--1 span {
@@ -948,7 +959,7 @@
     font-size: 10px;
   }
   .wedding-details {
-    font-size: 6px;
+    font-size: 8px;
   }
   .wedding-date-rule {
     margin-bottom: 3px;
@@ -970,6 +981,10 @@
   .wedding-rsvp-reveal {
     padding-top: 2px;
   }
+  .wedding-rsvp-guest {
+    margin-bottom: 8px;
+    font-size: 15px;
+  }
   .wedding-rsvp-button {
     min-width: 126px;
   }
@@ -986,7 +1001,10 @@
   .wedding-botanical--bottom {
     animation: none;
   }
-  .wedding-reveal {
+  .wedding-scene {
+    animation: none;
+  }
+  .wedding-progress button::after {
     transition: none;
   }
 }

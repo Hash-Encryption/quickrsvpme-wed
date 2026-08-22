@@ -1,12 +1,5 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type ReactNode,
-} from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { useState, type CSSProperties } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
   ChevronLeft,
@@ -14,19 +7,13 @@ import {
   MapPin,
   Minus,
   Music2,
-  Pause,
-  Play,
   Plus,
-  RotateCcw,
-  Volume2,
-  VolumeX,
   X,
 } from "lucide-react";
 import {
   WeddingTemplateRegistry,
   clampGuestCount,
   floralThemes,
-  getWeddingPrincipalLines,
   weddingFonts,
   type ArabicFont,
   type FloralTheme,
@@ -35,6 +22,8 @@ import {
   type WeddingRsvp,
   type WeddingVariant,
 } from "./model";
+import { WeddingSceneEngine } from "./WeddingSceneEngine";
+import { resolveWeddingScenes, type WeddingScene } from "./scene-engine";
 import "./wedding.css";
 
 type WeddingRendererProps = {
@@ -65,46 +54,9 @@ export function WeddingInvitationRenderer({
   const template =
     WeddingTemplateRegistry[event.templateId] ??
     WeddingTemplateRegistry["soft-floral-garden"];
-  const reduceMotion = useReducedMotion();
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const [run, setRun] = useState(0);
-  const [activeScene, setActiveScene] = useState(
-    reduceMotion ? template.scenes.length - 1 : 0,
-  );
-  const [isPlaying, setIsPlaying] = useState(!reduceMotion);
-  const [isMuted, setIsMuted] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const theme = floralThemes[event.style.floralTheme];
-
-  useEffect(() => {
-    if (reduceMotion || !isPlaying) return;
-    const timers = template.scenes.slice(1).map((scene, index) =>
-      window.setTimeout(() => {
-        setActiveScene(index + 1);
-        if (index === template.scenes.length - 2) setIsPlaying(false);
-      }, scene.startsAt),
-    );
-    return () => timers.forEach(window.clearTimeout);
-  }, [isPlaying, reduceMotion, run, template.scenes]);
-
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.muted = isMuted;
-    if (isMuted || !isPlaying) audio.pause();
-    else void audio.play().catch(() => setIsMuted(true));
-  }, [isMuted, isPlaying]);
-
-  const replay = () => {
-    setActiveScene(reduceMotion ? template.scenes.length - 1 : 0);
-    setIsPlaying(!reduceMotion);
-    setRun((value) => value + 1);
-  };
-
-  const togglePlayback = () => {
-    if (activeScene === template.scenes.length - 1) replay();
-    else setIsPlaying((value) => !value);
-  };
+  const scenes = resolveWeddingScenes(event, guest, rsvpStatus);
 
   const style: WeddingStyleProperties = {
     "--wedding-bg": event.style.backgroundColor,
@@ -117,175 +69,166 @@ export function WeddingInvitationRenderer({
   };
 
   return (
-    <section
-      className={`wedding-stage ${preview ? "wedding-stage--preview" : ""}`}
+    <WeddingSceneEngine
+      scenes={scenes}
+      timings={template.scenes}
+      musicUrl={event.musicUrl}
+      backgroundMediaUrl={event.backgroundMediaUrl}
+      preview={preview}
       style={style}
-      dir="rtl"
-      aria-label="دعوة زفاف"
-    >
-      {event.backgroundMediaUrl && (
-        <video
-          className="wedding-background-video"
-          src={event.backgroundMediaUrl}
-          autoPlay
-          loop
-          muted
-          playsInline
-          preload="metadata"
-          aria-hidden="true"
+      renderScene={(scene, replayKey) => (
+        <SoftFloralGardenRenderer
+          scene={scene}
+          replayKey={replayKey}
+          onOpenRsvp={() => setDrawerOpen(true)}
         />
       )}
-      {event.musicUrl && (
-        <audio ref={audioRef} src={event.musicUrl} loop preload="none" />
-      )}
-      <div className="wedding-paper" key={run}>
-        <div className="wedding-paper-texture" />
-        <FloralGardenFrame />
-        <div className="wedding-content">
-          <Reveal visible={activeScene >= 0} className="wedding-opening">
-            <span className="wedding-ornament">۞</span>
-            <p>{event.openingWording}</p>
-          </Reveal>
-
-          <Reveal visible={activeScene >= 1} className="wedding-hosts">
-            <p className="wedding-host-name">{event.hostNames}</p>
-            <p>{event.invitationWording}</p>
-          </Reveal>
-
-          <Reveal visible={activeScene >= 2} className="wedding-principals">
-            <PrincipalNames event={event} guest={guest} />
-          </Reveal>
-
-          <Reveal visible={activeScene >= 3} className="wedding-details">
-            <div className="wedding-date-rule" />
-            <div className="wedding-date-grid">
-              <span>{event.startTime}</span>
-              <strong>
-                <small>{event.eventDay}</small>
-                {event.gregorianDate}
-              </strong>
-              <span dir="rtl">{event.hijriDate}</span>
-            </div>
-            <p className="wedding-venue">{event.venue}</p>
-            <p className="wedding-city">{event.city}</p>
-            {(event.receptionTime || event.dinnerTime) && (
-              <div className="wedding-schedule">
-                {event.receptionTime && (
-                  <span>
-                    الاستقبال <b>{event.receptionTime}</b>
-                  </span>
-                )}
-                {event.dinnerTime && (
-                  <span>
-                    العشاء <b>{event.dinnerTime}</b>
-                  </span>
-                )}
-              </div>
-            )}
-            {event.mapUrl && (
-              <a
-                className="wedding-map"
-                href={event.mapUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <MapPin size={13} /> عرض الموقع
-              </a>
-            )}
-          </Reveal>
-
-          <Reveal visible={activeScene >= 4} className="wedding-rsvp-reveal">
-            <button
-              className="wedding-rsvp-button"
-              onClick={() => setDrawerOpen(true)}
-              data-testid="button-wedding-rsvp"
-            >
-              <span>
-                {rsvpStatus === "pending" ? "تأكيد الحضور" : "تعديل الرد"}
-              </span>
-              <small>{event.rsvpDeadline}</small>
-            </button>
-          </Reveal>
-        </div>
-      </div>
-
-      <div className="wedding-controls" aria-label="عناصر تحكم الدعوة">
-        <button
-          onClick={togglePlayback}
-          aria-label={isPlaying ? "إيقاف العرض مؤقتاً" : "تشغيل العرض"}
-        >
-          {isPlaying ? <Pause /> : <Play />}
-        </button>
-        <button onClick={replay} aria-label="إعادة العرض">
-          <RotateCcw />
-        </button>
-        <button
-          onClick={() => event.musicUrl && setIsMuted((value) => !value)}
-          disabled={!event.musicUrl}
-          aria-label={isMuted ? "تشغيل الصوت" : "كتم الصوت"}
-        >
-          {isMuted ? <VolumeX /> : <Volume2 />}
-        </button>
-      </div>
-
-      <div className="wedding-progress" aria-hidden="true">
-        {template.scenes.map((scene, index) => (
-          <span
-            key={scene.id}
-            className={activeScene >= index ? "is-active" : ""}
-          />
-        ))}
-      </div>
-
-      <AnimatePresence>
-        {drawerOpen && (
-          <WeddingRSVPDrawer
-            guest={guest}
-            status={rsvpStatus}
-            onClose={() => setDrawerOpen(false)}
-            onSubmit={async (response) => {
-              await onSubmit(response);
-              setDrawerOpen(false);
-            }}
-          />
-        )}
-      </AnimatePresence>
-    </section>
+      overlay={
+        <AnimatePresence>
+          {drawerOpen && (
+            <WeddingRSVPDrawer
+              guest={guest}
+              status={rsvpStatus}
+              onClose={() => setDrawerOpen(false)}
+              onSubmit={async (response) => {
+                await onSubmit(response);
+                setDrawerOpen(false);
+              }}
+            />
+          )}
+        </AnimatePresence>
+      }
+    />
   );
 }
 
-function Reveal({
-  visible,
-  className,
-  children,
+function SoftFloralGardenRenderer({
+  scene,
+  replayKey,
+  onOpenRsvp,
 }: {
-  visible: boolean;
-  className: string;
-  children: ReactNode;
+  scene: WeddingScene;
+  replayKey: number;
+  onOpenRsvp: () => void;
 }) {
+  const className =
+    scene.id === "names"
+      ? "wedding-principals"
+      : scene.id === "rsvp"
+        ? "wedding-rsvp-reveal"
+        : `wedding-${scene.id}`;
   return (
-    <div
-      className={`${className} wedding-reveal ${visible ? "is-visible" : ""}`}
-      aria-hidden={!visible}
-    >
-      {children}
+    <div className="wedding-paper" key={replayKey}>
+      <div className="wedding-paper-texture" />
+      <FloralGardenFrame />
+      <div className="wedding-content">
+        <div key={scene.id} className={`wedding-scene ${className}`}>
+          <SoftFloralGardenScene scene={scene} onOpenRsvp={onOpenRsvp} />
+        </div>
+      </div>
     </div>
   );
 }
 
-function PrincipalNames({
-  event,
-  guest,
+function SoftFloralGardenScene({
+  scene,
+  onOpenRsvp,
 }: {
-  event: WeddingEventData;
-  guest: WeddingGuestData;
+  scene: WeddingScene;
+  onOpenRsvp: () => void;
 }) {
-  const lines = getWeddingPrincipalLines(
-    event,
-    guest.invitationVariantOverride,
+  if (scene.id === "opening")
+    return (
+      <>
+        <span className="wedding-ornament">۞</span>
+        {scene.wording && <p>{scene.wording}</p>}
+      </>
+    );
+  if (scene.id === "hosts")
+    return (
+      <>
+        {scene.hostNames && (
+          <p className="wedding-host-name">{scene.hostNames}</p>
+        )}
+        {scene.invitationWording && <p>{scene.invitationWording}</p>}
+      </>
+    );
+  if (scene.id === "names")
+    return <PrincipalNames lines={scene.lines} fallback={scene.fallback} />;
+  if (scene.id === "details") {
+    const hasDate =
+      scene.startTime ||
+      scene.eventDay ||
+      scene.gregorianDate ||
+      scene.hijriDate;
+    return (
+      <>
+        {hasDate && <div className="wedding-date-rule" />}
+        {hasDate && (
+          <div className="wedding-date-grid">
+            {scene.startTime && <span>{scene.startTime}</span>}
+            {(scene.eventDay || scene.gregorianDate) && (
+              <strong>
+                {scene.eventDay && <small>{scene.eventDay}</small>}
+                {scene.gregorianDate}
+              </strong>
+            )}
+            {scene.hijriDate && <span dir="rtl">{scene.hijriDate}</span>}
+          </div>
+        )}
+        {scene.venue && <p className="wedding-venue">{scene.venue}</p>}
+        {scene.city && <p className="wedding-city">{scene.city}</p>}
+        {(scene.receptionTime || scene.dinnerTime) && (
+          <div className="wedding-schedule">
+            {scene.receptionTime && (
+              <span>
+                الاستقبال <b>{scene.receptionTime}</b>
+              </span>
+            )}
+            {scene.dinnerTime && (
+              <span>
+                العشاء <b>{scene.dinnerTime}</b>
+              </span>
+            )}
+          </div>
+        )}
+        {scene.mapUrl && (
+          <a
+            className="wedding-map"
+            href={scene.mapUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <MapPin size={13} /> عرض الموقع
+          </a>
+        )}
+      </>
+    );
+  }
+  return (
+    <>
+      <p className="wedding-rsvp-guest">دعوة خاصة إلى {scene.guestName}</p>
+      <button
+        className="wedding-rsvp-button"
+        onClick={onOpenRsvp}
+        data-testid="button-wedding-rsvp"
+      >
+        <span>{scene.status === "pending" ? "تأكيد الحضور" : "تعديل الرد"}</span>
+        {scene.deadline && <small>{scene.deadline}</small>}
+      </button>
+    </>
   );
+}
+
+function PrincipalNames({
+  lines,
+  fallback,
+}: {
+  lines: string[];
+  fallback?: string;
+}) {
   if (!lines.length)
-    return <p className="wedding-custom-copy">{event.invitationWording}</p>;
+    return fallback ? <p className="wedding-custom-copy">{fallback}</p> : null;
   const longest = Math.max(...lines.map((line) => line.length));
   const lengthClass =
     longest > 24 ? "is-very-long" : longest > 14 ? "is-long" : "";
