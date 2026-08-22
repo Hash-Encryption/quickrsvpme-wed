@@ -111,9 +111,68 @@
   text-align: center;
 }
 
+.wedding-motion-layer {
+  width: 100%;
+  transform-origin: center;
+}
+.wedding-layout-vertical--top {
+  align-self: start;
+}
+.wedding-layout-vertical--center {
+  align-self: center;
+}
+.wedding-layout-vertical--bottom {
+  align-self: end;
+}
+.wedding-layout-horizontal--start {
+  justify-self: start;
+  text-align: start;
+}
+.wedding-layout-horizontal--center {
+  justify-self: center;
+  text-align: center;
+}
+.wedding-layout-horizontal--end {
+  justify-self: end;
+  text-align: end;
+}
+.wedding-layout-width--compact {
+  max-width: 76%;
+}
+.wedding-layout-width--medium {
+  max-width: 88%;
+}
+.wedding-layout-width--wide {
+  max-width: 100%;
+}
+
 .wedding-scene {
   width: 100%;
-  animation: wedding-scene-arrive 0.45s ease-out both;
+}
+
+.wedding-layout--editorial-offset .wedding-principals,
+.wedding-layout--editorial-offset .wedding-name-stack {
+  place-items: start;
+  text-align: start;
+}
+.wedding-layout--editorial-offset .wedding-name-stack i {
+  position: relative;
+  margin-block: 5px;
+}
+.wedding-layout--editorial-offset .wedding-date-rule {
+  margin-inline: 0;
+}
+.wedding-layout--editorial-offset .wedding-schedule {
+  justify-content: flex-start;
+}
+.wedding-layout--cinematic-focus .wedding-principals .wedding-name-stack span {
+  font-size: clamp(42px, 8dvh, 72px);
+}
+.wedding-layout--cinematic-focus .wedding-principals .wedding-name-stack.is-long span {
+  font-size: clamp(30px, 5.4dvh, 49px);
+}
+.wedding-layout--cinematic-focus .wedding-principals .wedding-name-stack.is-very-long span {
+  font-size: clamp(21px, 3.7dvh, 34px);
 }
 
 .wedding-opening {
@@ -861,15 +920,139 @@
     opacity: 1;
   }
 }
-@keyframes wedding-scene-arrive {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.wedding-presentation-section + .wedding-presentation-section {
+  margin-top: 22px;
+}
+.wedding-presentation-section > b {
+  display: block;
+  margin-bottom: 9px;
+  color: #68615a;
+  font-size: 10px;
+  font-weight: 700;
+}
+.wedding-preset-grid,
+.wedding-motion-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+.wedding-preset-grid > button,
+.wedding-motion-options > button {
+  position: relative;
+  display: grid;
+  min-height: 142px;
+  align-content: start;
+  gap: 10px;
+  border: 1px solid #ddd3c6;
+  border-radius: 17px;
+  background: #fffdf8;
+  padding: 10px;
+  color: #4f4a45;
+  text-align: start;
+}
+.wedding-motion-options > button {
+  min-height: 116px;
+  grid-template-columns: 35px 1fr;
+  align-items: start;
+}
+.wedding-preset-grid > button.is-selected,
+.wedding-motion-options > button.is-selected {
+  border-color: #71808d;
+  box-shadow: 0 0 0 3px rgb(113 128 141 / 0.11);
+}
+.wedding-preset-grid strong,
+.wedding-preset-grid small,
+.wedding-preset-grid em,
+.wedding-motion-options strong,
+.wedding-motion-options small,
+.wedding-motion-options em {
+  display: block;
+}
+.wedding-preset-grid strong,
+.wedding-motion-options strong {
+  color: #53616b;
+  font-family: "IBM Plex Sans Arabic", sans-serif;
+  font-size: 11px;
+}
+.wedding-preset-grid small,
+.wedding-motion-options small {
+  margin-top: 2px;
+  color: #9a7658;
+  font-size: 8px;
+}
+.wedding-preset-grid em,
+.wedding-motion-options em {
+  margin-top: 5px;
+  color: #817970;
+  font-size: 8px;
+  font-style: normal;
+  line-height: 1.55;
+}
+.wedding-preset-grid > button > svg,
+.wedding-motion-options > button > svg {
+  position: absolute;
+  top: 9px;
+  left: 9px;
+  width: 14px;
+  color: #71808d;
+}
+.wedding-layout-diagram {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 48px;
+  overflow: hidden;
+  border: 1px solid #e3d8cb;
+  border-radius: 10px;
+  background: #f4eee5;
+}
+.wedding-layout-diagram i {
+  position: absolute;
+  right: 50%;
+  width: 40%;
+  height: 3px;
+  border-radius: 9px;
+  background: #71808d;
+  transform: translateX(50%);
+}
+.wedding-layout-diagram i:nth-child(1) { top: 15px; }
+.wedding-layout-diagram i:nth-child(2) { top: 23px; width: 58%; }
+.wedding-layout-diagram i:nth-child(3) { top: 31px; width: 31%; }
+.wedding-layout-diagram--editorial-offset i {
+  right: 12px;
+  transform: none;
+}
+.wedding-layout-diagram--editorial-offset i:nth-child(1) { top: 10px; }
+.wedding-layout-diagram--editorial-offset i:nth-child(2) { top: 20px; width: 72%; }
+.wedding-layout-diagram--editorial-offset i:nth-child(3) { top: 35px; }
+.wedding-layout-diagram--cinematic-focus i:nth-child(1) { top: 7px; width: 24%; }
+.wedding-layout-diagram--cinematic-focus i:nth-child(2) { top: 20px; width: 70%; height: 5px; }
+.wedding-layout-diagram--cinematic-focus i:nth-child(3) { top: 39px; width: 42%; }
+.wedding-motion-mark {
+  position: relative;
+  display: block;
+  width: 34px;
+  height: 34px;
+  border: 1px solid #ded4c8;
+  border-radius: 50%;
+  background: #f4eee5;
+}
+.wedding-motion-mark i {
+  position: absolute;
+  inset: 9px;
+  border-radius: 50%;
+  background: #71808d;
+  box-shadow: 0 0 0 4px rgb(113 128 141 / 0.12);
+}
+.wedding-motion-mark--cinematic-rise i {
+  border-radius: 3px;
+  transform: translateY(-3px);
+  box-shadow: 0 6px 0 rgb(113 128 141 / 0.14);
+}
+.wedding-motion-mark--editorial-glide i {
+  border-radius: 3px;
+  transform: translateX(-4px);
+  box-shadow: 6px 0 0 rgb(113 128 141 / 0.14);
 }
 @keyframes wedding-draw-arch {
   to {
@@ -925,6 +1108,14 @@
   }
   .wedding-fields {
     grid-template-columns: 1fr;
+  }
+  .wedding-preset-grid,
+  .wedding-motion-options {
+    grid-template-columns: 1fr;
+  }
+  .wedding-preset-grid > button,
+  .wedding-motion-options > button {
+    min-height: 0;
   }
   .wedding-fields label.is-wide {
     grid-column: auto;
@@ -999,9 +1190,6 @@
   .wedding-arch,
   .wedding-botanical--top,
   .wedding-botanical--bottom {
-    animation: none;
-  }
-  .wedding-scene {
     animation: none;
   }
   .wedding-progress button::after {

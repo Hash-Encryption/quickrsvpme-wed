@@ -18,8 +18,149 @@ import {
   resolveWeddingScenes,
   weddingSceneIds,
 } from "./scene-engine.ts";
+import {
+  WeddingLayoutPresets,
+  WeddingMotionPresets,
+  resolveWeddingMotionTarget,
+} from "./presentation.ts";
 
 const timings = WeddingTemplateRegistry["soft-floral-garden"].scenes;
+
+test("starter presentation registries contain exactly three presets each", () => {
+  assert.deepEqual(Object.keys(WeddingLayoutPresets), [
+    "centered-elegance",
+    "editorial-offset",
+    "cinematic-focus",
+  ]);
+  assert.deepEqual(Object.keys(WeddingMotionPresets), [
+    "soft-dissolve",
+    "cinematic-rise",
+    "editorial-glide",
+  ]);
+});
+
+test("every layout defines semantic rules for all five wedding scenes", () => {
+  for (const layout of Object.values(WeddingLayoutPresets)) {
+    assert.deepEqual(Object.keys(layout.scenes), [...weddingSceneIds]);
+    for (const sceneId of weddingSceneIds) {
+      assert.ok(["top", "center", "bottom"].includes(layout.scenes[sceneId].vertical));
+      assert.ok(["start", "center", "end"].includes(layout.scenes[sceneId].horizontal));
+      assert.ok(["compact", "medium", "wide"].includes(layout.scenes[sceneId].width));
+    }
+  }
+});
+
+test("template presentation defaults and supported IDs reference real presets", () => {
+  for (const template of Object.values(WeddingTemplateRegistry)) {
+    assert.ok(WeddingLayoutPresets[template.presentation.defaultLayoutPresetId]);
+    assert.ok(WeddingMotionPresets[template.presentation.defaultMotionPresetId]);
+    for (const id of template.presentation.supportedLayoutPresetIds) {
+      assert.ok(WeddingLayoutPresets[id]);
+    }
+    for (const id of template.presentation.supportedMotionPresetIds) {
+      assert.ok(WeddingMotionPresets[id]);
+    }
+  }
+});
+
+test("Phase 2 events without presentation data migrate to template defaults", () => {
+  const { presentation: _presentation, ...phase2Event } = defaultWeddingEvent;
+  assert.deepEqual(mergeWeddingEvent(phase2Event).presentation, {
+    layoutPresetId: "centered-elegance",
+    motionPresetId: "soft-dissolve",
+  });
+});
+
+test("an invalid persisted layout ID resolves safely", () => {
+  const invalid = mergeWeddingEvent({
+    presentation: {
+      layoutPresetId: "missing-layout",
+      motionPresetId: "editorial-glide",
+    } as unknown as typeof defaultWeddingEvent.presentation,
+  });
+  assert.deepEqual(invalid.presentation, {
+    layoutPresetId: "centered-elegance",
+    motionPresetId: "editorial-glide",
+  });
+});
+
+test("an invalid persisted motion ID resolves safely", () => {
+  const invalid = mergeWeddingEvent({
+    presentation: {
+      layoutPresetId: "cinematic-focus",
+      motionPresetId: "missing-motion",
+    } as unknown as typeof defaultWeddingEvent.presentation,
+  });
+  assert.deepEqual(invalid.presentation, {
+    layoutPresetId: "cinematic-focus",
+    motionPresetId: "soft-dissolve",
+  });
+});
+
+test("layout selection does not change resolved wedding content", () => {
+  const baseline = resolveWeddingScenes(defaultWeddingEvent, defaultWeddingGuest);
+  for (const layoutPresetId of Object.keys(WeddingLayoutPresets)) {
+    const event = mergeWeddingEvent({
+      presentation: {
+        ...defaultWeddingEvent.presentation,
+        layoutPresetId: layoutPresetId as keyof typeof WeddingLayoutPresets,
+      },
+    });
+    assert.deepEqual(resolveWeddingScenes(event, defaultWeddingGuest), baseline);
+  }
+});
+
+test("motion selection does not change resolved wedding content", () => {
+  const baseline = resolveWeddingScenes(defaultWeddingEvent, defaultWeddingGuest);
+  for (const motionPresetId of Object.keys(WeddingMotionPresets)) {
+    const event = mergeWeddingEvent({
+      presentation: {
+        ...defaultWeddingEvent.presentation,
+        motionPresetId: motionPresetId as keyof typeof WeddingMotionPresets,
+      },
+    });
+    assert.deepEqual(resolveWeddingScenes(event, defaultWeddingGuest), baseline);
+  }
+});
+
+test("presentation selection never changes canonical scene timing", () => {
+  const baseline = timings.map(({ id, startsAt }) => ({ id, startsAt }));
+  for (const layoutPresetId of Object.keys(WeddingLayoutPresets)) {
+    for (const motionPresetId of Object.keys(WeddingMotionPresets)) {
+      const event = mergeWeddingEvent({
+        presentation: {
+          layoutPresetId: layoutPresetId as keyof typeof WeddingLayoutPresets,
+          motionPresetId: motionPresetId as keyof typeof WeddingMotionPresets,
+        },
+      });
+      assert.deepEqual(
+        WeddingTemplateRegistry[event.templateId].scenes,
+        baseline,
+      );
+    }
+  }
+});
+
+test("reduced motion removes translation, scale, and transition distance", () => {
+  for (const preset of Object.values(WeddingMotionPresets)) {
+    for (const state of [preset.enter, preset.active, preset.exit]) {
+      assert.deepEqual(resolveWeddingMotionTarget(state, "rtl", true), {
+        opacity: 1,
+        x: 0,
+        y: 0,
+        scale: 1,
+      });
+    }
+  }
+  assert.equal(
+    resolveWeddingMotionTarget(
+      WeddingMotionPresets["editorial-glide"].enter,
+      "ltr",
+      false,
+    ).x,
+    -22,
+  );
+});
 
 test("wedding data resolves into exactly five ordered scenes", () => {
   const event = mergeWeddingEvent({

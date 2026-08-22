@@ -22,6 +22,14 @@ import {
   type WeddingRsvp,
   type WeddingVariant,
 } from "./model";
+import {
+  WeddingLayoutPresets,
+  WeddingMotionPresets,
+  resolveWeddingPresentation,
+  type WeddingLayoutPreset,
+  type WeddingMotionPreset,
+} from "./presentation";
+import { WeddingMotionLayer } from "./WeddingMotionLayer";
 import { WeddingSceneEngine } from "./WeddingSceneEngine";
 import { resolveWeddingScenes, type WeddingScene } from "./scene-engine";
 import "./wedding.css";
@@ -54,6 +62,12 @@ export function WeddingInvitationRenderer({
   const template =
     WeddingTemplateRegistry[event.templateId] ??
     WeddingTemplateRegistry["soft-floral-garden"];
+  const presentation = resolveWeddingPresentation(
+    event.presentation,
+    template.presentation,
+  );
+  const layoutPreset = WeddingLayoutPresets[presentation.layoutPresetId];
+  const motionPreset = WeddingMotionPresets[presentation.motionPresetId];
   const [drawerOpen, setDrawerOpen] = useState(false);
   const theme = floralThemes[event.style.floralTheme];
   const scenes = resolveWeddingScenes(event, guest, rsvpStatus);
@@ -80,6 +94,8 @@ export function WeddingInvitationRenderer({
         <SoftFloralGardenRenderer
           scene={scene}
           replayKey={replayKey}
+          layoutPreset={layoutPreset}
+          motionPreset={motionPreset}
           onOpenRsvp={() => setDrawerOpen(true)}
         />
       )}
@@ -105,10 +121,14 @@ export function WeddingInvitationRenderer({
 function SoftFloralGardenRenderer({
   scene,
   replayKey,
+  layoutPreset,
+  motionPreset,
   onOpenRsvp,
 }: {
   scene: WeddingScene;
   replayKey: number;
+  layoutPreset: WeddingLayoutPreset;
+  motionPreset: WeddingMotionPreset;
   onOpenRsvp: () => void;
 }) {
   const className =
@@ -118,13 +138,24 @@ function SoftFloralGardenRenderer({
         ? "wedding-rsvp-reveal"
         : `wedding-${scene.id}`;
   return (
-    <div className="wedding-paper" key={replayKey}>
+    <div
+      className={`wedding-paper wedding-layout--${layoutPreset.id}`}
+      key={replayKey}
+      data-layout-preset={layoutPreset.id}
+    >
       <div className="wedding-paper-texture" />
       <FloralGardenFrame />
       <div className="wedding-content">
-        <div key={scene.id} className={`wedding-scene ${className}`}>
-          <SoftFloralGardenScene scene={scene} onOpenRsvp={onOpenRsvp} />
-        </div>
+        <WeddingMotionLayer
+          sceneId={scene.id}
+          replayKey={replayKey}
+          layout={layoutPreset}
+          motionPreset={motionPreset}
+        >
+          <div className={`wedding-scene ${className}`}>
+            <SoftFloralGardenScene scene={scene} onOpenRsvp={onOpenRsvp} />
+          </div>
+        </WeddingMotionLayer>
       </div>
     </div>
   );
@@ -522,6 +553,7 @@ const builderSteps = [
   { id: "template", label: "القالب" },
   { id: "details", label: "التفاصيل" },
   { id: "style", label: "النمط" },
+  { id: "presentation", label: "التخطيط والحركة" },
   { id: "preview", label: "المعاينة" },
 ] as const;
 
@@ -537,6 +569,9 @@ export function WeddingStudio({
     onChange({ ...event, ...patch });
   const updateStyle = (patch: Partial<WeddingEventData["style"]>) =>
     update({ style: { ...event.style, ...patch } });
+  const updatePresentation = (
+    patch: Partial<WeddingEventData["presentation"]>,
+  ) => update({ presentation: { ...event.presentation, ...patch } });
   return (
     <div className="wedding-studio" dir="rtl">
       <nav className="wedding-stepper" aria-label="خطوات إنشاء دعوة الزفاف">
@@ -551,7 +586,7 @@ export function WeddingStudio({
             {item.label}
           </button>
         ))}
-        <span className="wedding-stepper-tail">6 الضيوف · 7 الإرسال</span>
+        <span className="wedding-stepper-tail">7 الضيوف · 8 الإرسال</span>
       </nav>
       <div className="wedding-studio-grid">
         <div className="wedding-editor-panel">
@@ -566,6 +601,12 @@ export function WeddingStudio({
               event={event}
               update={update}
               updateStyle={updateStyle}
+            />
+          )}
+          {step.id === "presentation" && (
+            <PresentationStep
+              event={event}
+              updatePresentation={updatePresentation}
             />
           )}
           {step.id === "preview" && (
@@ -604,6 +645,7 @@ export function WeddingStudio({
             <b>معاينة الضيف</b>
           </div>
           <WeddingInvitationRenderer
+            key={event.presentation.motionPresetId}
             event={event}
             guest={guest}
             rsvpStatus={rsvpStatus}
@@ -628,7 +670,7 @@ function TemplateStep({
       <StepHeading
         kicker="الخطوة 2"
         title="اختاري القالب"
-        description="القالب يثبت التكوين والحركة؛ وتبقى معلومات كل مناسبة ديناميكية بالكامل."
+        description="القالب يحدد التصميم البصري والزخارف؛ أما التخطيط والحركة فيُختاران بشكل مستقل."
       />
       <div className="wedding-template-list">
         {Object.values(WeddingTemplateRegistry).map((template) => (
@@ -639,6 +681,10 @@ function TemplateStep({
               update({
                 templateId: template.id,
                 style: { ...template.defaults },
+                presentation: {
+                  layoutPresetId: template.presentation.defaultLayoutPresetId,
+                  motionPresetId: template.presentation.defaultMotionPresetId,
+                },
               })
             }
           >
@@ -810,7 +856,7 @@ function StyleStep({
       <StepHeading
         kicker="الخطوة 4"
         title="نمط مضبوط بعناية"
-        description="خيارات محددة تحافظ على التباين والتكوين في كل شاشة."
+        description="ألوان وخطوط وزخارف تضبط الهوية البصرية من دون فرض التكوين أو الحركة."
       />
       <div className="wedding-style-section">
         <b>الخلفية</b>
@@ -889,6 +935,83 @@ function StyleStep({
           dir="ltr"
           wide
         />
+      </div>
+    </div>
+  );
+}
+
+function PresentationStep({
+  event,
+  updatePresentation,
+}: {
+  event: WeddingEventData;
+  updatePresentation: (
+    patch: Partial<WeddingEventData["presentation"]>,
+  ) => void;
+}) {
+  const template =
+    WeddingTemplateRegistry[event.templateId] ??
+    WeddingTemplateRegistry["soft-floral-garden"];
+  return (
+    <div>
+      <StepHeading
+        kicker="الخطوة 5"
+        title="التخطيط والحركة"
+        description="اختاري موضع المحتوى وطريقة دخوله بشكل مستقل عن تصميم القالب."
+      />
+      <div className="wedding-presentation-section">
+        <b>التخطيط</b>
+        <div className="wedding-preset-grid">
+          {template.presentation.supportedLayoutPresetIds.map((id) => {
+            const preset = WeddingLayoutPresets[id];
+            const selected = event.presentation.layoutPresetId === id;
+            return (
+              <button
+                key={id}
+                className={selected ? "is-selected" : ""}
+                onClick={() => updatePresentation({ layoutPresetId: id })}
+                aria-pressed={selected}
+              >
+                <span className={`wedding-layout-diagram wedding-layout-diagram--${id}`} aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                <span>
+                  <strong>{preset.nameAr}</strong>
+                  <small>{preset.name}</small>
+                  <em>{preset.descriptionAr}</em>
+                </span>
+                {selected && <Check aria-hidden="true" />}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="wedding-presentation-section">
+        <b>الحركة</b>
+        <div className="wedding-motion-options">
+          {template.presentation.supportedMotionPresetIds.map((id) => {
+            const preset = WeddingMotionPresets[id];
+            const selected = event.presentation.motionPresetId === id;
+            return (
+              <button
+                key={id}
+                className={selected ? "is-selected" : ""}
+                onClick={() => updatePresentation({ motionPresetId: id })}
+                aria-pressed={selected}
+              >
+                <span className={`wedding-motion-mark wedding-motion-mark--${id}`} aria-hidden="true"><i /></span>
+                <span>
+                  <strong>{preset.nameAr}</strong>
+                  <small>{preset.name}</small>
+                  <em>{preset.descriptionAr}</em>
+                </span>
+                {selected && <Check aria-hidden="true" />}
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

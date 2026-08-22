@@ -1,3 +1,10 @@
+import {
+  resolveWeddingPresentation,
+  type WeddingPresentation,
+  type WeddingSceneId,
+  type WeddingTemplatePresentation,
+} from "./presentation.ts";
+
 export type EventMode = "standard" | "wedding";
 export type WeddingVariant = "women" | "men" | "both" | "family" | "custom";
 export type FloralTheme =
@@ -36,6 +43,7 @@ export type WeddingEventData = {
   invitationVariant: WeddingVariant;
   customWording: string;
   style: WeddingStyle;
+  presentation: WeddingPresentation;
 };
 
 export type WeddingGuestData = {
@@ -60,7 +68,7 @@ export type WeddingTemplateDefinition = {
   nameAr: string;
   renderer: "soft-floral-garden";
   aspectRatio: "9:16";
-  scenes: ReadonlyArray<{ id: string; startsAt: number }>;
+  scenes: ReadonlyArray<{ id: WeddingSceneId; startsAt: number }>;
   allowedCustomization: {
     backgrounds: ReadonlyArray<string>;
     accents: ReadonlyArray<string>;
@@ -69,6 +77,7 @@ export type WeddingTemplateDefinition = {
     media: ReadonlyArray<"static" | "video" | "audio">;
   };
   defaults: WeddingStyle;
+  presentation: WeddingTemplatePresentation;
 };
 
 export const weddingFonts: Record<ArabicFont, { name: string; css: string }> = {
@@ -160,6 +169,20 @@ export const WeddingTemplateRegistry: Record<
       displayFont: "amiri",
       bodyFont: "ibm-plex-arabic",
     },
+    presentation: {
+      defaultLayoutPresetId: "centered-elegance",
+      defaultMotionPresetId: "soft-dissolve",
+      supportedLayoutPresetIds: [
+        "centered-elegance",
+        "editorial-offset",
+        "cinematic-focus",
+      ],
+      supportedMotionPresetIds: [
+        "soft-dissolve",
+        "cinematic-rise",
+        "editorial-glide",
+      ],
+    },
   },
 };
 
@@ -187,6 +210,10 @@ export const defaultWeddingEvent: WeddingEventData = {
   invitationVariant: "both",
   customWording: "",
   style: WeddingTemplateRegistry["soft-floral-garden"].defaults,
+  presentation: {
+    layoutPresetId: "centered-elegance",
+    motionPresetId: "soft-dissolve",
+  },
 };
 
 export const defaultWeddingGuest: WeddingGuestData = {
@@ -201,10 +228,17 @@ export const defaultWeddingGuest: WeddingGuestData = {
 export function mergeWeddingEvent(
   value?: Partial<WeddingEventData>,
 ): WeddingEventData {
+  const template =
+    WeddingTemplateRegistry[value?.templateId ?? defaultWeddingEvent.templateId] ??
+    WeddingTemplateRegistry[defaultWeddingEvent.templateId];
   return {
     ...defaultWeddingEvent,
     ...value,
     style: { ...defaultWeddingEvent.style, ...value?.style },
+    presentation: resolveWeddingPresentation(
+      value?.presentation,
+      template.presentation,
+    ),
   };
 }
 

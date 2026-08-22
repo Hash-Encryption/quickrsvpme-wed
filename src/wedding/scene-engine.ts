@@ -4,14 +4,7 @@ import {
   type WeddingGuestData,
   type WeddingTemplateDefinition,
 } from "./model.ts";
-
-export const weddingSceneIds = [
-  "opening",
-  "hosts",
-  "names",
-  "details",
-  "rsvp",
-] as const;
+export { weddingSceneIds } from "./presentation.ts";
 
 export type WeddingRsvpStatus = "pending" | "accepted" | "declined";
 export type WeddingSceneTiming = WeddingTemplateDefinition["scenes"][number];
