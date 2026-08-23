@@ -17,8 +17,6 @@ export function WeddingVisualLayer({
           alt=""
           draggable={false}
         />
-        <div className="wedding-uploaded-scrim" />
-        <div className="wedding-uploaded-edge" />
       </div>
     );
   }

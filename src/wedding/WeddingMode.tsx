@@ -81,11 +81,11 @@ export function WeddingInvitationRenderer({
   const theme = floralThemes[event.style.floralTheme] ?? floralThemes["neutral-ivory"];
   const scenes = resolveWeddingScenes(event, guest, rsvpStatus);
   const uploaded = event.visual.source === "uploaded-background";
-  const darkControls = uploaded || template.id === "midnight-gold";
+  const darkControls = template.id === "midnight-gold";
 
   const style: WeddingStyleProperties = {
     "--wedding-bg": event.style.backgroundColor,
-    "--wedding-accent": uploaded ? "#FFF3D5" : event.style.accentColor,
+    "--wedding-accent": uploaded ? "#263A31" : event.style.accentColor,
     "--wedding-petal": theme.petal,
     "--wedding-petal-soft": theme.petalSoft,
     "--wedding-leaf": theme.leaf,
