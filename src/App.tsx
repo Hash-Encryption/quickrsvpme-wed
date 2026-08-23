@@ -9,15 +9,14 @@ import {
 } from 'lucide-react';
 import { Link, Route, Switch, Router as WouterRouter, useLocation, useParams } from 'wouter';
 import { WeddingInvitationRenderer, WeddingStudio } from '@/wedding/WeddingMode';
+import { WeddingWorkspaceProvider, useWeddingWorkspace } from '@/wedding/WeddingWorkspaceProvider';
 import {
   defaultWeddingEvent,
   defaultWeddingGuest,
   getWhatsAppShareUrl,
   isValidGuestToken,
-  mergeWeddingEvent,
   resolveInvitationTitle,
   type EventMode,
-  type WeddingEventData,
   type WeddingGuestData,
   type WeddingRsvp,
 } from '@/wedding/model';
@@ -42,7 +41,6 @@ type EngineState = {
   checkedIn: boolean;
   blocks: StudioBlock[];
   mode: EventMode;
-  weddingEvent: WeddingEventData;
   weddingGuest: WeddingGuestData;
   weddingResponse: { guestCount: number; message: string };
 };
@@ -58,7 +56,7 @@ const initialBlocks: StudioBlock[] = [
 
 const defaultState: EngineState = {
   rsvp: 'pending', plusOnes: 0, song: '', meal: '', checkedIn: false, blocks: initialBlocks,
-  mode: 'standard', weddingEvent: defaultWeddingEvent, weddingGuest: defaultWeddingGuest,
+  mode: 'standard', weddingGuest: defaultWeddingGuest,
   weddingResponse: { guestCount: 1, message: '' },
 };
 
@@ -73,23 +71,23 @@ type EngineContextValue = {
   updateBlock: (key: BlockKey, patch: Partial<BlockContent>) => void;
   setCheckedIn: () => void;
   setMode: (mode: EventMode) => void;
-  setWeddingEvent: (event: WeddingEventData) => void;
   submitWeddingRsvp: (response: WeddingRsvp) => void;
 };
 const EngineContext = createContext<EngineContextValue | null>(null);
 
 function EngineProvider({ children }: { children: ReactNode }) {
+  const { preserveLegacyWedding } = useWeddingWorkspace();
   const [state, setState] = useState<EngineState>(defaultState);
   const [ready, setReady] = useState(false);
   useEffect(() => {
     const raw = localStorage.getItem('luxury-rsvp-engine');
     if (raw) {
       try {
-        const saved = JSON.parse(raw) as Partial<EngineState>;
+        const saved = JSON.parse(raw) as Partial<EngineState> & { weddingEvent?: unknown };
+        const { weddingEvent: _legacyWedding, ...genericSaved } = saved;
         setState({
           ...defaultState,
-          ...saved,
-          weddingEvent: mergeWeddingEvent(saved.weddingEvent),
+          ...genericSaved,
           weddingGuest: { ...defaultWeddingGuest, ...saved.weddingGuest },
           weddingResponse: { ...defaultState.weddingResponse, ...saved.weddingResponse },
         });
@@ -99,10 +97,16 @@ function EngineProvider({ children }: { children: ReactNode }) {
   }, []);
   useEffect(() => {
     if (ready) {
-      try { localStorage.setItem('luxury-rsvp-engine', JSON.stringify(state)); }
+      try {
+        const existing = JSON.parse(localStorage.getItem('luxury-rsvp-engine') ?? '{}') as { weddingEvent?: unknown };
+        const persisted = preserveLegacyWedding && existing.weddingEvent
+          ? { ...state, weddingEvent: existing.weddingEvent }
+          : state;
+        localStorage.setItem('luxury-rsvp-engine', JSON.stringify(persisted));
+      }
       catch { /* The bounded upload remains usable for this session if storage is unavailable. */ }
     }
-  }, [state, ready]);
+  }, [state, ready, preserveLegacyWedding]);
   const value = useMemo(() => ({
     state, ready,
     setRsvp: (rsvp: RSVPStatus) => setState((s) => ({ ...s, rsvp })),
@@ -113,7 +117,6 @@ function EngineProvider({ children }: { children: ReactNode }) {
     updateBlock: (key: BlockKey, patch: Partial<BlockContent>) => setState((s) => ({ ...s, blocks: s.blocks.map((b) => b.key === key ? { ...b, content: { ...b.content, ...patch } } : b) })),
     setCheckedIn: () => setState((s) => ({ ...s, checkedIn: true })),
     setMode: (mode: EventMode) => setState((s) => ({ ...s, mode })),
-    setWeddingEvent: (weddingEvent: WeddingEventData) => setState((s) => ({ ...s, weddingEvent })),
     submitWeddingRsvp: (response: WeddingRsvp) => setState((s) => ({
       ...s,
       rsvp: response.status,
@@ -179,6 +182,7 @@ const blockIcons: Record<BlockKey, IconType> = { catering: Utensils, dress: Shir
 
 function GuestPage() {
   const { state, ready, setRsvp, setSong, setMeal, submitWeddingRsvp } = useEngine();
+  const { activeProject } = useWeddingWorkspace();
   const { token } = useParams<{ token: string }>();
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const validToken = isValidGuestToken(token, state.weddingGuest.token);
@@ -186,7 +190,7 @@ function GuestPage() {
   if (!ready) return <LoadingPage />;
   if (!validToken) return <TokenError />;
   if (state.mode === 'wedding') return <WeddingInvitationRenderer
-    event={state.weddingEvent}
+    event={activeProject.event}
     guest={{ ...state.weddingGuest, token: token ?? state.weddingGuest.token }}
     rsvpStatus={state.rsvp}
     onSubmit={submitWeddingRsvp}
@@ -510,8 +514,68 @@ function PartyStudioPage() {
   );
 }
 
+function WeddingWorkspaceControls() {
+  const workspace = useWeddingWorkspace();
+  const [selectedDesignId, setSelectedDesignId] = useState('');
+  const [draftName, setDraftName] = useState('');
+  const [confirmProjectDelete, setConfirmProjectDelete] = useState(false);
+  const [confirmDesignDeleteId, setConfirmDesignDeleteId] = useState('');
+  const run = (operation: Promise<void>) => void operation.catch(() => undefined);
+  const selectedDesign = workspace.designs.find((design) => design.id === selectedDesignId);
+  const statusLabel = workspace.saveStatus === 'saving' ? 'جارٍ الحفظ…' : workspace.saveStatus === 'error' ? 'خطأ في الحفظ' : 'تم الحفظ';
+  const control = 'focus-ring min-h-11 rounded-full border border-[#D4AF37]/55 bg-[#FFFDF9]/70 px-4 py-2 text-[10px] font-bold uppercase tracking-[.08em] text-[#0A2E23] transition hover:bg-[#FFFDF9] disabled:cursor-not-allowed disabled:opacity-40';
+
+  return <section className="my-8 rounded-[28px] border border-[#D4AF37]/40 bg-[#FFFDF9]/55 p-5 shadow-sm" dir="rtl" aria-label="مساحة عمل الزفاف">
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <div className="grid min-w-0 flex-1 gap-3 md:grid-cols-2">
+        <label className="block"><span className="mb-2 block text-[10px] font-bold uppercase tracking-[.12em] text-[#2D2421]/55">اسم العملية</span><input value={draftName} onChange={(event) => setDraftName(event.target.value)} placeholder="اسم الزفاف أو التصميم" className="focus-ring min-h-11 w-full rounded-2xl border border-[#D4AF37]/55 bg-[#FFFDF9] px-4 text-sm text-[#0A2E23]" /></label>
+        <div>
+        <label className="mb-2 block text-[10px] font-bold uppercase tracking-[.12em] text-[#2D2421]/55" htmlFor="wedding-project">الزفاف الحالي</label>
+        <select id="wedding-project" value={workspace.activeProject.id} onChange={(event) => run(workspace.openProject(event.target.value))} className="focus-ring min-h-11 w-full rounded-2xl border border-[#D4AF37]/55 bg-[#FFFDF9] px-4 text-sm text-[#0A2E23]">
+          {workspace.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+        </select>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button className={control} onClick={() => run(workspace.createProject(draftName || 'زفاف جديد'))}>إنشاء زفاف</button>
+        <button className={control} onClick={() => run(workspace.saveNow())}>احفظ الآن</button>
+        <button className={control} onClick={() => run(workspace.renameProject(draftName || workspace.activeProject.name))}>إعادة تسمية</button>
+        <button className={control} onClick={() => run(workspace.duplicateProject(draftName || `${workspace.activeProject.name} — نسخة`))}>تكرار</button>
+        <button className={control} onClick={() => confirmProjectDelete ? (run(workspace.deleteProject()), setConfirmProjectDelete(false)) : setConfirmProjectDelete(true)}>{confirmProjectDelete ? 'تأكيد الحذف' : 'حذف'}</button>
+        {confirmProjectDelete && <button className={control} onClick={() => setConfirmProjectDelete(false)}>إلغاء</button>}
+      </div>
+    </div>
+    <div className="mt-4 flex items-center gap-2 text-[11px] text-[#2D2421]/65" role="status"><span className={`h-2 w-2 rounded-full ${workspace.saveStatus === 'error' ? 'bg-[#b4534b]' : workspace.saveStatus === 'saving' ? 'bg-[#D4AF37]' : 'bg-[#0A2E23]'}`} />{statusLabel}</div>
+    {workspace.storageError && <p className="mt-2 rounded-xl bg-[#b4534b]/10 px-3 py-2 text-xs text-[#8c302b]" role="alert">{workspace.storageError}</p>}
+    <div className="mt-5 border-t border-[#D4AF37]/30 pt-5">
+      <p className="mb-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#2D2421]/55">التصاميم المحفوظة — المظهر فقط</p>
+      <div className="flex flex-col gap-2 md:flex-row">
+        <select value={selectedDesignId} onChange={(event) => setSelectedDesignId(event.target.value)} className="focus-ring min-h-11 min-w-0 flex-1 rounded-2xl border border-[#D4AF37]/55 bg-[#FFFDF9] px-4 text-sm text-[#0A2E23]" aria-label="التصميم المحفوظ">
+          <option value="">اختاري تصميمًا محفوظًا</option>
+          {workspace.designs.map((design) => <option key={design.id} value={design.id}>{design.name}</option>)}
+        </select>
+        <div className="flex flex-wrap gap-2">
+          <button className={control} onClick={() => run(workspace.saveCurrentDesign(draftName || `${workspace.activeProject.name} — تصميم`))}>حفظ المظهر</button>
+          <button className={control} disabled={!selectedDesign} onClick={() => selectedDesign && workspace.applyDesign(selectedDesign.id)}>تطبيق</button>
+          <button className={control} disabled={!selectedDesign} onClick={() => selectedDesign && run(workspace.renameDesign(selectedDesign.id, draftName || selectedDesign.name))}>إعادة تسمية</button>
+          <button className={control} disabled={!selectedDesign} onClick={() => {
+            if (!selectedDesign) return;
+            if (confirmDesignDeleteId === selectedDesign.id) {
+              run(workspace.deleteDesign(selectedDesign.id));
+              setSelectedDesignId('');
+              setConfirmDesignDeleteId('');
+            } else setConfirmDesignDeleteId(selectedDesign.id);
+          }}>{selectedDesign && confirmDesignDeleteId === selectedDesign.id ? 'تأكيد حذف التصميم' : 'حذف'}</button>
+          {confirmDesignDeleteId && <button className={control} onClick={() => setConfirmDesignDeleteId('')}>إلغاء</button>}
+        </div>
+      </div>
+    </div>
+  </section>;
+}
+
 function WeddingStudioPage() {
-  const { state, ready, setMode, setWeddingEvent } = useEngine();
+  const { state, ready, setMode } = useEngine();
+  const { activeProject, updateActiveEvent } = useWeddingWorkspace();
 
   useEffect(() => {
     if (ready && state.mode !== 'wedding') {
@@ -552,11 +616,12 @@ function WeddingStudioPage() {
           </div>
         </FadeIn>
 
+        <WeddingWorkspaceControls />
         <WeddingStudio
-          event={state.weddingEvent}
+          event={activeProject.event}
           guest={state.weddingGuest}
           rsvpStatus={state.rsvp}
-          onChange={setWeddingEvent}
+          onChange={updateActiveEvent}
         />
         <div className="mt-8">
           <GuestManager />
@@ -583,11 +648,12 @@ function EditorPanel({ block, close, updateBlock }: { block: StudioBlock; close:
 
 function GuestManager() {
   const { state } = useEngine();
+  const { activeProject } = useWeddingWorkspace();
   const wedding = state.mode === 'wedding';
   const guest = wedding ? state.weddingGuest : { ...defaultWeddingGuest, name: 'Hashim Alnimari', allowedCompanions: 0 };
   const partySize = wedding && state.rsvp === 'accepted' ? state.weddingResponse.guestCount : 1;
   const invitationUrl = `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}/i/${guest.token}`;
-  const eventName = resolveInvitationTitle(state.mode, state.weddingEvent);
+  const eventName = resolveInvitationTitle(state.mode, activeProject.event);
   const sendWhatsApp = () => {
     const url = getWhatsAppShareUrl(state.mode, eventName, guest.phone, invitationUrl);
     window.open(url, '_blank', 'noopener,noreferrer');
@@ -606,11 +672,12 @@ function GuestManager() {
 
 function ScannerPage() {
   const { state, ready, setCheckedIn } = useEngine();
+  const { activeProject } = useWeddingWorkspace();
   const [token, setToken] = useState('');
   const [scan, setScan] = useState<'idle' | 'verified' | 'rejected'>('idle');
   const verify = () => setScan(isValidGuestToken(token, state.weddingGuest.token) ? 'verified' : 'rejected');
   if (!ready) return <LoadingPage />;
-  return <div className="grain min-h-[100dvh] bg-[#0A2E23] text-[#FFFDF9]"><div className="gold-thread opacity-45" /><header className="relative z-10 flex items-center justify-between px-5 py-6 sm:px-10"><Link href="/studio" data-testid="link-scanner-back" className="focus-ring flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.16em] text-[#FFFDF9]/70"><ArrowLeft size={15} /> Studio</Link><div className="flex items-center gap-2"><div className="font-display text-2xl text-[#D4AF37]">M<span className="text-[#FFFDF9]">&amp;</span>L</div><Eyebrow>DOOR / 01</Eyebrow></div></header><main className="relative z-10 mx-auto max-w-2xl px-5 pb-16 pt-10 sm:pt-16"><FadeIn><div className="text-center"><Eyebrow>CONCIERGE CHECK-IN</Eyebrow><h1 className="mt-4 font-display text-6xl leading-[.85] text-[#FFFDF9] sm:text-7xl">Welcome them<br /><span className="text-[#D4AF37]">by name.</span></h1><p className="mx-auto mt-5 max-w-sm text-sm leading-6 text-[#FFFDF9]/60">Scan a guest’s private pass or enter their token to verify the evening.</p></div></FadeIn><div className="relative mx-auto mt-12 aspect-[1.2] max-w-lg overflow-hidden rounded-[30px] border border-[#D4AF37]/70 bg-[#071f18] shadow-[0_18px_50px_rgba(0,0,0,.3)]"><div className="absolute inset-5 rounded-2xl border border-[#D4AF37]/80"><span className="absolute -left-px -top-px h-10 w-10 border-l-2 border-t-2 border-[#D4AF37]" /><span className="absolute -right-px -top-px h-10 w-10 border-r-2 border-t-2 border-[#D4AF37]" /><span className="absolute -bottom-px -left-px h-10 w-10 border-b-2 border-l-2 border-[#D4AF37]" /><span className="absolute -bottom-px -right-px h-10 w-10 border-b-2 border-r-2 border-[#D4AF37]" /><motion.div animate={{ y: ['12%', '86%', '12%'] }} transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }} className="absolute left-[10%] right-[10%] h-px bg-[#D4AF37] shadow-[0_0_12px_rgba(212,175,55,.7)]" /></div><div className="absolute inset-0 flex items-center justify-center"><QrCode size={72} strokeWidth={.55} className="text-[#FFFDF9]/20" /></div><div className="absolute bottom-5 left-0 right-0 text-center text-[9px] font-bold uppercase tracking-[.2em] text-[#D4AF37]/75">camera viewfinder · ready</div></div><div className="mx-auto mt-8 max-w-lg"><div className="flex gap-2"><input value={token} onChange={(e) => { setToken(e.target.value); setScan('idle'); }} onKeyDown={(e) => e.key === 'Enter' && verify()} data-testid="input-scanner-token" placeholder={`Enter guest token · ${state.weddingGuest.token}`} className="focus-ring min-w-0 flex-1 rounded-full border border-[#D4AF37]/50 bg-[#FFFDF9]/10 px-5 py-3 text-sm text-[#FFFDF9] outline-none placeholder:text-[#FFFDF9]/35" /><Button variant="gold" icon={Search} onClick={verify}>Verify</Button></div><p className="mt-3 text-center text-[10px] uppercase tracking-[.15em] text-[#FFFDF9]/40">Demo mode · no camera permission required</p></div><AnimatePresence>{scan !== 'idle' && <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className={`mx-auto mt-8 max-w-lg rounded-[28px] border p-6 ${scan === 'verified' ? 'border-[#D4AF37] bg-[#D4AF37]/10' : 'border-[#d58c78] bg-[#d58c78]/10'}`}>{scan === 'verified' ? <div className="flex items-center gap-4"><div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#D4AF37] text-[#0A2E23]"><Check size={23} /></div><div className="min-w-0 flex-1"><Eyebrow>VERIFIED · {state.mode === 'wedding' ? state.weddingGuest.name : 'HASHIM ALNIMARI'}</Eyebrow><p className="mt-1 text-sm text-[#FFFDF9]/75">Invitation for {state.mode === 'wedding' ? Math.max(1, state.weddingResponse.guestCount) : 1} · {state.mode === 'wedding' ? state.weddingEvent.venue : 'The Grand Palace Hall'}</p></div>{state.checkedIn ? <span className="text-right text-[10px] font-bold uppercase tracking-[.1em] text-[#D4AF37]">Checked in</span> : <Button variant="gold" icon={Check} onClick={setCheckedIn}>Check in</Button>}</div> : <div className="flex items-center gap-4"><XCircle className="text-[#d58c78]" size={30} /><div><Eyebrow className="text-[#d58c78]">NOT RECOGNIZED</Eyebrow><p className="mt-1 text-sm text-[#FFFDF9]/70">Try the guest token again.</p></div></div>}</motion.div>}</AnimatePresence></main></div>;
+  return <div className="grain min-h-[100dvh] bg-[#0A2E23] text-[#FFFDF9]"><div className="gold-thread opacity-45" /><header className="relative z-10 flex items-center justify-between px-5 py-6 sm:px-10"><Link href="/studio" data-testid="link-scanner-back" className="focus-ring flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.16em] text-[#FFFDF9]/70"><ArrowLeft size={15} /> Studio</Link><div className="flex items-center gap-2"><div className="font-display text-2xl text-[#D4AF37]">M<span className="text-[#FFFDF9]">&amp;</span>L</div><Eyebrow>DOOR / 01</Eyebrow></div></header><main className="relative z-10 mx-auto max-w-2xl px-5 pb-16 pt-10 sm:pt-16"><FadeIn><div className="text-center"><Eyebrow>CONCIERGE CHECK-IN</Eyebrow><h1 className="mt-4 font-display text-6xl leading-[.85] text-[#FFFDF9] sm:text-7xl">Welcome them<br /><span className="text-[#D4AF37]">by name.</span></h1><p className="mx-auto mt-5 max-w-sm text-sm leading-6 text-[#FFFDF9]/60">Scan a guest’s private pass or enter their token to verify the evening.</p></div></FadeIn><div className="relative mx-auto mt-12 aspect-[1.2] max-w-lg overflow-hidden rounded-[30px] border border-[#D4AF37]/70 bg-[#071f18] shadow-[0_18px_50px_rgba(0,0,0,.3)]"><div className="absolute inset-5 rounded-2xl border border-[#D4AF37]/80"><span className="absolute -left-px -top-px h-10 w-10 border-l-2 border-t-2 border-[#D4AF37]" /><span className="absolute -right-px -top-px h-10 w-10 border-r-2 border-t-2 border-[#D4AF37]" /><span className="absolute -bottom-px -left-px h-10 w-10 border-b-2 border-l-2 border-[#D4AF37]" /><span className="absolute -bottom-px -right-px h-10 w-10 border-b-2 border-r-2 border-[#D4AF37]" /><motion.div animate={{ y: ['12%', '86%', '12%'] }} transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }} className="absolute left-[10%] right-[10%] h-px bg-[#D4AF37] shadow-[0_0_12px_rgba(212,175,55,.7)]" /></div><div className="absolute inset-0 flex items-center justify-center"><QrCode size={72} strokeWidth={.55} className="text-[#FFFDF9]/20" /></div><div className="absolute bottom-5 left-0 right-0 text-center text-[9px] font-bold uppercase tracking-[.2em] text-[#D4AF37]/75">camera viewfinder · ready</div></div><div className="mx-auto mt-8 max-w-lg"><div className="flex gap-2"><input value={token} onChange={(e) => { setToken(e.target.value); setScan('idle'); }} onKeyDown={(e) => e.key === 'Enter' && verify()} data-testid="input-scanner-token" placeholder={`Enter guest token · ${state.weddingGuest.token}`} className="focus-ring min-w-0 flex-1 rounded-full border border-[#D4AF37]/50 bg-[#FFFDF9]/10 px-5 py-3 text-sm text-[#FFFDF9] outline-none placeholder:text-[#FFFDF9]/35" /><Button variant="gold" icon={Search} onClick={verify}>Verify</Button></div><p className="mt-3 text-center text-[10px] uppercase tracking-[.15em] text-[#FFFDF9]/40">Demo mode · no camera permission required</p></div><AnimatePresence>{scan !== 'idle' && <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className={`mx-auto mt-8 max-w-lg rounded-[28px] border p-6 ${scan === 'verified' ? 'border-[#D4AF37] bg-[#D4AF37]/10' : 'border-[#d58c78] bg-[#d58c78]/10'}`}>{scan === 'verified' ? <div className="flex items-center gap-4"><div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#D4AF37] text-[#0A2E23]"><Check size={23} /></div><div className="min-w-0 flex-1"><Eyebrow>VERIFIED · {state.mode === 'wedding' ? state.weddingGuest.name : 'HASHIM ALNIMARI'}</Eyebrow><p className="mt-1 text-sm text-[#FFFDF9]/75">Invitation for {state.mode === 'wedding' ? Math.max(1, state.weddingResponse.guestCount) : 1} · {state.mode === 'wedding' ? activeProject.event.venue : 'The Grand Palace Hall'}</p></div>{state.checkedIn ? <span className="text-right text-[10px] font-bold uppercase tracking-[.1em] text-[#D4AF37]">Checked in</span> : <Button variant="gold" icon={Check} onClick={setCheckedIn}>Check in</Button>}</div> : <div className="flex items-center gap-4"><XCircle className="text-[#d58c78]" size={30} /><div><Eyebrow className="text-[#d58c78]">NOT RECOGNIZED</Eyebrow><p className="mt-1 text-sm text-[#FFFDF9]/70">Try the guest token again.</p></div></div>}</motion.div>}</AnimatePresence></main></div>;
 }
 
 function RedirectHome() {
@@ -640,7 +707,7 @@ function Router() {
 }
 
 function App() {
-  return <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><EngineProvider><Router /></EngineProvider></WouterRouter>;
+  return <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><WeddingWorkspaceProvider><EngineProvider><Router /></EngineProvider></WeddingWorkspaceProvider></WouterRouter>;
 }
 
 export default App;
