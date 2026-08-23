@@ -1,9 +1,14 @@
 import {
+  canonicalWeddingSceneTimings,
   resolveWeddingPresentation,
   type WeddingPresentation,
   type WeddingSceneId,
   type WeddingTemplatePresentation,
 } from "./presentation.ts";
+import {
+  resolveWeddingVisualSelection,
+  type WeddingVisualSelection,
+} from "./upload.ts";
 
 export type EventMode = "standard" | "wedding";
 export type WeddingVariant = "women" | "men" | "both" | "family" | "custom";
@@ -42,6 +47,7 @@ export type WeddingEventData = {
   backgroundMediaUrl: string;
   invitationVariant: WeddingVariant;
   customWording: string;
+  visual: WeddingVisualSelection;
   style: WeddingStyle;
   presentation: WeddingPresentation;
 };
@@ -66,7 +72,6 @@ export type WeddingTemplateDefinition = {
   id: string;
   name: string;
   nameAr: string;
-  renderer: "soft-floral-garden";
   aspectRatio: "9:16";
   scenes: ReadonlyArray<{ id: WeddingSceneId; startsAt: number }>;
   allowedCustomization: {
@@ -79,6 +84,11 @@ export type WeddingTemplateDefinition = {
   defaults: WeddingStyle;
   presentation: WeddingTemplatePresentation;
 };
+
+export type WeddingVisualTemplateId =
+  | "soft-floral-garden"
+  | "pearl-arch"
+  | "midnight-gold";
 
 export const weddingFonts: Record<ArabicFont, { name: string; css: string }> = {
   amiri: { name: "أميري", css: "'Amiri', serif" },
@@ -131,23 +141,31 @@ export const floralThemes: Record<
   },
 };
 
+const allWeddingPresentation: WeddingTemplatePresentation = {
+  defaultLayoutPresetId: "centered-elegance",
+  defaultMotionPresetId: "soft-dissolve",
+  supportedLayoutPresetIds: [
+    "centered-elegance",
+    "editorial-offset",
+    "cinematic-focus",
+  ],
+  supportedMotionPresetIds: [
+    "soft-dissolve",
+    "cinematic-rise",
+    "editorial-glide",
+  ],
+};
+
 export const WeddingTemplateRegistry: Record<
-  string,
+  WeddingVisualTemplateId,
   WeddingTemplateDefinition
 > = {
   "soft-floral-garden": {
     id: "soft-floral-garden",
     name: "Soft Floral Garden",
     nameAr: "حديقة الزهور الناعمة",
-    renderer: "soft-floral-garden",
     aspectRatio: "9:16",
-    scenes: [
-      { id: "opening", startsAt: 0 },
-      { id: "hosts", startsAt: 3000 },
-      { id: "names", startsAt: 6000 },
-      { id: "details", startsAt: 10000 },
-      { id: "rsvp", startsAt: 14000 },
-    ],
+    scenes: canonicalWeddingSceneTimings,
     allowedCustomization: {
       backgrounds: ["#F7F1E7", "#F3EEE7", "#F1F2ED", "#F5EFEF"],
       accents: ["#71808D", "#A98262", "#7D8B72", "#9A849E"],
@@ -169,20 +187,51 @@ export const WeddingTemplateRegistry: Record<
       displayFont: "amiri",
       bodyFont: "ibm-plex-arabic",
     },
-    presentation: {
-      defaultLayoutPresetId: "centered-elegance",
-      defaultMotionPresetId: "soft-dissolve",
-      supportedLayoutPresetIds: [
-        "centered-elegance",
-        "editorial-offset",
-        "cinematic-focus",
-      ],
-      supportedMotionPresetIds: [
-        "soft-dissolve",
-        "cinematic-rise",
-        "editorial-glide",
-      ],
+    presentation: allWeddingPresentation,
+  },
+  "pearl-arch": {
+    id: "pearl-arch",
+    name: "Pearl Arch",
+    nameAr: "قوس اللؤلؤ",
+    aspectRatio: "9:16",
+    scenes: canonicalWeddingSceneTimings,
+    allowedCustomization: {
+      backgrounds: ["#F5F0E7", "#F1ECE2", "#FAF7F0", "#EEE8DD"],
+      accents: ["#826D50", "#655C50", "#96785F", "#756B61"],
+      floralThemes: [],
+      fonts: ["amiri", "reem-kufi", "ibm-plex-arabic"],
+      media: ["static", "video", "audio"],
     },
+    defaults: {
+      backgroundColor: "#F5F0E7",
+      accentColor: "#826D50",
+      floralTheme: "neutral-ivory",
+      displayFont: "amiri",
+      bodyFont: "ibm-plex-arabic",
+    },
+    presentation: allWeddingPresentation,
+  },
+  "midnight-gold": {
+    id: "midnight-gold",
+    name: "Midnight Gold",
+    nameAr: "ذهب منتصف الليل",
+    aspectRatio: "9:16",
+    scenes: canonicalWeddingSceneTimings,
+    allowedCustomization: {
+      backgrounds: ["#11151E", "#17181B", "#101820", "#1D1A1A"],
+      accents: ["#D6B66F", "#E2C98F", "#C9A45C", "#F0D9A2"],
+      floralThemes: [],
+      fonts: ["amiri", "reem-kufi", "ibm-plex-arabic"],
+      media: ["static", "video", "audio"],
+    },
+    defaults: {
+      backgroundColor: "#11151E",
+      accentColor: "#D6B66F",
+      floralTheme: "neutral-ivory",
+      displayFont: "amiri",
+      bodyFont: "ibm-plex-arabic",
+    },
+    presentation: allWeddingPresentation,
   },
 };
 
@@ -209,6 +258,7 @@ export const defaultWeddingEvent: WeddingEventData = {
   backgroundMediaUrl: "",
   invitationVariant: "both",
   customWording: "",
+  visual: { source: "template" },
   style: WeddingTemplateRegistry["soft-floral-garden"].defaults,
   presentation: {
     layoutPresetId: "centered-elegance",
@@ -229,12 +279,18 @@ export function mergeWeddingEvent(
   value?: Partial<WeddingEventData>,
 ): WeddingEventData {
   const template =
-    WeddingTemplateRegistry[value?.templateId ?? defaultWeddingEvent.templateId] ??
-    WeddingTemplateRegistry[defaultWeddingEvent.templateId];
+    WeddingTemplateRegistry[
+      (value?.templateId ?? defaultWeddingEvent.templateId) as WeddingVisualTemplateId
+    ] ??
+    WeddingTemplateRegistry[
+      defaultWeddingEvent.templateId as WeddingVisualTemplateId
+    ];
   return {
     ...defaultWeddingEvent,
     ...value,
-    style: { ...defaultWeddingEvent.style, ...value?.style },
+    templateId: template.id,
+    visual: resolveWeddingVisualSelection(value?.visual),
+    style: { ...template.defaults, ...value?.style },
     presentation: resolveWeddingPresentation(
       value?.presentation,
       template.presentation,

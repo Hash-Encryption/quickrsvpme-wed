@@ -7,6 +7,18 @@ export const weddingSceneIds = [
 ] as const;
 
 export type WeddingSceneId = (typeof weddingSceneIds)[number];
+export type WeddingSceneTiming = {
+  id: WeddingSceneId;
+  startsAt: number;
+};
+
+export const canonicalWeddingSceneTimings: ReadonlyArray<WeddingSceneTiming> = [
+  { id: "opening", startsAt: 0 },
+  { id: "hosts", startsAt: 3000 },
+  { id: "names", startsAt: 6000 },
+  { id: "details", startsAt: 10000 },
+  { id: "rsvp", startsAt: 14000 },
+];
 export type WeddingLayoutPresetId =
   | "centered-elegance"
   | "editorial-offset"

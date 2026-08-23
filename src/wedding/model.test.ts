@@ -19,12 +19,31 @@ import {
   weddingSceneIds,
 } from "./scene-engine.ts";
 import {
+  canonicalWeddingSceneTimings,
   WeddingLayoutPresets,
   WeddingMotionPresets,
   resolveWeddingMotionTarget,
 } from "./presentation.ts";
+import {
+  isValidWeddingBackgroundMetadata,
+  resolveWeddingVisualSelection,
+  type WeddingVisualSelection,
+} from "./upload.ts";
 
 const timings = WeddingTemplateRegistry["soft-floral-garden"].scenes;
+const uploadedBackground = {
+  dataUrl: "data:image/webp;base64,QUJD",
+  fileName: "wedding.webp",
+  mimeType: "image/webp",
+};
+
+test("ready visual-template registry contains exactly the Phase 4 designs", () => {
+  assert.deepEqual(Object.keys(WeddingTemplateRegistry), [
+    "soft-floral-garden",
+    "pearl-arch",
+    "midnight-gold",
+  ]);
+});
 
 test("starter presentation registries contain exactly three presets each", () => {
   assert.deepEqual(Object.keys(WeddingLayoutPresets), [
@@ -63,11 +82,59 @@ test("template presentation defaults and supported IDs reference real presets", 
   }
 });
 
+test("every ready visual resolves the one canonical five-scene timeline", () => {
+  assert.deepEqual(
+    canonicalWeddingSceneTimings.map(({ id, startsAt }) => ({ id, startsAt })),
+    [
+      { id: "opening", startsAt: 0 },
+      { id: "hosts", startsAt: 3000 },
+      { id: "names", startsAt: 6000 },
+      { id: "details", startsAt: 10000 },
+      { id: "rsvp", startsAt: 14000 },
+    ],
+  );
+  for (const template of Object.values(WeddingTemplateRegistry)) {
+    assert.strictEqual(template.scenes, canonicalWeddingSceneTimings);
+  }
+});
+
 test("Phase 2 events without presentation data migrate to template defaults", () => {
   const { presentation: _presentation, ...phase2Event } = defaultWeddingEvent;
   assert.deepEqual(mergeWeddingEvent(phase2Event).presentation, {
     layoutPresetId: "centered-elegance",
     motionPresetId: "soft-dissolve",
+  });
+});
+
+test("legacy Phase 3 events without visual data migrate to ready-template mode", () => {
+  const { visual: _visual, ...phase3Event } = defaultWeddingEvent;
+  assert.deepEqual(mergeWeddingEvent(phase3Event).visual, {
+    source: "template",
+  });
+});
+
+test("invalid persisted visual data falls back safely", () => {
+  for (const visual of [
+    { source: "missing" },
+    { source: "uploaded-background" },
+    {
+      source: "uploaded-background",
+      uploadedBackground: {
+        dataUrl: "blob:https://quickrsvp.me/temporary",
+        fileName: "temporary.png",
+        mimeType: "image/png",
+      },
+    },
+  ]) {
+    assert.deepEqual(
+      mergeWeddingEvent({
+        visual: visual as unknown as WeddingVisualSelection,
+      }).visual,
+      { source: "template" },
+    );
+  }
+  assert.deepEqual(resolveWeddingVisualSelection(undefined), {
+    source: "template",
   });
 });
 
@@ -121,6 +188,101 @@ test("motion selection does not change resolved wedding content", () => {
     });
     assert.deepEqual(resolveWeddingScenes(event, defaultWeddingGuest), baseline);
   }
+});
+
+test("ready-template and custom-background selection preserve scene content", () => {
+  const baseline = resolveWeddingScenes(defaultWeddingEvent, defaultWeddingGuest);
+  for (const templateId of Object.keys(WeddingTemplateRegistry)) {
+    const event = mergeWeddingEvent({ templateId });
+    assert.deepEqual(resolveWeddingScenes(event, defaultWeddingGuest), baseline);
+  }
+  const custom = mergeWeddingEvent({
+    visual: { source: "uploaded-background", uploadedBackground },
+  });
+  assert.deepEqual(resolveWeddingScenes(custom, defaultWeddingGuest), baseline);
+});
+
+test("valid layout and motion choices survive every visual change", () => {
+  const presentation = {
+    layoutPresetId: "cinematic-focus" as const,
+    motionPresetId: "editorial-glide" as const,
+  };
+  for (const templateId of Object.keys(WeddingTemplateRegistry)) {
+    assert.deepEqual(
+      mergeWeddingEvent({ templateId, presentation }).presentation,
+      presentation,
+    );
+  }
+  assert.deepEqual(
+    mergeWeddingEvent({
+      presentation,
+      visual: { source: "uploaded-background", uploadedBackground },
+    }).presentation,
+    presentation,
+  );
+});
+
+test("all 36 visual and presentation combinations are deterministic", () => {
+  const baseline = resolveWeddingScenes(defaultWeddingEvent, defaultWeddingGuest);
+  let combinations = 0;
+  for (const templateId of Object.keys(WeddingTemplateRegistry)) {
+    for (const layoutPresetId of Object.keys(WeddingLayoutPresets)) {
+      for (const motionPresetId of Object.keys(WeddingMotionPresets)) {
+        const event = mergeWeddingEvent({
+          templateId,
+          presentation: {
+            layoutPresetId: layoutPresetId as keyof typeof WeddingLayoutPresets,
+            motionPresetId: motionPresetId as keyof typeof WeddingMotionPresets,
+          },
+        });
+        assert.deepEqual(resolveWeddingScenes(event, defaultWeddingGuest), baseline);
+        assert.strictEqual(
+          WeddingTemplateRegistry[event.templateId as keyof typeof WeddingTemplateRegistry].scenes,
+          canonicalWeddingSceneTimings,
+        );
+        combinations += 1;
+      }
+    }
+  }
+  for (const layoutPresetId of Object.keys(WeddingLayoutPresets)) {
+    for (const motionPresetId of Object.keys(WeddingMotionPresets)) {
+      const event = mergeWeddingEvent({
+        visual: { source: "uploaded-background", uploadedBackground },
+        presentation: {
+          layoutPresetId: layoutPresetId as keyof typeof WeddingLayoutPresets,
+          motionPresetId: motionPresetId as keyof typeof WeddingMotionPresets,
+        },
+      });
+      assert.deepEqual(resolveWeddingScenes(event, defaultWeddingGuest), baseline);
+      assert.strictEqual(
+        WeddingTemplateRegistry[event.templateId as keyof typeof WeddingTemplateRegistry].scenes,
+        canonicalWeddingSceneTimings,
+      );
+      combinations += 1;
+    }
+  }
+  assert.equal(combinations, 36);
+});
+
+test("uploaded-background metadata accepts supported image types only", () => {
+  for (const mimeType of ["image/jpeg", "image/png", "image/webp"]) {
+    assert.equal(
+      isValidWeddingBackgroundMetadata({
+        dataUrl: `data:${mimeType};base64,QUJD`,
+        fileName: `wedding.${mimeType.split("/")[1]}`,
+        mimeType,
+      }),
+      true,
+    );
+  }
+  assert.equal(
+    isValidWeddingBackgroundMetadata({
+      dataUrl: "data:image/gif;base64,QUJD",
+      fileName: "wedding.gif",
+      mimeType: "image/gif",
+    }),
+    false,
+  );
 });
 
 test("presentation selection never changes canonical scene timing", () => {

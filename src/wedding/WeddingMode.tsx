@@ -1,13 +1,15 @@
-import { useState, type CSSProperties } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
   ChevronLeft,
   ChevronRight,
+  ImagePlus,
   MapPin,
   Minus,
   Music2,
   Plus,
+  Trash2,
   X,
 } from "lucide-react";
 import {
@@ -21,17 +23,21 @@ import {
   type WeddingGuestData,
   type WeddingRsvp,
   type WeddingVariant,
+  type WeddingVisualTemplateId,
 } from "./model";
 import {
   WeddingLayoutPresets,
   WeddingMotionPresets,
+  canonicalWeddingSceneTimings,
   resolveWeddingPresentation,
   type WeddingLayoutPreset,
   type WeddingMotionPreset,
 } from "./presentation";
 import { WeddingMotionLayer } from "./WeddingMotionLayer";
 import { WeddingSceneEngine } from "./WeddingSceneEngine";
+import { WeddingVisualLayer } from "./WeddingVisualLayer";
 import { resolveWeddingScenes, type WeddingScene } from "./scene-engine";
+import { normalizeWeddingBackground } from "./upload";
 import "./wedding.css";
 
 type WeddingRendererProps = {
@@ -50,6 +56,9 @@ type WeddingStyleProperties = CSSProperties & {
   "--wedding-leaf": string;
   "--wedding-display": string;
   "--wedding-body": string;
+  "--wedding-control-bg": string;
+  "--wedding-control-border": string;
+  "--wedding-progress-muted": string;
 };
 
 export function WeddingInvitationRenderer({
@@ -60,7 +69,7 @@ export function WeddingInvitationRenderer({
   onSubmit,
 }: WeddingRendererProps) {
   const template =
-    WeddingTemplateRegistry[event.templateId] ??
+    WeddingTemplateRegistry[event.templateId as WeddingVisualTemplateId] ??
     WeddingTemplateRegistry["soft-floral-garden"];
   const presentation = resolveWeddingPresentation(
     event.presentation,
@@ -69,33 +78,46 @@ export function WeddingInvitationRenderer({
   const layoutPreset = WeddingLayoutPresets[presentation.layoutPresetId];
   const motionPreset = WeddingMotionPresets[presentation.motionPresetId];
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const theme = floralThemes[event.style.floralTheme];
+  const theme = floralThemes[event.style.floralTheme] ?? floralThemes["neutral-ivory"];
   const scenes = resolveWeddingScenes(event, guest, rsvpStatus);
+  const uploaded = event.visual.source === "uploaded-background";
+  const darkControls = uploaded || template.id === "midnight-gold";
 
   const style: WeddingStyleProperties = {
     "--wedding-bg": event.style.backgroundColor,
-    "--wedding-accent": event.style.accentColor,
+    "--wedding-accent": uploaded ? "#FFF3D5" : event.style.accentColor,
     "--wedding-petal": theme.petal,
     "--wedding-petal-soft": theme.petalSoft,
     "--wedding-leaf": theme.leaf,
     "--wedding-display": weddingFonts[event.style.displayFont].css,
     "--wedding-body": weddingFonts[event.style.bodyFont].css,
+    "--wedding-control-bg": darkControls
+      ? "rgb(10 12 16 / 0.68)"
+      : "rgb(255 253 248 / 0.72)",
+    "--wedding-control-border": darkControls
+      ? "rgb(255 243 213 / 0.42)"
+      : "rgb(113 128 141 / 0.25)",
+    "--wedding-progress-muted": darkControls
+      ? "rgb(255 255 255 / 0.34)"
+      : "rgb(113 128 141 / 0.24)",
   };
 
   return (
     <WeddingSceneEngine
       scenes={scenes}
-      timings={template.scenes}
+      timings={canonicalWeddingSceneTimings}
       musicUrl={event.musicUrl}
       backgroundMediaUrl={event.backgroundMediaUrl}
       preview={preview}
       style={style}
       renderScene={(scene, replayKey) => (
-        <SoftFloralGardenRenderer
+        <WeddingInvitationSceneRenderer
           scene={scene}
           replayKey={replayKey}
           layoutPreset={layoutPreset}
           motionPreset={motionPreset}
+          templateId={template.id as WeddingVisualTemplateId}
+          visual={event.visual}
           onOpenRsvp={() => setDrawerOpen(true)}
         />
       )}
@@ -118,17 +140,21 @@ export function WeddingInvitationRenderer({
   );
 }
 
-function SoftFloralGardenRenderer({
+function WeddingInvitationSceneRenderer({
   scene,
   replayKey,
   layoutPreset,
   motionPreset,
+  templateId,
+  visual,
   onOpenRsvp,
 }: {
   scene: WeddingScene;
   replayKey: number;
   layoutPreset: WeddingLayoutPreset;
   motionPreset: WeddingMotionPreset;
+  templateId: WeddingVisualTemplateId;
+  visual: WeddingEventData["visual"];
   onOpenRsvp: () => void;
 }) {
   const className =
@@ -139,12 +165,11 @@ function SoftFloralGardenRenderer({
         : `wedding-${scene.id}`;
   return (
     <div
-      className={`wedding-paper wedding-layout--${layoutPreset.id}`}
+      className={`wedding-paper wedding-paper--${visual.source === "uploaded-background" ? "uploaded-background" : templateId} wedding-layout--${layoutPreset.id}`}
       key={replayKey}
       data-layout-preset={layoutPreset.id}
     >
-      <div className="wedding-paper-texture" />
-      <FloralGardenFrame />
+      <WeddingVisualLayer templateId={templateId} visual={visual} />
       <div className="wedding-content">
         <WeddingMotionLayer
           sceneId={scene.id}
@@ -153,7 +178,7 @@ function SoftFloralGardenRenderer({
           motionPreset={motionPreset}
         >
           <div className={`wedding-scene ${className}`}>
-            <SoftFloralGardenScene scene={scene} onOpenRsvp={onOpenRsvp} />
+            <WeddingSceneContent scene={scene} onOpenRsvp={onOpenRsvp} />
           </div>
         </WeddingMotionLayer>
       </div>
@@ -161,7 +186,7 @@ function SoftFloralGardenRenderer({
   );
 }
 
-function SoftFloralGardenScene({
+function WeddingSceneContent({
   scene,
   onOpenRsvp,
 }: {
@@ -272,144 +297,6 @@ function PrincipalNames({
       ))}
       {lines.length === 2 && <i>و</i>}
     </div>
-  );
-}
-
-function FloralGardenFrame() {
-  return (
-    <svg
-      className="wedding-floral-frame"
-      viewBox="0 0 390 693"
-      preserveAspectRatio="xMidYMid slice"
-      aria-hidden="true"
-    >
-      <defs>
-        <radialGradient id="petal" cx="38%" cy="30%">
-          <stop offset="0" stopColor="#fff" stopOpacity=".8" />
-          <stop offset="1" stopColor="var(--wedding-petal)" />
-        </radialGradient>
-        <linearGradient id="leaf" x1="0" x2="1" y1="0" y2="1">
-          <stop stopColor="var(--wedding-leaf)" stopOpacity=".45" />
-          <stop offset="1" stopColor="var(--wedding-leaf)" />
-        </linearGradient>
-        <filter id="soft-shadow">
-          <feDropShadow
-            dx="0"
-            dy="3"
-            stdDeviation="4"
-            floodColor="#5d5145"
-            floodOpacity=".12"
-          />
-        </filter>
-      </defs>
-      <path
-        className="wedding-arch"
-        d="M35 635V168C35 94 92 37 164 37h62c72 0 129 57 129 131v467"
-      />
-      <g
-        className="wedding-botanical wedding-botanical--top"
-        filter="url(#soft-shadow)"
-      >
-        <path
-          className="wedding-stem"
-          d="M-5 155C47 125 51 55 144 8M20 115C55 98 86 96 114 55M58 78C36 50 33 28 46 2"
-        />
-        <Leaf x="18" y="108" rotate="-42" />
-        <Leaf x="48" y="83" rotate="28" />
-        <Leaf x="74" y="63" rotate="-32" />
-        <Leaf x="101" y="37" rotate="34" />
-        <Leaf x="38" y="31" rotate="-18" />
-        <Flower cx="22" cy="74" size="42" />
-        <Flower cx="67" cy="33" size="58" />
-        <Flower cx="112" cy="18" size="32" />
-        <SmallFlowers x="7" y="137" />
-        <SmallFlowers x="125" y="47" />
-      </g>
-      <g
-        className="wedding-botanical wedding-botanical--bottom"
-        filter="url(#soft-shadow)"
-      >
-        <path
-          className="wedding-stem"
-          d="M395 515C345 546 341 620 239 691M378 582C334 591 304 615 284 650M343 632C360 658 365 675 360 697"
-        />
-        <Leaf x="350" y="536" rotate="35" />
-        <Leaf x="327" y="573" rotate="-38" />
-        <Leaf x="301" y="607" rotate="30" />
-        <Leaf x="267" y="644" rotate="-35" />
-        <Leaf x="351" y="658" rotate="16" />
-        <Flower cx="371" cy="612" size="48" />
-        <Flower cx="326" cy="657" size="62" />
-        <Flower cx="270" cy="677" size="34" />
-        <SmallFlowers x="354" y="548" />
-        <SmallFlowers x="239" y="635" />
-      </g>
-    </svg>
-  );
-}
-
-function Flower({
-  cx,
-  cy,
-  size,
-}: {
-  cx: number | string;
-  cy: number | string;
-  size: number | string;
-}) {
-  const petals = Array.from({ length: 9 });
-  return (
-    <g transform={`translate(${cx} ${cy}) scale(${Number(size) / 46})`}>
-      {petals.map((_, index) => (
-        <ellipse
-          key={index}
-          rx="9"
-          ry="20"
-          fill="url(#petal)"
-          transform={`rotate(${index * 40}) translate(0 -12)`}
-        />
-      ))}
-      <circle r="8" fill="var(--wedding-petal-soft)" />
-      <circle r="3" fill="#B99A63" />
-    </g>
-  );
-}
-
-function Leaf({
-  x,
-  y,
-  rotate,
-}: {
-  x: number | string;
-  y: number | string;
-  rotate: number | string;
-}) {
-  return (
-    <path
-      d="M0 0C10-13 24-12 30-1C18 10 7 10 0 0Z"
-      fill="url(#leaf)"
-      transform={`translate(${x} ${y}) rotate(${rotate})`}
-    />
-  );
-}
-
-function SmallFlowers({ x, y }: { x: number | string; y: number | string }) {
-  return (
-    <g
-      transform={`translate(${x} ${y})`}
-      fill="var(--wedding-petal-soft)"
-      stroke="var(--wedding-petal)"
-      strokeWidth=".8"
-    >
-      <circle cx="0" cy="0" r="4" />
-      <circle cx="13" cy="-8" r="5" />
-      <circle cx="25" cy="2" r="3.5" />
-      <path
-        d="M0 4L-8 18M13-3L11 17M25 5L21 20"
-        fill="none"
-        stroke="var(--wedding-leaf)"
-      />
-    </g>
   );
 }
 
@@ -665,6 +552,46 @@ function TemplateStep({
   event: WeddingEventData;
   update: (patch: Partial<WeddingEventData>) => void;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const uploaded = event.visual.source === "uploaded-background";
+  const uploadedBackground =
+    event.visual.source === "uploaded-background"
+      ? event.visual.uploadedBackground
+      : undefined;
+  const selectTemplate = (templateId: WeddingVisualTemplateId) => {
+    const template = WeddingTemplateRegistry[templateId];
+    update({
+      templateId,
+      visual: { source: "template" },
+      style: { ...template.defaults },
+      presentation: resolveWeddingPresentation(
+        event.presentation,
+        template.presentation,
+      ),
+    });
+  };
+  const uploadBackground = async (file?: File) => {
+    if (!file) return;
+    setUploading(true);
+    setUploadError("");
+    try {
+      update({
+        visual: {
+          source: "uploaded-background",
+          uploadedBackground: await normalizeWeddingBackground(file),
+        },
+      });
+    } catch (error) {
+      setUploadError(
+        error instanceof Error ? error.message : "تعذر تجهيز الصورة.",
+      );
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  };
   return (
     <div>
       <StepHeading
@@ -676,19 +603,11 @@ function TemplateStep({
         {Object.values(WeddingTemplateRegistry).map((template) => (
           <button
             key={template.id}
-            className={event.templateId === template.id ? "is-selected" : ""}
-            onClick={() =>
-              update({
-                templateId: template.id,
-                style: { ...template.defaults },
-                presentation: {
-                  layoutPresetId: template.presentation.defaultLayoutPresetId,
-                  motionPresetId: template.presentation.defaultMotionPresetId,
-                },
-              })
-            }
+            className={!uploaded && event.templateId === template.id ? "is-selected" : ""}
+            onClick={() => selectTemplate(template.id as WeddingVisualTemplateId)}
+            aria-pressed={!uploaded && event.templateId === template.id}
           >
-            <span className="wedding-template-swatch">
+            <span className={`wedding-template-swatch wedding-template-swatch--${template.id}`}>
               <i />
               <i />
               <i />
@@ -697,10 +616,46 @@ function TemplateStep({
               <b>{template.nameAr}</b>
               <small>{template.name} · قالب جاهز</small>
             </span>
-            {event.templateId === template.id && <Check />}
+            {!uploaded && event.templateId === template.id && <Check />}
           </button>
         ))}
+        <button
+          className={uploaded ? "wedding-upload-card is-selected" : "wedding-upload-card"}
+          onClick={() => inputRef.current?.click()}
+          disabled={uploading}
+          aria-pressed={uploaded}
+        >
+          <span className="wedding-template-swatch wedding-template-swatch--upload">
+            <ImagePlus aria-hidden="true" />
+          </span>
+          <span>
+            <b>{uploading ? "جارٍ تجهيز الصورة…" : uploaded ? "استبدال الخلفية" : "خلفية خاصة"}</b>
+            <small>
+              {uploadedBackground
+                ? uploadedBackground.fileName
+                : "JPEG أو PNG أو WebP · صورة خلفية فقط"}
+            </small>
+          </span>
+          {uploaded && <Check aria-hidden="true" />}
+        </button>
+        <input
+          ref={inputRef}
+          className="wedding-file-input"
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          aria-label="رفع صورة خلفية للدعوة"
+          onChange={(changeEvent) => uploadBackground(changeEvent.target.files?.[0])}
+        />
       </div>
+      {uploadError && <p className="wedding-upload-error" role="alert">{uploadError}</p>}
+      {uploaded && (
+        <button
+          className="wedding-remove-background"
+          onClick={() => update({ visual: { source: "template" } })}
+        >
+          <Trash2 aria-hidden="true" /> إزالة الخلفية والعودة للقالب الجاهز
+        </button>
+      )}
       <p className="wedding-registry-note">
         القوالب المخصصة المستقبلية تدخل السجل نفسه، من دون تغيير بيانات الضيوف
         أو نظام الرد.
@@ -849,8 +804,11 @@ function StyleStep({
   update: (patch: Partial<WeddingEventData>) => void;
   updateStyle: (patch: Partial<WeddingEventData["style"]>) => void;
 }) {
-  const customization =
-    WeddingTemplateRegistry[event.templateId].allowedCustomization;
+  const template =
+    WeddingTemplateRegistry[event.templateId as WeddingVisualTemplateId] ??
+    WeddingTemplateRegistry["soft-floral-garden"];
+  const customization = template.allowedCustomization;
+  const uploaded = event.visual.source === "uploaded-background";
   return (
     <div>
       <StepHeading
@@ -858,7 +816,7 @@ function StyleStep({
         title="نمط مضبوط بعناية"
         description="ألوان وخطوط وزخارف تضبط الهوية البصرية من دون فرض التكوين أو الحركة."
       />
-      <div className="wedding-style-section">
+      {!uploaded && <div className="wedding-style-section">
         <b>الخلفية</b>
         <div className="wedding-color-options">
           {customization.backgrounds.map((color) => (
@@ -874,8 +832,8 @@ function StyleStep({
             />
           ))}
         </div>
-      </div>
-      <div className="wedding-style-section">
+      </div>}
+      {!uploaded && <div className="wedding-style-section">
         <b>لون العناوين</b>
         <div className="wedding-color-options">
           {customization.accents.map((color) => (
@@ -889,9 +847,14 @@ function StyleStep({
             />
           ))}
         </div>
-      </div>
+      </div>}
+      {uploaded && (
+        <p className="wedding-upload-style-note">
+          الصورة هي الخلفية الأساسية، ويُطبّق عليها غطاء قراءة محايد تلقائيًا.
+        </p>
+      )}
       <div className="wedding-fields">
-        <Field
+        {!uploaded && customization.floralThemes.length > 0 && <Field
           label="ألوان الزهور"
           value={event.style.floralTheme}
           onChange={(value) =>
@@ -901,7 +864,7 @@ function StyleStep({
             key,
             floralThemes[key].name,
           ])}
-        />
+        />}
         <Field
           label="خط الأسماء"
           value={event.style.displayFont}
@@ -950,7 +913,7 @@ function PresentationStep({
   ) => void;
 }) {
   const template =
-    WeddingTemplateRegistry[event.templateId] ??
+    WeddingTemplateRegistry[event.templateId as WeddingVisualTemplateId] ??
     WeddingTemplateRegistry["soft-floral-garden"];
   return (
     <div>

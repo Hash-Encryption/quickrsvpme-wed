@@ -2,12 +2,12 @@ import {
   getWeddingPrincipalLines,
   type WeddingEventData,
   type WeddingGuestData,
-  type WeddingTemplateDefinition,
 } from "./model.ts";
+import type { WeddingSceneTiming } from "./presentation.ts";
 export { weddingSceneIds } from "./presentation.ts";
 
 export type WeddingRsvpStatus = "pending" | "accepted" | "declined";
-export type WeddingSceneTiming = WeddingTemplateDefinition["scenes"][number];
+export type { WeddingSceneTiming } from "./presentation.ts";
 
 export type WeddingScene =
   | { id: "opening"; wording?: string }

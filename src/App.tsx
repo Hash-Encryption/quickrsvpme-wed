@@ -98,7 +98,10 @@ function EngineProvider({ children }: { children: ReactNode }) {
     setReady(true);
   }, []);
   useEffect(() => {
-    if (ready) localStorage.setItem('luxury-rsvp-engine', JSON.stringify(state));
+    if (ready) {
+      try { localStorage.setItem('luxury-rsvp-engine', JSON.stringify(state)); }
+      catch { /* The bounded upload remains usable for this session if storage is unavailable. */ }
+    }
   }, [state, ready]);
   const value = useMemo(() => ({
     state, ready,
