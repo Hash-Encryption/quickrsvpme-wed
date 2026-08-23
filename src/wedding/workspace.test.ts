@@ -95,6 +95,21 @@ test("autosave writer serializes older and newer persistence operations", async 
   await newWrite;
 });
 
+test("serialized writer recovers after failure without letting old state overtake new state", async () => {
+  const committed: string[] = [];
+  let attempts = 0;
+  const writer = createSerializedWeddingWorkspaceWriter(async (change) => {
+    attempts += 1;
+    if (attempts === 1) throw new Error("quota");
+    committed.push(change.projects?.[0].name ?? "unknown");
+  });
+  const oldWrite = writer({ projects: [createWeddingProject(defaultWeddingEvent, "old", { id: "old" })] });
+  const newWrite = writer({ projects: [createWeddingProject(defaultWeddingEvent, "new", { id: "new" })] });
+  await assert.rejects(oldWrite, /quota/);
+  await newWrite;
+  assert.deepEqual(committed, ["new"]);
+});
+
 test("corrupt legacy Wedding resolves safely", async () => {
   const storage = new MemoryStorage();
   const result = await initializeWeddingWorkspace(storage, legacyRaw({ templateId: "missing", visual: { source: "bad" }, presentation: { layoutPresetId: "bad" } }), { id: "safe" });
@@ -154,11 +169,9 @@ test("applying a Saved Design preserves all dynamic Wedding content", () => {
   const source = { ...defaultWeddingEvent, brideName: "Design bride", venue: "Design venue", musicUrl: "design.mp3", templateId: "midnight-gold" };
   const target = { ...defaultWeddingEvent, brideName: "Target bride", groomName: "Target groom", venue: "Target venue", musicUrl: "target.mp3", backgroundMediaUrl: "target.mp4" };
   const applied = applySavedDesignToEvent(target, createSavedDesignFromEvent(source, "Look"));
-  assert.equal(applied.brideName, "Target bride");
-  assert.equal(applied.groomName, "Target groom");
-  assert.equal(applied.venue, "Target venue");
-  assert.equal(applied.musicUrl, "target.mp3");
-  assert.equal(applied.backgroundMediaUrl, "target.mp4");
+  const { templateId: _targetTemplate, visual: _targetVisual, style: _targetStyle, presentation: _targetPresentation, ...targetContent } = target;
+  const { templateId: _appliedTemplate, visual: _appliedVisual, style: _appliedStyle, presentation: _appliedPresentation, ...appliedContent } = applied;
+  assert.deepEqual(appliedContent, targetContent);
   assert.equal(applied.templateId, "midnight-gold");
 });
 
@@ -187,6 +200,37 @@ test("invalid persisted template, visual, and presentation resolve safely", () =
   assert.equal(snapshot.projects[0].event.templateId, defaultWeddingEvent.templateId);
   assert.deepEqual(snapshot.projects[0].event.visual, { source: "template" });
   assert.deepEqual(snapshot.projects[0].event.presentation, defaultWeddingEvent.presentation);
+});
+
+test("workspace load repairs a missing active project ID", async () => {
+  const storage = new MemoryStorage();
+  storage.snapshot = {
+    projects: [createWeddingProject(defaultWeddingEvent, "Valid", { id: "valid" })],
+    designs: [],
+    metadata: { schemaVersion: 1, activeProjectId: "missing", legacyMigrationVersion: 1 },
+  };
+  const workspace = await initializeWeddingWorkspace(storage, null);
+  assert.equal(workspace.activeProjectId, "valid");
+  assert.equal(storage.snapshot.metadata?.activeProjectId, "valid");
+});
+
+test("corrupt current-version records do not hide valid projects and designs", () => {
+  const project = createWeddingProject(defaultWeddingEvent, "Valid", { id: "valid" });
+  const design = createSavedDesignFromEvent(defaultWeddingEvent, "Valid", { id: "design" });
+  const snapshot = normalizeWeddingWorkspace({
+    projects: [project, { version: 1, id: "", event: {} } as never],
+    designs: [design, { version: 1, id: "", name: "Broken" } as never],
+    metadata: { schemaVersion: 1, activeProjectId: project.id, legacyMigrationVersion: 1 },
+  });
+  assert.deepEqual(snapshot.projects.map(({ id }) => id), ["valid"]);
+  assert.deepEqual(snapshot.designs.map(({ id }) => id), ["design"]);
+});
+
+test("future project and design record versions are rejected", () => {
+  const project = createWeddingProject(defaultWeddingEvent, "Future", { id: "future" });
+  const design = createSavedDesignFromEvent(defaultWeddingEvent, "Future", { id: "future-design" });
+  assert.throws(() => normalizeWeddingWorkspace({ projects: [{ ...project, version: 2 } as never], designs: [], metadata: null }), /Unsupported/);
+  assert.throws(() => normalizeWeddingWorkspace({ projects: [], designs: [{ ...design, version: 2 } as never], metadata: null }), /Unsupported/);
 });
 
 test("unknown future persistence version is not overwritten", async () => {

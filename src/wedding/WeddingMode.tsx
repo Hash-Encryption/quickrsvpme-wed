@@ -1,5 +1,5 @@
-import { useRef, useState, type CSSProperties } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Check,
   ChevronLeft,
@@ -317,33 +317,78 @@ function WeddingRSVPDrawer({
   const [guestCount, setGuestCount] = useState(1);
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const reduceMotion = Boolean(useReducedMotion());
   const maxGuests = 1 + Math.max(0, guest.allowedCompanions);
+
+  useEffect(() => {
+    const drawer = drawerRef.current;
+    const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!drawer) return;
+    const focusable = () => Array.from(drawer.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), textarea:not([disabled]), [href], input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    )).filter((element) => element.getClientRects().length);
+    focusable()[0]?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const controls = focusable();
+      if (!controls.length) return;
+      const first = controls[0];
+      const last = controls.at(-1)!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      returnFocus?.focus();
+    };
+  }, [onClose]);
+
   const submit = async () => {
     setSubmitting(true);
-    await onSubmit({
-      status: attendance,
-      guestCount: attendance === "accepted" ? guestCount : 0,
-      message,
-    });
-    setSubmitting(false);
+    setSubmitError("");
+    try {
+      await onSubmit({
+        status: attendance,
+        guestCount: attendance === "accepted" ? guestCount : 0,
+        message,
+      });
+    } catch {
+      setSubmitError("تعذر حفظ الرد. يرجى المحاولة مرة أخرى.");
+    } finally {
+      setSubmitting(false);
+    }
   };
   return (
     <motion.div
       className="wedding-drawer-backdrop"
-      initial={{ opacity: 0 }}
+      initial={reduceMotion ? false : { opacity: 0 }}
       animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
+      exit={reduceMotion ? { opacity: 1 } : { opacity: 0 }}
       onClick={onClose}
     >
       <motion.div
         className="wedding-drawer"
+        ref={drawerRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="wedding-rsvp-title"
-        initial={{ y: "100%" }}
+        initial={reduceMotion ? false : { y: "100%" }}
         animate={{ y: 0 }}
-        exit={{ y: "100%" }}
-        transition={{ type: "spring", damping: 28, stiffness: 260 }}
+        exit={reduceMotion ? { y: 0 } : { y: "100%" }}
+        transition={reduceMotion ? { duration: 0 } : { type: "spring", damping: 28, stiffness: 260 }}
         onClick={(event) => event.stopPropagation()}
       >
         <button
@@ -424,6 +469,7 @@ function WeddingRSVPDrawer({
         >
           {submitting ? "جارٍ الحفظ…" : "حفظ الرد"}
         </button>
+        {submitError && <p role="alert">{submitError}</p>}
       </motion.div>
     </motion.div>
   );

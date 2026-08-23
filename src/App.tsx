@@ -518,7 +518,7 @@ function WeddingWorkspaceControls() {
   const workspace = useWeddingWorkspace();
   const [selectedDesignId, setSelectedDesignId] = useState('');
   const [draftName, setDraftName] = useState('');
-  const [confirmProjectDelete, setConfirmProjectDelete] = useState(false);
+  const [confirmProjectDeleteId, setConfirmProjectDeleteId] = useState('');
   const [confirmDesignDeleteId, setConfirmDesignDeleteId] = useState('');
   const run = (operation: Promise<void>) => void operation.catch(() => undefined);
   const selectedDesign = workspace.designs.find((design) => design.id === selectedDesignId);
@@ -531,7 +531,7 @@ function WeddingWorkspaceControls() {
         <label className="block"><span className="mb-2 block text-[10px] font-bold uppercase tracking-[.12em] text-[#2D2421]/55">اسم العملية</span><input value={draftName} onChange={(event) => setDraftName(event.target.value)} placeholder="اسم الزفاف أو التصميم" className="focus-ring min-h-11 w-full rounded-2xl border border-[#D4AF37]/55 bg-[#FFFDF9] px-4 text-sm text-[#0A2E23]" /></label>
         <div>
         <label className="mb-2 block text-[10px] font-bold uppercase tracking-[.12em] text-[#2D2421]/55" htmlFor="wedding-project">الزفاف الحالي</label>
-        <select id="wedding-project" value={workspace.activeProject.id} onChange={(event) => run(workspace.openProject(event.target.value))} className="focus-ring min-h-11 w-full rounded-2xl border border-[#D4AF37]/55 bg-[#FFFDF9] px-4 text-sm text-[#0A2E23]">
+        <select id="wedding-project" value={workspace.activeProject.id} onChange={(event) => { setConfirmProjectDeleteId(''); run(workspace.openProject(event.target.value)); }} className="focus-ring min-h-11 w-full rounded-2xl border border-[#D4AF37]/55 bg-[#FFFDF9] px-4 text-sm text-[#0A2E23]">
           {workspace.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
         </select>
         </div>
@@ -541,8 +541,8 @@ function WeddingWorkspaceControls() {
         <button className={control} onClick={() => run(workspace.saveNow())}>احفظ الآن</button>
         <button className={control} onClick={() => run(workspace.renameProject(draftName || workspace.activeProject.name))}>إعادة تسمية</button>
         <button className={control} onClick={() => run(workspace.duplicateProject(draftName || `${workspace.activeProject.name} — نسخة`))}>تكرار</button>
-        <button className={control} onClick={() => confirmProjectDelete ? (run(workspace.deleteProject()), setConfirmProjectDelete(false)) : setConfirmProjectDelete(true)}>{confirmProjectDelete ? 'تأكيد الحذف' : 'حذف'}</button>
-        {confirmProjectDelete && <button className={control} onClick={() => setConfirmProjectDelete(false)}>إلغاء</button>}
+        <button className={control} onClick={() => confirmProjectDeleteId === workspace.activeProject.id ? (run(workspace.deleteProject()), setConfirmProjectDeleteId('')) : setConfirmProjectDeleteId(workspace.activeProject.id)}>{confirmProjectDeleteId === workspace.activeProject.id ? 'تأكيد الحذف' : 'حذف'}</button>
+        {confirmProjectDeleteId === workspace.activeProject.id && <button className={control} onClick={() => setConfirmProjectDeleteId('')}>إلغاء</button>}
       </div>
     </div>
     <div className="mt-4 flex items-center gap-2 text-[11px] text-[#2D2421]/65" role="status"><span className={`h-2 w-2 rounded-full ${workspace.saveStatus === 'error' ? 'bg-[#b4534b]' : workspace.saveStatus === 'saving' ? 'bg-[#D4AF37]' : 'bg-[#0A2E23]'}`} />{statusLabel}</div>

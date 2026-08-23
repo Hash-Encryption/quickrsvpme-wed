@@ -128,7 +128,7 @@ export function WeddingSceneEngine({
         <video
           className="wedding-background-video"
           src={backgroundMediaUrl}
-          autoPlay
+          autoPlay={!reduceMotion}
           loop
           muted
           playsInline

@@ -271,9 +271,17 @@ export function normalizeWeddingWorkspace(
   if (snapshot.metadata?.schemaVersion !== undefined && snapshot.metadata.schemaVersion !== 1) {
     throw new UnsupportedWeddingWorkspaceVersionError(snapshot.metadata.schemaVersion);
   }
+  const validRecords = <T,>(values: unknown[], sanitize: (value: unknown) => T): T[] => values.flatMap((value) => {
+    try {
+      return [sanitize(value)];
+    } catch (error) {
+      if (error instanceof UnsupportedWeddingWorkspaceVersionError) throw error;
+      return [];
+    }
+  });
   return {
-    projects: snapshot.projects.map(sanitizeProject),
-    designs: snapshot.designs.map(sanitizeDesign),
+    projects: validRecords(snapshot.projects, sanitizeProject),
+    designs: validRecords(snapshot.designs, sanitizeDesign),
     metadata: snapshot.metadata,
   };
 }
