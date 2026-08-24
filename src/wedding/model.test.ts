@@ -113,6 +113,12 @@ test("legacy Phase 3 events without visual data migrate to ready-template mode",
   });
 });
 
+test("legacy Wedding data defaults invitation locale to Arabic and preserves English", () => {
+  assert.equal(mergeWeddingEvent({ invitationLocale: undefined }).invitationLocale, "ar");
+  assert.equal(mergeWeddingEvent({ invitationLocale: "en" }).invitationLocale, "en");
+  assert.equal(mergeWeddingEvent({ invitationLocale: "invalid" as "ar" }).invitationLocale, "ar");
+});
+
 test("invalid persisted visual data falls back safely", () => {
   for (const visual of [
     { source: "missing" },

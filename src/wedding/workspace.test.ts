@@ -157,6 +157,14 @@ test("edits remain isolated between projects", () => {
   assert.equal(second.event.brideName, "B");
 });
 
+test("Wedding invitation locale persists per project without affecting saved designs", () => {
+  const arabic = createWeddingProject({ ...defaultWeddingEvent, invitationLocale: "ar" }, "Arabic");
+  const english = createWeddingProject({ ...defaultWeddingEvent, invitationLocale: "en" }, "English");
+  assert.equal(arabic.event.invitationLocale, "ar");
+  assert.equal(english.event.invitationLocale, "en");
+  assert.equal("invitationLocale" in createSavedDesignFromEvent(english.event, "Look"), false);
+});
+
 test("Saved Design extraction has only the explicit appearance allow-list", () => {
   const design = createSavedDesignFromEvent({ ...defaultWeddingEvent, brideName: "SECRET", musicUrl: "secret.mp3" }, "Look", { id: "d", now: "1" });
   assert.deepEqual(Object.keys(design).sort(), ["createdAt", "id", "name", "presentation", "style", "templateId", "updatedAt", "version", "visual"]);

@@ -7,6 +7,8 @@ import {
 } from "react";
 import { useReducedMotion } from "framer-motion";
 import { Pause, Play, RotateCcw, Volume2, VolumeX } from "lucide-react";
+import { invitationT } from "../i18n/invitation";
+import { localeDirection, type InvitationLocale } from "../i18n/locale";
 import {
   getWeddingRemainingDelay,
   getWeddingSceneIndex,
@@ -23,6 +25,7 @@ type WeddingSceneEngineProps = {
   style?: CSSProperties;
   overlay?: ReactNode;
   renderScene: (scene: WeddingScene, replayKey: number) => ReactNode;
+  locale: InvitationLocale;
 };
 
 export function WeddingSceneEngine({
@@ -34,6 +37,7 @@ export function WeddingSceneEngine({
   style,
   overlay,
   renderScene,
+  locale,
 }: WeddingSceneEngineProps) {
   const reduceMotion = Boolean(useReducedMotion());
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -120,8 +124,9 @@ export function WeddingSceneEngine({
     <section
       className={`wedding-stage ${preview ? "wedding-stage--preview" : ""}`}
       style={style}
-      dir="rtl"
-      aria-label="دعوة زفاف"
+      dir={localeDirection(locale)}
+      lang={locale}
+      aria-label={invitationT(locale, "invitation")}
       data-scene={activeScene?.id}
     >
       {backgroundMediaUrl && (
@@ -140,38 +145,38 @@ export function WeddingSceneEngine({
 
       {activeScene && renderScene(activeScene, replayKey)}
 
-      <div className="wedding-controls" aria-label="عناصر تحكم الدعوة">
+      <div className="wedding-controls" aria-label={invitationT(locale, "controls")}>
         <button
           onClick={togglePlayback}
           aria-label={
             reduceMotion
-              ? "المشهد التالي"
+              ? invitationT(locale, "nextScene")
               : isPlaying
-                ? "إيقاف العرض مؤقتاً"
-                : "تشغيل العرض"
+                ? invitationT(locale, "pause")
+                : invitationT(locale, "play")
           }
         >
           {isPlaying ? <Pause /> : <Play />}
         </button>
-        <button onClick={replay} aria-label="إعادة العرض">
+        <button onClick={replay} aria-label={invitationT(locale, "replay")}>
           <RotateCcw />
         </button>
         <button
           onClick={() => musicUrl && setIsMuted((value) => !value)}
           disabled={!musicUrl}
-          aria-label={isMuted ? "تشغيل الصوت" : "كتم الصوت"}
+          aria-label={invitationT(locale, isMuted ? "soundOn" : "soundOff")}
         >
           {isMuted ? <VolumeX /> : <Volume2 />}
         </button>
       </div>
 
-      <div className="wedding-progress" aria-label="مشاهد الدعوة">
+      <div className="wedding-progress" aria-label={invitationT(locale, "scenes")}>
         {timings.map((scene, index) => (
           <button
             key={scene.id}
             className={activeSceneIndex === index ? "is-active" : ""}
             onClick={() => goToScene(index)}
-            aria-label={`المشهد ${index + 1} من ${timings.length}`}
+            aria-label={`${invitationT(locale, "scene")} ${index + 1} ${invitationT(locale, "of")} ${timings.length}`}
             aria-current={activeSceneIndex === index ? "step" : undefined}
           />
         ))}

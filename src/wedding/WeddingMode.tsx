@@ -38,6 +38,10 @@ import { WeddingSceneEngine } from "./WeddingSceneEngine";
 import { WeddingVisualLayer } from "./WeddingVisualLayer";
 import { resolveWeddingScenes, type WeddingScene } from "./scene-engine";
 import { normalizeWeddingBackground } from "./upload";
+import { invitationT } from "../i18n/invitation";
+import { localeDirection, type InvitationLocale } from "../i18n/locale";
+import { useAppLocale } from "../i18n/app-locale";
+import { weddingBuilderT } from "../i18n/wedding-builder";
 import "./wedding.css";
 
 type WeddingRendererProps = {
@@ -104,6 +108,7 @@ export function WeddingInvitationRenderer({
 
   return (
     <WeddingSceneEngine
+      locale={event.invitationLocale}
       scenes={scenes}
       timings={canonicalWeddingSceneTimings}
       musicUrl={event.musicUrl}
@@ -119,6 +124,7 @@ export function WeddingInvitationRenderer({
           templateId={template.id as WeddingVisualTemplateId}
           visual={event.visual}
           onOpenRsvp={() => setDrawerOpen(true)}
+          locale={event.invitationLocale}
         />
       )}
       overlay={
@@ -126,6 +132,7 @@ export function WeddingInvitationRenderer({
           {drawerOpen && (
             <WeddingRSVPDrawer
               guest={guest}
+              locale={event.invitationLocale}
               status={rsvpStatus}
               onClose={() => setDrawerOpen(false)}
               onSubmit={async (response) => {
@@ -148,6 +155,7 @@ function WeddingInvitationSceneRenderer({
   templateId,
   visual,
   onOpenRsvp,
+  locale,
 }: {
   scene: WeddingScene;
   replayKey: number;
@@ -156,6 +164,7 @@ function WeddingInvitationSceneRenderer({
   templateId: WeddingVisualTemplateId;
   visual: WeddingEventData["visual"];
   onOpenRsvp: () => void;
+  locale: InvitationLocale;
 }) {
   const className =
     scene.id === "names"
@@ -178,7 +187,7 @@ function WeddingInvitationSceneRenderer({
           motionPreset={motionPreset}
         >
           <div className={`wedding-scene ${className}`}>
-            <WeddingSceneContent scene={scene} onOpenRsvp={onOpenRsvp} />
+            <WeddingSceneContent scene={scene} onOpenRsvp={onOpenRsvp} locale={locale} />
           </div>
         </WeddingMotionLayer>
       </div>
@@ -189,9 +198,11 @@ function WeddingInvitationSceneRenderer({
 function WeddingSceneContent({
   scene,
   onOpenRsvp,
+  locale,
 }: {
   scene: WeddingScene;
   onOpenRsvp: () => void;
+  locale: InvitationLocale;
 }) {
   if (scene.id === "opening")
     return (
@@ -210,7 +221,7 @@ function WeddingSceneContent({
       </>
     );
   if (scene.id === "names")
-    return <PrincipalNames lines={scene.lines} fallback={scene.fallback} />;
+    return <PrincipalNames lines={scene.lines} fallback={scene.fallback} locale={locale} />;
   if (scene.id === "details") {
     const hasDate =
       scene.startTime ||
@@ -238,12 +249,12 @@ function WeddingSceneContent({
           <div className="wedding-schedule">
             {scene.receptionTime && (
               <span>
-                الاستقبال <b>{scene.receptionTime}</b>
+                {invitationT(locale, "reception")} <b>{scene.receptionTime}</b>
               </span>
             )}
             {scene.dinnerTime && (
               <span>
-                العشاء <b>{scene.dinnerTime}</b>
+                {invitationT(locale, "dinner")} <b>{scene.dinnerTime}</b>
               </span>
             )}
           </div>
@@ -255,7 +266,7 @@ function WeddingSceneContent({
             target="_blank"
             rel="noreferrer"
           >
-            <MapPin size={13} /> عرض الموقع
+            <MapPin size={13} /> {invitationT(locale, "viewLocation")}
           </a>
         )}
       </>
@@ -263,13 +274,13 @@ function WeddingSceneContent({
   }
   return (
     <>
-      <p className="wedding-rsvp-guest">دعوة خاصة إلى {scene.guestName}</p>
+      <p className="wedding-rsvp-guest">{invitationT(locale, "privateInvitation")} {scene.guestName}</p>
       <button
         className="wedding-rsvp-button"
         onClick={onOpenRsvp}
         data-testid="button-wedding-rsvp"
       >
-        <span>{scene.status === "pending" ? "تأكيد الحضور" : "تعديل الرد"}</span>
+        <span>{invitationT(locale, scene.status === "pending" ? "confirmAttendance" : "editResponse")}</span>
         {scene.deadline && <small>{scene.deadline}</small>}
       </button>
     </>
@@ -279,9 +290,11 @@ function WeddingSceneContent({
 function PrincipalNames({
   lines,
   fallback,
+  locale,
 }: {
   lines: string[];
   fallback?: string;
+  locale: InvitationLocale;
 }) {
   if (!lines.length)
     return fallback ? <p className="wedding-custom-copy">{fallback}</p> : null;
@@ -295,18 +308,20 @@ function PrincipalNames({
       {lines.map((line, index) => (
         <span key={`${line}-${index}`}>{line}</span>
       ))}
-      {lines.length === 2 && <i>و</i>}
+      {lines.length === 2 && <i>{invitationT(locale, "and")}</i>}
     </div>
   );
 }
 
 function WeddingRSVPDrawer({
   guest,
+  locale,
   status,
   onClose,
   onSubmit,
 }: {
   guest: WeddingGuestData;
+  locale: InvitationLocale;
   status: "pending" | "accepted" | "declined";
   onClose: () => void;
   onSubmit: (response: WeddingRsvp) => void | Promise<void>;
@@ -366,7 +381,7 @@ function WeddingRSVPDrawer({
         message,
       });
     } catch {
-      setSubmitError("تعذر حفظ الرد. يرجى المحاولة مرة أخرى.");
+      setSubmitError(invitationT(locale, "saveError"));
     } finally {
       setSubmitting(false);
     }
@@ -381,6 +396,8 @@ function WeddingRSVPDrawer({
     >
       <motion.div
         className="wedding-drawer"
+        dir={localeDirection(locale)}
+        lang={locale}
         ref={drawerRef}
         role="dialog"
         aria-modal="true"
@@ -394,34 +411,34 @@ function WeddingRSVPDrawer({
         <button
           className="wedding-drawer-close"
           onClick={onClose}
-          aria-label="إغلاق"
+          aria-label={invitationT(locale, "close")}
         >
           <X />
         </button>
         <span className="wedding-drawer-handle" />
-        <p className="wedding-drawer-eyebrow">دعوة خاصة إلى {guest.name}</p>
-        <h2 id="wedding-rsvp-title">هل ستشرفنا بالحضور؟</h2>
+        <p className="wedding-drawer-eyebrow">{invitationT(locale, "privateInvitation")} {guest.name}</p>
+        <h2 id="wedding-rsvp-title">{invitationT(locale, "rsvpTitle")}</h2>
         <div className="wedding-attendance-options">
           <button
             className={attendance === "accepted" ? "is-selected" : ""}
             onClick={() => setAttendance("accepted")}
             aria-pressed={attendance === "accepted"}
           >
-            <Check /> حضور
+            <Check /> {invitationT(locale, "attending")}
           </button>
           <button
             className={attendance === "declined" ? "is-selected" : ""}
             onClick={() => setAttendance("declined")}
             aria-pressed={attendance === "declined"}
           >
-            <X /> أعتذر عن الحضور
+            <X /> {invitationT(locale, "declining")}
           </button>
         </div>
         {attendance === "accepted" && (
           <div className="wedding-companions">
             <div>
-              <strong>عدد الحضور</strong>
-              <small>الحد المسموح: {maxGuests}</small>
+              <strong>{invitationT(locale, "guestCount")}</strong>
+              <small>{invitationT(locale, "allowed")}: {maxGuests}</small>
             </div>
             <div className="wedding-counter">
               <button
@@ -431,7 +448,7 @@ function WeddingRSVPDrawer({
                   )
                 }
                 disabled={guestCount <= 1}
-                aria-label="تقليل عدد الحضور"
+                aria-label={invitationT(locale, "decreaseGuests")}
               >
                 <Minus />
               </button>
@@ -443,7 +460,7 @@ function WeddingRSVPDrawer({
                   )
                 }
                 disabled={guestCount >= maxGuests}
-                aria-label="زيادة عدد الحضور"
+                aria-label={invitationT(locale, "increaseGuests")}
               >
                 <Plus />
               </button>
@@ -452,14 +469,14 @@ function WeddingRSVPDrawer({
         )}
         <label className="wedding-message">
           <span>
-            رسالة للعروسين <small>(اختياري)</small>
+            {invitationT(locale, "message")} <small>({invitationT(locale, "optional")})</small>
           </span>
           <textarea
             value={message}
             onChange={(event) => setMessage(event.target.value)}
             rows={3}
             maxLength={300}
-            placeholder="اكتب رسالتك هنا"
+            placeholder={invitationT(locale, "messagePlaceholder")}
           />
         </label>
         <button
@@ -467,7 +484,7 @@ function WeddingRSVPDrawer({
           onClick={submit}
           disabled={submitting}
         >
-          {submitting ? "جارٍ الحفظ…" : "حفظ الرد"}
+          {invitationT(locale, submitting ? "saving" : "save")}
         </button>
         {submitError && <p role="alert">{submitError}</p>}
       </motion.div>
@@ -482,13 +499,7 @@ type WeddingStudioProps = {
   onChange: (event: WeddingEventData) => void;
 };
 
-const builderSteps = [
-  { id: "template", label: "القالب" },
-  { id: "details", label: "التفاصيل" },
-  { id: "style", label: "النمط" },
-  { id: "presentation", label: "التخطيط والحركة" },
-  { id: "preview", label: "المعاينة" },
-] as const;
+const builderStepIds = ["template", "details", "style", "presentation", "preview"] as const;
 
 export function WeddingStudio({
   event,
@@ -496,6 +507,8 @@ export function WeddingStudio({
   rsvpStatus,
   onChange,
 }: WeddingStudioProps) {
+  const { t, dir, locale } = useAppLocale();
+  const builderSteps = builderStepIds.map((id) => ({ id, label: t(id) }));
   const [stepIndex, setStepIndex] = useState(0);
   const step = builderSteps[stepIndex];
   const update = (patch: Partial<WeddingEventData>) =>
@@ -506,7 +519,13 @@ export function WeddingStudio({
     patch: Partial<WeddingEventData["presentation"]>,
   ) => update({ presentation: { ...event.presentation, ...patch } });
   return (
-    <div className="wedding-studio" dir="rtl">
+    <div className="wedding-studio">
+      <label className="mb-4 block max-w-xs text-xs font-semibold">
+        <span className="mb-2 block">{t("invitationLanguage")}</span>
+        <select data-testid="select-wedding-invitation-locale" value={event.invitationLocale} onChange={(changeEvent) => update({ invitationLocale: changeEvent.target.value as InvitationLocale })} className="focus-ring min-h-11 w-full rounded-xl border border-[#D4AF37]/55 bg-[#FFFDF9] px-4">
+          <option value="ar">{t("arabic")}</option><option value="en">{t("english")}</option>
+        </select>
+      </label>
       <nav className="wedding-stepper" aria-label="خطوات إنشاء دعوة الزفاف">
         {builderSteps.map((item, index) => (
           <button
@@ -544,11 +563,10 @@ export function WeddingStudio({
           )}
           {step.id === "preview" && (
             <div className="wedding-preview-copy">
-              <span>المعاينة الحقيقية</span>
-              <h2>كل ما تراه هنا هو ما يفتحه الضيف.</h2>
+              <span>{weddingBuilderT(locale, "realPreview")}</span>
+              <h2>{weddingBuilderT(locale, "previewTitle")}</h2>
               <p>
-                شغّل المشاهد، أعدها، افتح تأكيد الحضور، وراجع التفاف الأسماء قبل
-                إرسال الرابط.
+                {weddingBuilderT(locale, "previewHelp")}
               </p>
             </div>
           )}
@@ -557,7 +575,7 @@ export function WeddingStudio({
               onClick={() => setStepIndex((value) => Math.max(0, value - 1))}
               disabled={stepIndex === 0}
             >
-              <ChevronRight /> السابق
+              {dir === "rtl" ? <ChevronRight /> : <ChevronLeft />} {t("previous")}
             </button>
             <button
               className="is-primary"
@@ -568,14 +586,14 @@ export function WeddingStudio({
               }
               disabled={stepIndex === builderSteps.length - 1}
             >
-              التالي <ChevronLeft />
+              {t("next")} {dir === "rtl" ? <ChevronLeft /> : <ChevronRight />}
             </button>
           </div>
         </div>
         <div className="wedding-live-preview">
           <div className="wedding-phone-label">
             <span>9:16</span>
-            <b>معاينة الضيف</b>
+            <b>{t("guestPreview")}</b>
           </div>
           <WeddingInvitationRenderer
             key={event.presentation.motionPresetId}
@@ -598,6 +616,8 @@ function TemplateStep({
   event: WeddingEventData;
   update: (patch: Partial<WeddingEventData>) => void;
 }) {
+  const { locale } = useAppLocale();
+  const w = (key: Parameters<typeof weddingBuilderT>[1]) => weddingBuilderT(locale, key);
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -631,7 +651,7 @@ function TemplateStep({
       });
     } catch (error) {
       setUploadError(
-        error instanceof Error ? error.message : "تعذر تجهيز الصورة.",
+        error instanceof Error ? error.message : w("uploadError"),
       );
     } finally {
       setUploading(false);
@@ -641,9 +661,9 @@ function TemplateStep({
   return (
     <div>
       <StepHeading
-        kicker="الخطوة 2"
-        title="اختاري القالب"
-        description="القالب يحدد التصميم البصري والزخارف؛ أما التخطيط والحركة فيُختاران بشكل مستقل."
+        kicker={w("step2")}
+        title={w("chooseTemplate")}
+        description={w("templateHelp")}
       />
       <div className="wedding-template-list">
         {Object.values(WeddingTemplateRegistry).map((template) => (
@@ -660,7 +680,7 @@ function TemplateStep({
             </span>
             <span>
               <b>{template.nameAr}</b>
-              <small>{template.name} · قالب جاهز</small>
+              <small>{locale === "ar" ? template.nameAr : template.name} · {w("readyTemplate")}</small>
             </span>
             {!uploaded && event.templateId === template.id && <Check />}
           </button>
@@ -675,11 +695,11 @@ function TemplateStep({
             <ImagePlus aria-hidden="true" />
           </span>
           <span>
-            <b>{uploading ? "جارٍ تجهيز الصورة…" : uploaded ? "استبدال الخلفية" : "خلفية خاصة"}</b>
+            <b>{w(uploading ? "preparingImage" : uploaded ? "replaceBackground" : "customBackground")}</b>
             <small>
               {uploadedBackground
                 ? uploadedBackground.fileName
-                : "JPEG أو PNG أو WebP · صورة خلفية فقط"}
+                : w("imageOnly")}
             </small>
           </span>
           {uploaded && <Check aria-hidden="true" />}
@@ -689,7 +709,7 @@ function TemplateStep({
           className="wedding-file-input"
           type="file"
           accept="image/jpeg,image/png,image/webp"
-          aria-label="رفع صورة خلفية للدعوة"
+          aria-label={w("uploadBackground")}
           onChange={(changeEvent) => uploadBackground(changeEvent.target.files?.[0])}
         />
       </div>
@@ -699,12 +719,11 @@ function TemplateStep({
           className="wedding-remove-background"
           onClick={() => update({ visual: { source: "template" } })}
         >
-          <Trash2 aria-hidden="true" /> إزالة الخلفية والعودة للقالب الجاهز
+          <Trash2 aria-hidden="true" /> {w("removeBackground")}
         </button>
       )}
       <p className="wedding-registry-note">
-        القوالب المخصصة المستقبلية تدخل السجل نفسه، من دون تغيير بيانات الضيوف
-        أو نظام الرد.
+        {w("futureTemplates")}
       </p>
     </div>
   );
@@ -717,58 +736,56 @@ function DetailsStep({
   event: WeddingEventData;
   update: (patch: Partial<WeddingEventData>) => void;
 }) {
+  const { locale } = useAppLocale();
+  const w = (key: Parameters<typeof weddingBuilderT>[1]) => weddingBuilderT(locale, key);
   return (
     <div>
       <StepHeading
-        kicker="الخطوة 3"
-        title="تفاصيل المناسبة"
-        description="النصوص أدناه هي المصدر الوحيد لمحتوى الدعوة."
+        kicker={w("step3")}
+        title={w("eventDetails")}
+        description={w("detailsHelp")}
       />
       <div className="wedding-fields">
         <Field
-          label="صيغة الدعوة"
+          label={w("invitationFormat")}
           value={event.invitationVariant}
           onChange={(value) =>
             update({ invitationVariant: value as WeddingVariant })
           }
           options={[
-            ["both", "العروس والعريس"],
-            ["women", "العروس فقط"],
-            ["men", "العريس فقط"],
-            ["family", "العائلة"],
-            ["custom", "نص مخصص"],
+            ["both", w("both")], ["women", w("women")], ["men", w("men")], ["family", w("family")], ["custom", w("custom")],
           ]}
         />
         <Field
-          label="نص الافتتاح"
+          label={w("opening")}
           value={event.openingWording}
           onChange={(value) => update({ openingWording: value })}
         />
         <Field
-          label="أسماء الداعين / العائلتين"
+          label={w("hosts")}
           value={event.hostNames}
           onChange={(value) => update({ hostNames: value })}
           wide
         />
         <Field
-          label="عبارة الدعوة"
+          label={w("invitationWording")}
           value={event.invitationWording}
           onChange={(value) => update({ invitationWording: value })}
           wide
         />
         <Field
-          label="اسم العريس"
+          label={w("groom")}
           value={event.groomName}
           onChange={(value) => update({ groomName: value })}
         />
         <Field
-          label="اسم العروس"
+          label={w("bride")}
           value={event.brideName}
           onChange={(value) => update({ brideName: value })}
         />
         {event.invitationVariant === "family" && (
           <Field
-            label="أسماء العائلة"
+            label={w("familyNames")}
             value={event.familyNames}
             onChange={(value) => update({ familyNames: value })}
             wide
@@ -776,7 +793,7 @@ function DetailsStep({
         )}
         {event.invitationVariant === "custom" && (
           <Field
-            label="النص العربي المخصص"
+            label={w("customArabic")}
             value={event.customWording}
             onChange={(value) => update({ customWording: value })}
             textarea
@@ -784,54 +801,54 @@ function DetailsStep({
           />
         )}
         <Field
-          label="اليوم"
+          label={w("day")}
           value={event.eventDay}
           onChange={(value) => update({ eventDay: value })}
         />
         <Field
-          label="التاريخ الميلادي"
+          label={w("gregorian")}
           value={event.gregorianDate}
           onChange={(value) => update({ gregorianDate: value })}
         />
         <Field
-          label="التاريخ الهجري"
+          label={w("hijri")}
           value={event.hijriDate}
           onChange={(value) => update({ hijriDate: value })}
         />
         <Field
-          label="وقت البداية"
+          label={w("start")}
           value={event.startTime}
           onChange={(value) => update({ startTime: value })}
         />
         <Field
-          label="وقت الاستقبال"
+          label={w("reception")}
           value={event.receptionTime}
           onChange={(value) => update({ receptionTime: value })}
         />
         <Field
-          label="وقت العشاء"
+          label={w("dinner")}
           value={event.dinnerTime}
           onChange={(value) => update({ dinnerTime: value })}
         />
         <Field
-          label="القاعة"
+          label={w("venue")}
           value={event.venue}
           onChange={(value) => update({ venue: value })}
         />
         <Field
-          label="المدينة"
+          label={w("city")}
           value={event.city}
           onChange={(value) => update({ city: value })}
         />
         <Field
-          label="رابط الخريطة"
+          label={w("map")}
           value={event.mapUrl}
           onChange={(value) => update({ mapUrl: value })}
           wide
           dir="ltr"
         />
         <Field
-          label="موعد إغلاق الرد"
+          label={w("deadline")}
           value={event.rsvpDeadline}
           onChange={(value) => update({ rsvpDeadline: value })}
           wide
@@ -850,6 +867,8 @@ function StyleStep({
   update: (patch: Partial<WeddingEventData>) => void;
   updateStyle: (patch: Partial<WeddingEventData["style"]>) => void;
 }) {
+  const { locale } = useAppLocale();
+  const w = (key: Parameters<typeof weddingBuilderT>[1]) => weddingBuilderT(locale, key);
   const template =
     WeddingTemplateRegistry[event.templateId as WeddingVisualTemplateId] ??
     WeddingTemplateRegistry["soft-floral-garden"];
@@ -858,12 +877,12 @@ function StyleStep({
   return (
     <div>
       <StepHeading
-        kicker="الخطوة 4"
-        title="نمط مضبوط بعناية"
-        description="ألوان وخطوط وزخارف تضبط الهوية البصرية من دون فرض التكوين أو الحركة."
+        kicker={w("step4")}
+        title={w("refinedStyle")}
+        description={w("styleHelp")}
       />
       {!uploaded && <div className="wedding-style-section">
-        <b>الخلفية</b>
+        <b>{w("background")}</b>
         <div className="wedding-color-options">
           {customization.backgrounds.map((color) => (
             <button
@@ -880,7 +899,7 @@ function StyleStep({
         </div>
       </div>}
       {!uploaded && <div className="wedding-style-section">
-        <b>لون العناوين</b>
+        <b>{w("headingColor")}</b>
         <div className="wedding-color-options">
           {customization.accents.map((color) => (
             <button
@@ -896,12 +915,12 @@ function StyleStep({
       </div>}
       {uploaded && (
         <p className="wedding-upload-style-note">
-          الصورة هي الخلفية الأساسية، ويُطبّق عليها غطاء قراءة محايد تلقائيًا.
+          {w("imageOverlay")}
         </p>
       )}
       <div className="wedding-fields">
         {!uploaded && customization.floralThemes.length > 0 && <Field
-          label="ألوان الزهور"
+          label={w("flowers")}
           value={event.style.floralTheme}
           onChange={(value) =>
             updateStyle({ floralTheme: value as FloralTheme })
@@ -912,7 +931,7 @@ function StyleStep({
           ])}
         />}
         <Field
-          label="خط الأسماء"
+          label={w("namesFont")}
           value={event.style.displayFont}
           onChange={(value) =>
             updateStyle({ displayFont: value as ArabicFont })
@@ -923,7 +942,7 @@ function StyleStep({
           ])}
         />
         <Field
-          label="خط المعلومات"
+          label={w("infoFont")}
           value={event.style.bodyFont}
           onChange={(value) => updateStyle({ bodyFont: value as ArabicFont })}
           options={customization.fonts.map((key) => [
@@ -932,13 +951,13 @@ function StyleStep({
           ])}
         />
         <Field
-          label="رابط موسيقى اختياري"
+          label={w("music")}
           value={event.musicUrl}
           onChange={(value) => update({ musicUrl: value })}
           dir="ltr"
         />
         <Field
-          label="رابط فيديو خلفية اختياري"
+          label={w("video")}
           value={event.backgroundMediaUrl}
           onChange={(value) => update({ backgroundMediaUrl: value })}
           dir="ltr"
@@ -958,18 +977,20 @@ function PresentationStep({
     patch: Partial<WeddingEventData["presentation"]>,
   ) => void;
 }) {
+  const { locale } = useAppLocale();
+  const w = (key: Parameters<typeof weddingBuilderT>[1]) => weddingBuilderT(locale, key);
   const template =
     WeddingTemplateRegistry[event.templateId as WeddingVisualTemplateId] ??
     WeddingTemplateRegistry["soft-floral-garden"];
   return (
     <div>
       <StepHeading
-        kicker="الخطوة 5"
-        title="التخطيط والحركة"
-        description="اختاري موضع المحتوى وطريقة دخوله بشكل مستقل عن تصميم القالب."
+        kicker={w("step5")}
+        title={w("layoutMotion")}
+        description={w("presentationHelp")}
       />
       <div className="wedding-presentation-section">
-        <b>التخطيط</b>
+        <b>{w("layout")}</b>
         <div className="wedding-preset-grid">
           {template.presentation.supportedLayoutPresetIds.map((id) => {
             const preset = WeddingLayoutPresets[id];
@@ -987,9 +1008,9 @@ function PresentationStep({
                   <i />
                 </span>
                 <span>
-                  <strong>{preset.nameAr}</strong>
-                  <small>{preset.name}</small>
-                  <em>{preset.descriptionAr}</em>
+                  <strong>{locale === "ar" ? preset.nameAr : preset.name}</strong>
+                  {locale === "ar" && <small>{preset.name}</small>}
+                  {locale === "ar" && <em>{preset.descriptionAr}</em>}
                 </span>
                 {selected && <Check aria-hidden="true" />}
               </button>
@@ -998,7 +1019,7 @@ function PresentationStep({
         </div>
       </div>
       <div className="wedding-presentation-section">
-        <b>الحركة</b>
+        <b>{w("motion")}</b>
         <div className="wedding-motion-options">
           {template.presentation.supportedMotionPresetIds.map((id) => {
             const preset = WeddingMotionPresets[id];
@@ -1012,9 +1033,9 @@ function PresentationStep({
               >
                 <span className={`wedding-motion-mark wedding-motion-mark--${id}`} aria-hidden="true"><i /></span>
                 <span>
-                  <strong>{preset.nameAr}</strong>
-                  <small>{preset.name}</small>
-                  <em>{preset.descriptionAr}</em>
+                  <strong>{locale === "ar" ? preset.nameAr : preset.name}</strong>
+                  {locale === "ar" && <small>{preset.name}</small>}
+                  {locale === "ar" && <em>{preset.descriptionAr}</em>}
                 </span>
                 {selected && <Check aria-hidden="true" />}
               </button>

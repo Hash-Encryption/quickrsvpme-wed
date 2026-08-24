@@ -9,6 +9,7 @@ import {
   resolveWeddingVisualSelection,
   type WeddingVisualSelection,
 } from "./upload.ts";
+import { normalizeLocale, type InvitationLocale } from "../i18n/locale.ts";
 
 export type EventMode = "standard" | "wedding";
 export type WeddingVariant = "women" | "men" | "both" | "family" | "custom";
@@ -26,6 +27,7 @@ export type WeddingStyle = {
 
 export type WeddingEventData = {
   eventType: "wedding";
+  invitationLocale: InvitationLocale;
   templateId: string;
   brideName: string;
   groomName: string;
@@ -237,6 +239,7 @@ export const WeddingTemplateRegistry: Record<
 
 export const defaultWeddingEvent: WeddingEventData = {
   eventType: "wedding",
+  invitationLocale: "ar",
   templateId: "soft-floral-garden",
   brideName: "ريم",
   groomName: "فيصل",
@@ -288,6 +291,7 @@ export function mergeWeddingEvent(
   return {
     ...defaultWeddingEvent,
     ...value,
+    invitationLocale: normalizeLocale(value?.invitationLocale),
     templateId: template.id,
     visual: resolveWeddingVisualSelection(value?.visual),
     style: { ...template.defaults, ...value?.style },

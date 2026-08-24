@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 @import 'tailwindcss';
 @custom-variant dark (&:is(.dark *));
 
@@ -159,3 +159,9 @@
   .gold-thread { opacity: .7; }
   .suite-card { border-radius: 24px; }
 }
+
+[dir='rtl'] .project-shell { direction: rtl; }
+[dir='rtl'] body { --app-font-sans: 'IBM Plex Sans Arabic', sans-serif; }
+[dir='rtl'] .project-sidebar { border-right: 0; border-left: 1px solid #D9D2C5; }
+[dir='ltr'] .wedding-studio { direction: ltr; }
+[dir='rtl'] input[dir='ltr'], [dir='rtl'] textarea[dir='ltr'], [dir='rtl'] bdi { unicode-bidi: isolate; }
