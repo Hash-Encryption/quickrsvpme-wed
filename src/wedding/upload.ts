@@ -19,12 +19,78 @@ export type WeddingUploadedBackground = {
   mimeType: string;
 };
 
+export type WeddingArtworkFitMode = "fit" | "fill";
+export type WeddingNormalizedPoint = { x: number; y: number };
+export type WeddingArtworkSettings = {
+  fitMode: WeddingArtworkFitMode;
+  backgroundPosition: WeddingNormalizedPoint;
+  backgroundZoom: number;
+  focalPoint: WeddingNormalizedPoint;
+};
+
+export const defaultWeddingArtworkSettings: WeddingArtworkSettings = {
+  fitMode: "fit",
+  backgroundPosition: { x: 0.5, y: 0.5 },
+  backgroundZoom: 1,
+  focalPoint: { x: 0.5, y: 0.5 },
+};
+
 export type WeddingVisualSelection =
   | { source: "template" }
   | {
       source: "uploaded-background";
       uploadedBackground: WeddingUploadedBackground;
-    };
+    } & WeddingArtworkSettings;
+
+const finite = (value: unknown, fallback: number) =>
+  typeof value === "number" && Number.isFinite(value) ? value : fallback;
+const clamp = (value: number, minimum: number, maximum: number) =>
+  Math.min(maximum, Math.max(minimum, value));
+
+export function normalizeWeddingPoint(
+  value: unknown,
+  fallback: WeddingNormalizedPoint = defaultWeddingArtworkSettings.backgroundPosition,
+): WeddingNormalizedPoint {
+  const point = value && typeof value === "object"
+    ? value as Partial<WeddingNormalizedPoint>
+    : {};
+  return {
+    x: clamp(finite(point.x, fallback.x), 0, 1),
+    y: clamp(finite(point.y, fallback.y), 0, 1),
+  };
+}
+
+export function normalizeWeddingArtworkSettings(
+  value: unknown,
+): WeddingArtworkSettings {
+  const settings = value && typeof value === "object"
+    ? value as Partial<WeddingArtworkSettings>
+    : {};
+  const fitMode = settings.fitMode === "fill" ? "fill" : "fit";
+  const backgroundPosition = normalizeWeddingPoint(settings.backgroundPosition);
+  return {
+    fitMode,
+    backgroundPosition,
+    backgroundZoom: fitMode === "fit"
+      ? 1
+      : clamp(finite(settings.backgroundZoom, 1), 1, 2),
+    focalPoint: normalizeWeddingPoint(settings.focalPoint, backgroundPosition),
+  };
+}
+
+export function moveWeddingArtwork(
+  start: WeddingNormalizedPoint,
+  deltaX: number,
+  deltaY: number,
+  width: number,
+  height: number,
+): WeddingNormalizedPoint {
+  if (width <= 0 || height <= 0) return normalizeWeddingPoint(start);
+  return normalizeWeddingPoint({
+    x: start.x - deltaX / width,
+    y: start.y - deltaY / height,
+  });
+}
 
 export function isValidWeddingBackgroundMetadata(
   value: unknown,
@@ -59,6 +125,7 @@ export function resolveWeddingVisualSelection(
     return {
       source: "uploaded-background",
       uploadedBackground: selection.uploadedBackground,
+      ...normalizeWeddingArtworkSettings(selection),
     };
   }
   return { source: "template" };

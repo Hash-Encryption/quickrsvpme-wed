@@ -15,6 +15,7 @@ import {
 import {
   getWeddingRemainingDelay,
   getWeddingSceneIndex,
+  resolveWeddingSemanticBlocks,
   resolveWeddingScenes,
   weddingSceneIds,
 } from "./scene-engine.ts";
@@ -23,9 +24,14 @@ import {
   WeddingLayoutPresets,
   WeddingMotionPresets,
   resolveWeddingMotionTarget,
+  resolveWeddingSafeZone,
 } from "./presentation.ts";
 import {
+  defaultWeddingArtworkSettings,
   isValidWeddingBackgroundMetadata,
+  moveWeddingArtwork,
+  normalizeWeddingArtworkSettings,
+  normalizeWeddingPoint,
   resolveWeddingVisualSelection,
   type WeddingVisualSelection,
 } from "./upload.ts";
@@ -35,6 +41,11 @@ const uploadedBackground = {
   dataUrl: "data:image/webp;base64,QUJD",
   fileName: "wedding.webp",
   mimeType: "image/webp",
+};
+const uploadedVisual = {
+  source: "uploaded-background" as const,
+  uploadedBackground,
+  ...defaultWeddingArtworkSettings,
 };
 
 test("ready visual-template registry contains exactly the Phase 4 designs", () => {
@@ -103,6 +114,7 @@ test("Phase 2 events without presentation data migrate to template defaults", ()
   assert.deepEqual(mergeWeddingEvent(phase2Event).presentation, {
     layoutPresetId: "centered-elegance",
     motionPresetId: "soft-dissolve",
+    safeZone: "auto",
   });
 });
 
@@ -154,6 +166,7 @@ test("an invalid persisted layout ID resolves safely", () => {
   assert.deepEqual(invalid.presentation, {
     layoutPresetId: "centered-elegance",
     motionPresetId: "editorial-glide",
+    safeZone: "auto",
   });
 });
 
@@ -167,6 +180,7 @@ test("an invalid persisted motion ID resolves safely", () => {
   assert.deepEqual(invalid.presentation, {
     layoutPresetId: "cinematic-focus",
     motionPresetId: "soft-dissolve",
+    safeZone: "auto",
   });
 });
 
@@ -203,7 +217,7 @@ test("ready-template and custom-background selection preserve scene content", ()
     assert.deepEqual(resolveWeddingScenes(event, defaultWeddingGuest), baseline);
   }
   const custom = mergeWeddingEvent({
-    visual: { source: "uploaded-background", uploadedBackground },
+    visual: uploadedVisual,
   });
   assert.deepEqual(resolveWeddingScenes(custom, defaultWeddingGuest), baseline);
 });
@@ -212,6 +226,7 @@ test("valid layout and motion choices survive every visual change", () => {
   const presentation = {
     layoutPresetId: "cinematic-focus" as const,
     motionPresetId: "editorial-glide" as const,
+    safeZone: "auto" as const,
   };
   for (const templateId of Object.keys(WeddingTemplateRegistry)) {
     assert.deepEqual(
@@ -222,7 +237,7 @@ test("valid layout and motion choices survive every visual change", () => {
   assert.deepEqual(
     mergeWeddingEvent({
       presentation,
-      visual: { source: "uploaded-background", uploadedBackground },
+      visual: uploadedVisual,
     }).presentation,
     presentation,
   );
@@ -253,7 +268,7 @@ test("all 36 visual and presentation combinations are deterministic", () => {
   for (const layoutPresetId of Object.keys(WeddingLayoutPresets)) {
     for (const motionPresetId of Object.keys(WeddingMotionPresets)) {
       const event = mergeWeddingEvent({
-        visual: { source: "uploaded-background", uploadedBackground },
+        visual: uploadedVisual,
         presentation: {
           layoutPresetId: layoutPresetId as keyof typeof WeddingLayoutPresets,
           motionPresetId: motionPresetId as keyof typeof WeddingMotionPresets,
@@ -289,6 +304,69 @@ test("uploaded-background metadata accepts supported image types only", () => {
     }),
     false,
   );
+});
+
+test("legacy uploaded artwork receives deterministic Fit placement defaults", () => {
+  assert.deepEqual(resolveWeddingVisualSelection({
+    source: "uploaded-background",
+    uploadedBackground,
+  }), uploadedVisual);
+});
+
+test("artwork Fit and Fill settings normalize bounds and malformed values", () => {
+  assert.deepEqual(normalizeWeddingArtworkSettings({ fitMode: "fit", backgroundZoom: 2 }), defaultWeddingArtworkSettings);
+  assert.deepEqual(normalizeWeddingArtworkSettings({
+    fitMode: "fill",
+    backgroundPosition: { x: -2, y: 4 },
+    backgroundZoom: 8,
+    focalPoint: { x: 2, y: -1 },
+  }), {
+    fitMode: "fill",
+    backgroundPosition: { x: 0, y: 1 },
+    backgroundZoom: 2,
+    focalPoint: { x: 1, y: 0 },
+  });
+  assert.deepEqual(normalizeWeddingArtworkSettings({
+    fitMode: "broken",
+    backgroundPosition: { x: Number.NaN, y: "bad" },
+    backgroundZoom: Number.POSITIVE_INFINITY,
+    focalPoint: null,
+  }), defaultWeddingArtworkSettings);
+  assert.deepEqual(normalizeWeddingPoint({ x: 0.25, y: 0.75 }), { x: 0.25, y: 0.75 });
+  assert.deepEqual(moveWeddingArtwork({ x: 0.5, y: 0.5 }, -50, 25, 200, 100), { x: 0.75, y: 0.25 });
+  assert.deepEqual(moveWeddingArtwork({ x: 0.5, y: 0.5 }, 5, 5, 0, 0), { x: 0.5, y: 0.5 });
+});
+
+test("safe zones normalize independently from layout and motion", () => {
+  for (const safeZone of ["auto", "top", "center", "bottom"] as const) {
+    const event = mergeWeddingEvent({ presentation: { ...defaultWeddingEvent.presentation, safeZone } });
+    assert.equal(event.presentation.safeZone, safeZone);
+    assert.equal(event.presentation.layoutPresetId, defaultWeddingEvent.presentation.layoutPresetId);
+    assert.equal(event.presentation.motionPresetId, defaultWeddingEvent.presentation.motionPresetId);
+  }
+  assert.equal(mergeWeddingEvent({ presentation: { ...defaultWeddingEvent.presentation, safeZone: "broken" as "auto" } }).presentation.safeZone, "auto");
+  assert.equal(resolveWeddingSafeZone("auto", "center", 0.2), "bottom");
+  assert.equal(resolveWeddingSafeZone("auto", "center", 0.8), "top");
+  assert.equal(resolveWeddingSafeZone("auto", "center", 0.5), "center");
+});
+
+test("semantic blocks keep stable order and whole Arabic phrases", () => {
+  const blocks = resolveWeddingSemanticBlocks(defaultWeddingEvent, defaultWeddingGuest);
+  assert.deepEqual(blocks.map(({ id }) => id), ["opening", "occasion", "hosts", "principals", "date-time", "venue", "rsvp"]);
+  assert.deepEqual(blocks.find(({ id }) => id === "opening"), { id: "opening", text: "بسم الله الرحمن الرحيم" });
+  assert.deepEqual(blocks.find(({ id }) => id === "principals"), { id: "principals", lines: ["فيصل", "ريم"] });
+});
+
+test("optional semantic groups and RSVP wording omit without empty rows", () => {
+  const event = mergeWeddingEvent({
+    openingWording: " ", invitationWording: "", hostNames: "", familyNames: "",
+    invitationVariant: "custom", customWording: "", brideName: "", groomName: "",
+    eventDay: "", gregorianDate: "", hijriDate: "", startTime: "", receptionTime: "", dinnerTime: "",
+    venue: "", city: "", mapUrl: "", rsvpDeadline: "",
+  });
+  const blocks = resolveWeddingSemanticBlocks(event, defaultWeddingGuest);
+  assert.deepEqual(blocks.map(({ id }) => id), ["rsvp"]);
+  assert.equal(blocks[0].id === "rsvp" ? blocks[0].deadline : "wrong", undefined);
 });
 
 test("presentation selection never changes canonical scene timing", () => {

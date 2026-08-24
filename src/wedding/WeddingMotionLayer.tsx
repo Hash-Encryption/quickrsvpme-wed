@@ -3,9 +3,10 @@ import type { ReactNode } from "react";
 import type {
   WeddingLayoutPreset,
   WeddingMotionPreset,
+  WeddingSafeZone,
   WeddingSceneId,
 } from "./presentation";
-import { resolveWeddingMotionTarget } from "./presentation";
+import { resolveWeddingMotionTarget, resolveWeddingSafeZone } from "./presentation";
 
 type WeddingMotionLayerProps = {
   children: ReactNode;
@@ -13,6 +14,8 @@ type WeddingMotionLayerProps = {
   replayKey: number;
   layout: WeddingLayoutPreset;
   motionPreset: WeddingMotionPreset;
+  safeZone: WeddingSafeZone;
+  focalY?: number;
   direction?: "rtl" | "ltr";
 };
 
@@ -22,10 +25,13 @@ export function WeddingMotionLayer({
   replayKey,
   layout,
   motionPreset,
+  safeZone,
+  focalY,
   direction = "rtl",
 }: WeddingMotionLayerProps) {
   const reduceMotion = Boolean(useReducedMotion());
   const rule = layout.scenes[sceneId];
+  const vertical = resolveWeddingSafeZone(safeZone, rule.vertical, focalY);
   const target = (state: WeddingMotionPreset["active"]) =>
     resolveWeddingMotionTarget(state, direction, reduceMotion);
 
@@ -33,7 +39,7 @@ export function WeddingMotionLayer({
     <AnimatePresence mode="wait">
       <motion.div
         key={`${sceneId}:${replayKey}`}
-        className={`wedding-motion-layer wedding-layout-vertical--${rule.vertical} wedding-layout-horizontal--${rule.horizontal} wedding-layout-width--${rule.width}`}
+        className={`wedding-motion-layer wedding-layout-vertical--${vertical} wedding-layout-horizontal--${rule.horizontal} wedding-layout-width--${rule.width}`}
         initial={target(motionPreset.enter)}
         animate={{
           ...target(motionPreset.active),

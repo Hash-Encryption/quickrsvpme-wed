@@ -12,10 +12,15 @@ export function WeddingVisualLayer({
     return (
       <div className="wedding-visual-layer" aria-hidden="true">
         <img
-          className="wedding-uploaded-artwork"
+          className={`wedding-uploaded-artwork wedding-uploaded-artwork--${visual.fitMode}`}
           src={visual.uploadedBackground.dataUrl}
           alt=""
           draggable={false}
+          style={{
+            objectPosition: `${visual.backgroundPosition.x * 100}% ${visual.backgroundPosition.y * 100}%`,
+            transform: `scale(${visual.fitMode === "fill" ? visual.backgroundZoom : 1})`,
+            transformOrigin: `${visual.backgroundPosition.x * 100}% ${visual.backgroundPosition.y * 100}%`,
+          }}
         />
       </div>
     );

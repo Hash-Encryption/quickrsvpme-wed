@@ -27,10 +27,12 @@ export type WeddingMotionPresetId =
   | "soft-dissolve"
   | "cinematic-rise"
   | "editorial-glide";
+export type WeddingSafeZone = "auto" | "top" | "center" | "bottom";
 
 export type WeddingPresentation = {
   layoutPresetId: WeddingLayoutPresetId;
   motionPresetId: WeddingMotionPresetId;
+  safeZone: WeddingSafeZone;
 };
 
 export type WeddingLayoutRule = {
@@ -183,7 +185,22 @@ export function resolveWeddingPresentation(
   )
     ? (value?.motionPresetId as WeddingMotionPresetId)
     : template.defaultMotionPresetId;
-  return { layoutPresetId, motionPresetId };
+  const safeZone = ["top", "center", "bottom"].includes(value?.safeZone as string)
+    ? value?.safeZone as Exclude<WeddingSafeZone, "auto">
+    : "auto";
+  return { layoutPresetId, motionPresetId, safeZone };
+}
+
+export function resolveWeddingSafeZone(
+  safeZone: WeddingSafeZone,
+  layoutVertical: WeddingLayoutRule["vertical"],
+  focalY?: number,
+): WeddingLayoutRule["vertical"] {
+  if (safeZone !== "auto") return safeZone;
+  if (typeof focalY !== "number" || !Number.isFinite(focalY)) return layoutVertical;
+  if (focalY < 0.34) return "bottom";
+  if (focalY > 0.66) return "top";
+  return layoutVertical;
 }
 
 export function resolveWeddingMotionTarget(

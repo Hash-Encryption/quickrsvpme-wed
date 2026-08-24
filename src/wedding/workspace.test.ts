@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { defaultWeddingEvent } from "./model.ts";
+import { defaultWeddingArtworkSettings } from "./upload.ts";
 import {
   addWeddingProject,
   applySavedDesignToEvent,
@@ -68,8 +69,8 @@ test("legacy Phase 4 Wedding migrates to exactly one project and migration is id
   assert.equal(first.projects.length, 1);
   assert.equal(first.projects[0].event.brideName, "ليان");
   assert.equal(first.projects[0].event.templateId, "midnight-gold");
-  assert.deepEqual(first.projects[0].event.presentation, legacy.presentation);
-  assert.deepEqual(first.projects[0].event.visual, visual);
+  assert.deepEqual(first.projects[0].event.presentation, { ...legacy.presentation, safeZone: "auto" });
+  assert.deepEqual(first.projects[0].event.visual, { ...visual, ...defaultWeddingArtworkSettings });
   assert.equal(second.projects.length, 1);
   assert.equal(second.projects[0].id, "migrated");
   assert.equal(storage.commits, 1);
@@ -184,7 +185,7 @@ test("applying a Saved Design preserves all dynamic Wedding content", () => {
 });
 
 test("built-in template Saved Design roundtrips layout and motion", () => {
-  const event = { ...defaultWeddingEvent, templateId: "pearl-arch", presentation: { layoutPresetId: "editorial-offset" as const, motionPresetId: "editorial-glide" as const } };
+  const event = { ...defaultWeddingEvent, templateId: "pearl-arch", presentation: { layoutPresetId: "editorial-offset" as const, motionPresetId: "editorial-glide" as const, safeZone: "bottom" as const } };
   const design = createSavedDesignFromEvent(event, "Pearl", { id: "pearl" });
   const applied = applySavedDesignToEvent(defaultWeddingEvent, design);
   assert.equal(applied.templateId, "pearl-arch");
@@ -192,10 +193,28 @@ test("built-in template Saved Design roundtrips layout and motion", () => {
 });
 
 test("uploaded-background Saved Design roundtrips safely", () => {
-  const visual = { source: "uploaded-background" as const, uploadedBackground: { dataUrl: "data:image/png;base64,AA==", fileName: "look.png", mimeType: "image/png" } };
+  const visual = { source: "uploaded-background" as const, uploadedBackground: { dataUrl: "data:image/png;base64,AA==", fileName: "look.png", mimeType: "image/png" }, ...defaultWeddingArtworkSettings };
   const design = createSavedDesignFromEvent({ ...defaultWeddingEvent, visual }, "Upload", { id: "upload" });
   const applied = applySavedDesignToEvent(defaultWeddingEvent, design);
   assert.deepEqual(applied.visual, visual);
+});
+
+test("old Saved Designs without Phase 3 placement fields remain readable", () => {
+  const design = createSavedDesignFromEvent(defaultWeddingEvent, "Legacy", { id: "legacy-design", now: "1" });
+  const legacy = {
+    ...design,
+    visual: {
+      source: "uploaded-background",
+      uploadedBackground: { dataUrl: "data:image/png;base64,AA==", fileName: "old.png", mimeType: "image/png" },
+    },
+    presentation: {
+      layoutPresetId: "editorial-offset",
+      motionPresetId: "editorial-glide",
+    },
+  };
+  const normalized = normalizeWeddingWorkspace({ projects: [], designs: [legacy as never], metadata: null });
+  assert.deepEqual(normalized.designs[0].visual, { ...legacy.visual, ...defaultWeddingArtworkSettings });
+  assert.deepEqual(normalized.designs[0].presentation, { ...legacy.presentation, safeZone: "auto" });
 });
 
 test("invalid persisted template, visual, and presentation resolve safely", () => {
