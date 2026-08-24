@@ -9,6 +9,7 @@ export type ProjectSummary = {
 };
 
 export type ProjectSection = 'overview' | 'invitation' | 'guests' | 'send' | 'scanner' | 'settings';
+export type AdminSection = 'customers' | 'events' | 'templates' | 'usage' | 'support' | 'subscriptions';
 
 export const partyProject: ProjectSummary = {
   id: 'party-demo',
@@ -20,8 +21,10 @@ export const partyProject: ProjectSummary = {
 
 export const projectSections: Record<ProjectType, readonly ProjectSection[]> = {
   wedding: ['overview', 'invitation', 'guests', 'send', 'scanner', 'settings'],
-  party: ['overview', 'invitation', 'guests', 'scanner', 'settings'],
+  party: ['overview', 'invitation', 'guests', 'send', 'scanner', 'settings'],
 };
+
+export const adminSections: readonly AdminSection[] = ['customers', 'events', 'templates', 'usage', 'support', 'subscriptions'];
 
 export function buildProjectRoute(type: ProjectType, id: string, section: ProjectSection): string {
   return `/${type === 'wedding' ? 'weddings' : 'parties'}/${encodeURIComponent(id)}/${section}`;
@@ -34,4 +37,10 @@ export function resolveProjectSection(type: ProjectType, value: string | undefin
 export function legacyProjectRoute(path: '/studio/wedding' | '/studio/party' | '/scanner', weddingId: string): string {
   if (path === '/studio/party') return buildProjectRoute('party', partyProject.id, 'invitation');
   return buildProjectRoute('wedding', weddingId, path === '/scanner' ? 'scanner' : 'invitation');
+}
+
+export const buildAdminRoute = (section: AdminSection): string => `/admin/${section}`;
+
+export function resolveAdminSection(value: string | undefined): AdminSection {
+  return adminSections.includes(value as AdminSection) ? value as AdminSection : 'customers';
 }

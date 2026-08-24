@@ -1,4 +1,4 @@
-import { type ReactNode, type ComponentType, useContext, useEffect, useMemo, useState, createContext } from 'react';
+import { type ReactNode, type ComponentType, useContext, useEffect, useMemo, useRef, useState, createContext } from 'react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { AppLanguageControl, AppLocaleProvider, useAppLocale } from '@/i18n/app-locale';
 import { localeDirection, type InvitationLocale } from '@/i18n/locale';
@@ -15,13 +15,14 @@ import { Link, Route, Switch, Router as WouterRouter, useLocation, useParams } f
 import { WeddingInvitationRenderer, WeddingStudio } from '@/wedding/WeddingMode';
 import { WeddingWorkspaceProvider, useWeddingWorkspace } from '@/wedding/WeddingWorkspaceProvider';
 import type { WeddingProject } from '@/wedding/workspace';
-import { AdminPage } from '@/admin/AdminPage';
+import { AdminPage, type AdminEventRecord } from '@/admin/AdminPage';
 import { DashboardPage } from '@/app/DashboardPage';
 import { EmptyProjectSection, ProjectOverview, ProjectShell } from '@/app/ProjectShell';
 import {
   buildProjectRoute,
   legacyProjectRoute,
   partyProject,
+  resolveAdminSection,
   resolveProjectSection,
   type ProjectSummary,
   type ProjectType,
@@ -31,12 +32,25 @@ import {
   defaultWeddingGuest,
   getWhatsAppShareUrl,
   isValidGuestToken,
-  resolveInvitationTitle,
   type EventMode,
   type WeddingGuestData,
   type WeddingRsvp,
 } from '@/wedding/model';
 import { defaultPartyEvent, formatPartyDate, mergePartyEvent, partyTemplates, type PartyEventData } from '@/party/model';
+import {
+  checkInOperationalGuest,
+  emptyOperationalState,
+  guestsCsv,
+  guestsForProject,
+  invitationUrl,
+  normalizeOperationalState,
+  operationalStats,
+  projectKey,
+  scanProjectGuest,
+  updateOperationalGuestByToken,
+  type OperationalState,
+  type ScannerState,
+} from '@/app/operations';
 
 type RSVPStatus = 'pending' | 'accepted' | 'declined';
 type BlockKey = 'catering' | 'dress' | 'schedule' | 'registry' | 'song' | 'faq';
@@ -62,6 +76,7 @@ type EngineState = {
   partyEvent: PartyEventData;
   weddingGuest: WeddingGuestData;
   weddingResponse: { guestCount: number; message: string };
+  operations: OperationalState;
 };
 
 const initialBlocks: StudioBlock[] = [
@@ -76,7 +91,7 @@ const initialBlocks: StudioBlock[] = [
 const defaultState: EngineState = {
   rsvp: 'pending', plusOnes: 0, song: '', meal: '', checkedIn: false, blocks: initialBlocks,
   mode: 'standard', invitationLocale: 'ar', partyEvent: defaultPartyEvent, weddingGuest: defaultWeddingGuest,
-  weddingResponse: { guestCount: 1, message: '' },
+  weddingResponse: { guestCount: 1, message: '' }, operations: emptyOperationalState(),
 };
 
 type EngineContextValue = {
@@ -88,36 +103,38 @@ type EngineContextValue = {
   toggleBlock: (key: BlockKey) => void;
   reorderBlocks: (blocks: StudioBlock[]) => void;
   updateBlock: (key: BlockKey, patch: Partial<BlockContent>) => void;
-  setCheckedIn: () => void;
   setMode: (mode: EventMode) => void;
   setInvitationLocale: (locale: InvitationLocale) => void;
   updatePartyEvent: (patch: Partial<PartyEventData>) => void;
   submitWeddingRsvp: (response: WeddingRsvp) => void;
+  checkInGuest: (key: string, guestId: string) => void;
 };
 const EngineContext = createContext<EngineContextValue | null>(null);
 
 function EngineProvider({ children }: { children: ReactNode }) {
-  const { preserveLegacyWedding } = useWeddingWorkspace();
+  const { activeProject, preserveLegacyWedding } = useWeddingWorkspace();
+  const initialWeddingId = useRef(activeProject.id).current;
   const [state, setState] = useState<EngineState>(defaultState);
   const [ready, setReady] = useState(false);
   useEffect(() => {
     const raw = localStorage.getItem('luxury-rsvp-engine');
-    if (raw) {
-      try {
-        const saved = JSON.parse(raw) as Partial<EngineState> & { weddingEvent?: unknown };
-        const { weddingEvent: _legacyWedding, ...genericSaved } = saved;
-        setState({
+    try {
+      const saved = raw ? JSON.parse(raw) as Partial<EngineState> & { weddingEvent?: unknown } : {};
+      const { weddingEvent: _legacyWedding, ...genericSaved } = saved;
+      const next = {
           ...defaultState,
           ...genericSaved,
           invitationLocale: resolvePartyInvitationLocale(saved),
           partyEvent: mergePartyEvent(saved.partyEvent as Partial<PartyEventData> | undefined),
           weddingGuest: { ...defaultWeddingGuest, ...saved.weddingGuest },
           weddingResponse: { ...defaultState.weddingResponse, ...saved.weddingResponse },
-        });
-      } catch { setState(defaultState); }
+      };
+      setState({ ...next, operations: normalizeOperationalState(saved.operations, next, initialWeddingId, partyProject.id) });
+    } catch {
+      setState({ ...defaultState, operations: normalizeOperationalState(undefined, defaultState, initialWeddingId, partyProject.id) });
     }
     setReady(true);
-  }, []);
+  }, [initialWeddingId]);
   useEffect(() => {
     if (ready) {
       try {
@@ -132,13 +149,15 @@ function EngineProvider({ children }: { children: ReactNode }) {
   }, [state, ready, preserveLegacyWedding]);
   const value = useMemo(() => ({
     state, ready,
-    setRsvp: (rsvp: RSVPStatus) => setState((s) => ({ ...s, rsvp })),
+    setRsvp: (rsvp: RSVPStatus) => setState((s) => {
+      const key = projectKey(s.mode === 'wedding' ? 'wedding' : 'party', s.mode === 'wedding' ? activeProject.id : partyProject.id);
+      return { ...s, rsvp, operations: updateOperationalGuestByToken(s.operations, key, s.weddingGuest.token, { rsvp, guestCount: rsvp === 'accepted' ? 1 : 0 }) };
+    }),
     setSong: (song: string) => setState((s) => ({ ...s, song })),
     setMeal: (meal: string) => setState((s) => ({ ...s, meal })),
     toggleBlock: (key: BlockKey) => setState((s) => ({ ...s, blocks: s.blocks.map((b) => b.key === key ? { ...b, enabled: !b.enabled } : b) })),
     reorderBlocks: (blocks: StudioBlock[]) => setState((s) => ({ ...s, blocks })),
     updateBlock: (key: BlockKey, patch: Partial<BlockContent>) => setState((s) => ({ ...s, blocks: s.blocks.map((b) => b.key === key ? { ...b, content: { ...b.content, ...patch } } : b) })),
-    setCheckedIn: () => setState((s) => ({ ...s, checkedIn: true })),
     setMode: (mode: EventMode) => setState((s) => ({ ...s, mode })),
     setInvitationLocale: (invitationLocale: InvitationLocale) => setState((s) => ({ ...s, invitationLocale })),
     updatePartyEvent: (patch: Partial<PartyEventData>) => setState((s) => ({ ...s, partyEvent: mergePartyEvent({ ...s.partyEvent, ...patch }) })),
@@ -147,8 +166,10 @@ function EngineProvider({ children }: { children: ReactNode }) {
       rsvp: response.status,
       plusOnes: Math.max(0, response.guestCount - 1),
       weddingResponse: { guestCount: response.guestCount, message: response.message },
+      operations: updateOperationalGuestByToken(s.operations, projectKey('wedding', activeProject.id), s.weddingGuest.token, { rsvp: response.status, guestCount: response.guestCount, message: response.message }),
     })),
-  }), [state, ready]);
+    checkInGuest: (key: string, guestId: string) => setState((s) => ({ ...s, operations: checkInOperationalGuest(s.operations, key, guestId) })),
+  }), [activeProject.id, state, ready]);
   return <EngineContext.Provider value={value}>{children}</EngineContext.Provider>;
 }
 
@@ -676,59 +697,77 @@ function EditorPanel({ block, close, updateBlock }: { block: StudioBlock; close:
   return <motion.div initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 16 }} className="suite-card grommetless p-6"><div className="flex items-start justify-between"><div><Eyebrow>{t('edit')} / {t(block.key)}</Eyebrow><h3 className="mt-2 font-display text-3xl text-[#0A2E23]">{t(block.key)}</h3></div><button onClick={close} data-testid="button-close-editor" aria-label={t('cancel')} className="focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-full text-[#2D2421]/60"><X size={18} /></button></div><div className="mt-6 space-y-5"><label className="block"><span className="mb-2 block text-[10px] font-bold uppercase tracking-[.12em] text-[#2D2421]/55">{t('heading')}</span><input value={heading} onChange={(e) => setHeading(e.target.value)} data-testid="input-edit-heading" className="focus-ring w-full rounded-xl border border-[#D4AF37]/50 bg-[#FFFDF9]/60 px-4 py-3 text-sm outline-none" /></label>{(block.key === 'dress') && <label className="block"><span className="mb-2 block text-[10px] font-bold uppercase tracking-[.12em] text-[#2D2421]/55">{t('description')}</span><textarea value={note} onChange={(e) => setNote(e.target.value)} data-testid="input-edit-note" rows={4} className="focus-ring w-full resize-none rounded-xl border border-[#D4AF37]/50 bg-[#FFFDF9]/60 px-4 py-3 text-sm outline-none" /></label>}{block.key === 'catering' && <><label className="block"><span className="mb-2 block text-[10px] font-bold uppercase tracking-[.12em] text-[#2D2421]/55">{t('entrees')}</span><textarea value={entree} onChange={(e) => setEntree(e.target.value)} data-testid="input-edit-entrees" rows={4} className="focus-ring w-full resize-none rounded-xl border border-[#D4AF37]/50 bg-[#FFFDF9]/60 px-4 py-3 text-sm outline-none" /></label><div><span className="mb-2 block text-[10px] font-bold uppercase tracking-[.12em] text-[#2D2421]/55">{t('menuSwatches')}</span><div className="flex gap-3">{swatches.map((swatch, i) => <input key={i} type="color" value={swatch} onChange={(e) => setSwatches(swatches.map((color, colorI) => colorI === i ? e.target.value : color))} data-testid={`input-edit-swatch-${i}`} aria-label={`${t('menuSwatches')} ${i + 1}`} className="h-10 w-full cursor-pointer rounded-xl border border-[#D4AF37]/50 bg-[#FFFDF9]/60 p-1" />)}</div></div></>}{block.key === 'faq' && <div><span className="mb-2 block text-[10px] font-bold uppercase tracking-[.12em] text-[#2D2421]/55">{t('questions')}</span>{questions.map((item, i) => <input key={i} value={item.q} onChange={(e) => setQuestions(questions.map((q, qI) => qI === i ? { ...q, q: e.target.value } : q))} data-testid={`input-edit-question-${i}`} className="focus-ring mb-2 w-full rounded-xl border border-[#D4AF37]/50 bg-[#FFFDF9]/60 px-4 py-3 text-sm outline-none" />)}</div>}<Button variant="dark" className="w-full" icon={Check} onClick={save}>{t('saveChanges')}</Button></div></motion.div>;
 }
 
-function GuestManager() {
+function GuestManager({ project }: { project?: ProjectSummary } = {}) {
   const { t } = useAppLocale();
   const { state } = useEngine();
   const { activeProject } = useWeddingWorkspace();
-  const wedding = state.mode === 'wedding';
-  const guest = wedding ? state.weddingGuest : { ...defaultWeddingGuest, name: 'Hashim Alnimari', allowedCompanions: 0 };
-  const partySize = wedding && state.rsvp === 'accepted' ? state.weddingResponse.guestCount : 1;
-  const invitationUrl = `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}/i/${guest.token}`;
-  const eventName = wedding ? resolveInvitationTitle(state.mode, activeProject.event) : state.partyEvent.title;
-  const sendWhatsApp = () => {
-    const url = getWhatsAppShareUrl(state.mode, eventName, guest.phone, invitationUrl);
-    window.open(url, '_blank', 'noopener,noreferrer');
+  const context = project ?? (state.mode === 'wedding' ? weddingProjectSummary(activeProject) : partyProjectSummary(state.partyEvent));
+  const guests = guestsForProject(state.operations, projectKey(context.type, context.id));
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<RSVPStatus | 'all'>('all');
+  const [copied, setCopied] = useState('');
+  const visibleGuests = guests.filter((guest) => (filter === 'all' || guest.rsvp === filter) && `${guest.name} ${guest.phone} ${guest.token}`.toLowerCase().includes(query.trim().toLowerCase()));
+  const guestUrl = (token: string) => invitationUrl(window.location.origin, import.meta.env.BASE_URL, token);
+  const sendWhatsApp = (guest: (typeof guests)[number]) => window.open(getWhatsAppShareUrl(context.type === 'wedding' ? 'wedding' : 'standard', context.name, guest.phone, guestUrl(guest.token)), '_blank', 'noopener,noreferrer');
+  const copyInvitation = async (guest: (typeof guests)[number]) => {
+    await navigator.clipboard.writeText(guestUrl(guest.token));
+    setCopied(guest.id);
   };
   const exportGuests = () => {
-    const csv = `Guest,Plus ones,RSVP,Checked in\n${guest.name.replaceAll(',', ' ')},${Math.max(0, partySize - 1)},${state.rsvp},${state.checkedIn}\n`;
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const url = URL.createObjectURL(new Blob([guestsCsv(guests)], { type: 'text/csv' }));
     const link = document.createElement('a');
     link.href = url;
     link.download = 'quickrsvp-guest-list.csv';
     link.click();
     URL.revokeObjectURL(url);
   };
-  const responseClass = state.rsvp === 'accepted' ? 'bg-[#0A2E23]/10 text-[#0A2E23]' : 'bg-[#D4AF37]/15 text-[#8A6712]';
   return <div className="suite-card overflow-hidden p-6 sm:p-8">
-    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><Eyebrow>{t('guestList')} / 01</Eyebrow><h2 className="mt-2 font-display text-4xl text-[#0A2E23]">{t('guestListTitle')}</h2></div><Button variant="ivory" icon={ArrowDownToLine} onClick={exportGuests}>{t('catererExport')}</Button></div>
-    <div className="mt-6 rounded-2xl border border-[#D4AF37]/35 bg-[#FFFDF9]/45 p-4 sm:hidden">
-      <div className="flex items-center gap-3"><InitialsAvatar /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-[#0A2E23]" data-testid="row-guest-hashim-mobile">{guest.name}</p><p className="text-[10px] text-[#2D2421]/50"><bdi>{guest.token}</bdi></p></div><span className={`rounded-full px-2 py-1 text-[9px] font-bold uppercase ${responseClass}`}>{t(state.rsvp)}</span></div>
-      <div className="mt-4 flex items-center justify-between border-t border-[#D4AF37]/25 pt-4"><p className="text-xs text-[#2D2421]/65">{partySize} {t('guest')}</p><button onClick={sendWhatsApp} data-testid="button-whatsapp-hashim-mobile" className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-full border border-[#D4AF37]/60 px-3 py-2 text-[10px] font-bold uppercase text-[#0A2E23]"><MessageCircle size={14} /> WhatsApp</button></div>
-    </div>
-    <div className="mt-6 hidden overflow-x-auto sm:block"><table className="w-full min-w-[590px] text-start"><thead><tr className="border-b border-[#D4AF37]/35 text-[10px] uppercase tracking-[.12em] text-[#2D2421]/50"><th className="pb-3 font-semibold">{t('guest')}</th><th className="pb-3 font-semibold">{t('party')}</th><th className="pb-3 font-semibold">{t('response')}</th><th className="pb-3 text-end font-semibold">{t('invite')}</th></tr></thead><tbody><tr className="border-b border-[#D4AF37]/20"><td className="py-4"><div className="flex items-center gap-3"><InitialsAvatar /><div><p className="text-sm font-semibold text-[#0A2E23]" data-testid="row-guest-hashim">{guest.name}</p><p className="text-[10px] text-[#2D2421]/50"><bdi>{guest.token}</bdi></p></div></div></td><td className="py-4 text-sm">{partySize}</td><td className="py-4"><span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-[.1em] ${responseClass}`}>{t(state.rsvp)}</span></td><td className="py-4 text-end"><button onClick={sendWhatsApp} data-testid="button-whatsapp-hashim" className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-full border border-[#D4AF37]/60 px-3 py-2 text-[10px] font-bold uppercase tracking-[.08em] text-[#0A2E23] hover:bg-[#D4AF37]/10"><MessageCircle size={14} /> WhatsApp</button></td></tr></tbody></table></div>
-    <p className="mt-5 flex items-center gap-2 text-[10px] text-[#2D2421]/50"><Link2 size={12} className="text-[#A98219]" /> {t('personalLink')} · <bdi>/i/{guest.token}</bdi></p>
+    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><Eyebrow>{t('guestList')} / {String(guests.length).padStart(2, '0')}</Eyebrow><h2 className="mt-2 font-display text-4xl text-[#0A2E23]">{t('guestListTitle')}</h2><p className="mt-2 text-xs text-[#2D2421]/55">{t('localGuestData')}</p></div><Button variant="ivory" icon={ArrowDownToLine} onClick={exportGuests}>{t('catererExport')}</Button></div>
+    <div className="mt-6 grid gap-2 sm:grid-cols-[minmax(0,1fr)_180px]"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('searchGuests')} className="focus-ring min-h-11 rounded-xl border border-[#D4AF37]/45 bg-[#FFFDF9] px-4 text-sm" /><select value={filter} onChange={(event) => setFilter(event.target.value as RSVPStatus | 'all')} className="focus-ring min-h-11 rounded-xl border border-[#D4AF37]/45 bg-[#FFFDF9] px-4 text-sm"><option value="all">{t('allResponses')}</option><option value="pending">{t('pending')}</option><option value="accepted">{t('accepted')}</option><option value="declined">{t('declined')}</option></select></div>
+    {visibleGuests.length === 0 ? <div className="mt-6 rounded-2xl border border-dashed border-[#D4AF37]/45 p-8 text-center text-sm text-[#2D2421]/55">{t('noGuests')}</div> : <div className="mt-6 grid gap-3">{visibleGuests.map((guest) => {
+      const responseClass = guest.rsvp === 'accepted' ? 'bg-[#0A2E23]/10 text-[#0A2E23]' : 'bg-[#D4AF37]/15 text-[#8A6712]';
+      return <article key={guest.id} className="rounded-2xl border border-[#D4AF37]/35 bg-[#FFFDF9]/45 p-4"><div className="flex flex-wrap items-center gap-3"><InitialsAvatar /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-[#0A2E23]">{guest.name}</p><p className="text-[10px] text-[#2D2421]/50"><bdi>{guest.phone || t('missingPhone')} · {guest.token}</bdi></p></div><span className={`rounded-full px-2 py-1 text-[9px] font-bold uppercase ${responseClass}`}>{t(guest.rsvp)}</span>{guest.checkedIn && <span className="rounded-full bg-[#0A2E23] px-2 py-1 text-[9px] font-bold text-white">{t('checkedIn')}</span>}</div><div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[#D4AF37]/25 pt-4"><p className="me-auto text-xs text-[#2D2421]/65">{guest.guestCount || 1} {t('guest')} · +{guest.allowedCompanions}</p><button onClick={() => void copyInvitation(guest)} className="focus-ring min-h-11 rounded-full border border-[#D4AF37]/60 px-3 text-[10px] font-bold uppercase text-[#0A2E23]">{copied === guest.id ? t('linkCopied') : t('copyLink')}</button><Link href={`/i/${encodeURIComponent(guest.token)}`} target="_blank" className="focus-ring inline-flex min-h-11 items-center rounded-full border border-[#D4AF37]/60 px-3 text-[10px] font-bold uppercase text-[#0A2E23]">{t('openInvitation')}</Link><button onClick={() => sendWhatsApp(guest)} className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-full border border-[#D4AF37]/60 px-3 text-[10px] font-bold uppercase text-[#0A2E23]"><MessageCircle size={14} /> WhatsApp</button></div></article>;
+    })}</div>}
   </div>;
 }
 
+function SendPage({ project }: { project: ProjectSummary }) {
+  const { state } = useEngine();
+  const { t } = useAppLocale();
+  const guests = guestsForProject(state.operations, projectKey(project.type, project.id));
+  const [selectedId, setSelectedId] = useState(guests[0]?.id ?? '');
+  const [status, setStatus] = useState('');
+  const guest = guests.find((item) => item.id === selectedId) ?? guests[0];
+  const url = guest ? invitationUrl(window.location.origin, import.meta.env.BASE_URL, guest.token) : '';
+  const copy = async () => { if (!url) return; await navigator.clipboard.writeText(url); setStatus(t('linkCopied')); };
+  const openInvitation = () => { if (!url) return; window.open(url, '_blank', 'noopener,noreferrer'); setStatus(t('invitationOpened')); };
+  const openWhatsApp = () => { if (!guest) return; window.open(getWhatsAppShareUrl(project.type === 'wedding' ? 'wedding' : 'standard', project.name, guest.phone, url), '_blank', 'noopener,noreferrer'); setStatus(t('whatsappOpened')); };
+  return <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]"><section className="rounded-3xl border border-[#D9D2C5] bg-white p-6 sm:p-8"><Eyebrow>{t('send')}</Eyebrow><h1 className="mt-2 text-3xl font-semibold tracking-[-.04em]">{t('sendTitle')}</h1><p className="mt-3 max-w-xl text-sm leading-6 text-[#756F66]">{t('sendLocalHelp')}</p>{guests.length ? <div className="mt-7"><label className="text-xs font-semibold" htmlFor="send-recipient">{t('recipient')}</label><select id="send-recipient" value={guest?.id} onChange={(event) => { setSelectedId(event.target.value); setStatus(''); }} className="focus-ring mt-2 min-h-12 w-full rounded-xl border border-[#D9D2C5] px-4">{guests.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.phone || t('missingPhone')}</option>)}</select><div className="mt-4 rounded-2xl bg-[#F5F2EC] p-4"><p className="text-xs text-[#756F66]">{t('personalLink')}</p><p className="mt-2 break-all font-mono text-xs" dir="ltr">{url}</p></div><div className="mt-5 flex flex-wrap gap-2"><Button onClick={() => void copy()}>{t('copyLink')}</Button><Button variant="ivory" icon={ExternalLink} onClick={openInvitation}>{t('openInvitation')}</Button><Button variant="ivory" icon={MessageCircle} onClick={openWhatsApp}>{t('prepareWhatsApp')}</Button></div>{status && <p className="mt-4 text-xs font-semibold text-[#0A2E23]" role="status">{status}</p>}</div> : <p className="mt-7 rounded-2xl border border-dashed border-[#D9D2C5] p-6 text-sm text-[#756F66]">{t('noGuests')}</p>}</section><aside className="rounded-3xl border border-[#D9D2C5] bg-[#0C2D24] p-6 text-white"><QrCode className="text-[#D4B363]" /><h2 className="mt-5 text-xl font-semibold">{t('preparedNotDelivered')}</h2><p className="mt-3 text-sm leading-6 text-white/60">{t('sendBoundary')}</p><Link href={buildProjectRoute(project.type, project.id, 'invitation')} className="focus-ring mt-6 inline-flex min-h-11 items-center rounded-full border border-white/20 px-4 text-xs font-semibold">{t('preview')}</Link></aside></div>;
+}
+
 function ScannerPage({ project }: { project?: ProjectSummary }) {
-  const { state, ready, setCheckedIn } = useEngine();
+  const { state, ready, checkInGuest } = useEngine();
   const { activeProject } = useWeddingWorkspace();
   const { t, dir } = useAppLocale();
   const [token, setToken] = useState('');
-  const [scan, setScan] = useState<'idle' | 'verified' | 'rejected'>('idle');
-  const verify = () => setScan(isValidGuestToken(token, state.weddingGuest.token) ? 'verified' : 'rejected');
+  const [scan, setScan] = useState<ScannerState>({ status: 'ready' });
+  const inputRef = useRef<HTMLInputElement>(null);
   if (!ready) return <LoadingPage />;
   const context = project ?? weddingProjectSummary(activeProject);
+  const key = projectKey(context.type, context.id);
+  const guests = guestsForProject(state.operations, key);
+  const verify = () => setScan(scanProjectGuest(state.operations, key, token));
+  const guest = scan.status === 'valid' || scan.status === 'already-checked-in' ? guests.find((item) => item.id === scan.guestId) : undefined;
+  const reset = () => { setToken(''); setScan({ status: 'ready' }); requestAnimationFrame(() => inputRef.current?.focus()); };
+  const checkIn = () => { if (!guest) return; checkInGuest(key, guest.id); setScan({ status: 'already-checked-in', guestId: guest.id }); };
   const backRoute = buildProjectRoute(context.type, context.id, 'overview');
-  const guestName = state.mode === 'wedding' ? state.weddingGuest.name : 'Hashim Alnimari';
-  const partySize = state.mode === 'wedding' ? Math.max(1, state.weddingResponse.guestCount) : 1;
   return <div className="grain min-h-[100dvh] bg-[#0A2E23] text-[#FFFDF9]">
     <div className="gold-thread opacity-45" />
     <header className="relative z-10 flex items-center justify-between px-5 py-6 sm:px-10"><Link href={backRoute} data-testid="link-scanner-back" className="focus-ring flex items-center gap-2 text-xs font-semibold text-white/70"><ArrowLeft className={dir === 'rtl' ? 'rotate-180' : ''} size={15} />{t('project')}</Link><div className="min-w-0 text-end"><p className="truncate text-sm font-semibold text-[#D4AF37]">{context.name}</p><p className="text-[9px] text-white/45"><bdi>{context.type} · {context.id}</bdi></p></div></header>
-    <main className="relative z-10 mx-auto max-w-2xl px-5 pb-16 pt-10 sm:pt-16"><FadeIn><div className="text-center"><Eyebrow>{t('scanner')}</Eyebrow><h1 className="mt-4 font-display text-6xl leading-[.9] text-white sm:text-7xl">{t('scannerTitle')}</h1><p className="mx-auto mt-5 max-w-sm text-sm text-white/60">{t('scannerHelp')} <bdi>{context.date} · {context.venue}</bdi></p></div></FadeIn>
-      <div className="relative mx-auto mt-12 aspect-[1.2] max-w-lg overflow-hidden rounded-[30px] border border-[#D4AF37]/70 bg-[#071f18]"><div className="absolute inset-5 rounded-2xl border border-[#D4AF37]/80" /><QrCode size={72} strokeWidth={.55} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-white/20" /></div>
-      <div className="mx-auto mt-8 max-w-lg"><div className="flex flex-col gap-2 sm:flex-row"><input value={token} onChange={(event) => { setToken(event.target.value); setScan('idle'); }} onKeyDown={(event) => event.key === 'Enter' && verify()} data-testid="input-scanner-token" placeholder={`${t('scannerPlaceholder')} · ${state.weddingGuest.token}`} dir="ltr" className="focus-ring min-h-12 min-w-0 flex-1 rounded-full border border-[#D4AF37]/50 bg-white/10 px-5 py-3 text-sm text-white outline-none placeholder:text-white/35" /><Button variant="gold" icon={Search} onClick={verify}>{t('verify')}</Button></div><p className="mt-3 text-center text-[10px] text-white/40">{t('frontendOnly')}</p></div>
-      <AnimatePresence>{scan !== 'idle' && <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className={`mx-auto mt-8 max-w-lg rounded-[28px] border p-6 ${scan === 'verified' ? 'border-[#D4AF37] bg-[#D4AF37]/10' : 'border-[#d58c78] bg-[#d58c78]/10'}`}>{scan === 'verified' ? <div className="flex items-center gap-4"><Check className="text-[#D4AF37]" /><div className="min-w-0 flex-1"><Eyebrow>{t('verified')} · {guestName}</Eyebrow><p className="mt-1 text-sm text-white/75">{t('invitationFor')} {partySize} · {context.venue}</p></div>{state.checkedIn ? <span className="text-xs text-[#D4AF37]">{t('checkedIn')}</span> : <Button variant="gold" icon={Check} onClick={setCheckedIn}>{t('checkIn')}</Button>}</div> : <div className="flex items-center gap-4"><XCircle className="text-[#d58c78]" /><div><Eyebrow className="text-[#d58c78]">{t('notRecognized')}</Eyebrow><p className="mt-1 text-sm text-white/70">{t('tryAgain')}</p></div></div>}</motion.div>}</AnimatePresence>
+    <main className="relative z-10 mx-auto max-w-2xl px-5 pb-16 pt-3 sm:pt-16"><FadeIn><div className="text-center"><Eyebrow>{t('scanner')}</Eyebrow><h1 className="mt-3 font-display text-5xl leading-[.9] text-white sm:mt-4 sm:text-7xl">{t('scannerTitle')}</h1><p className="mx-auto mt-3 max-w-sm text-xs text-white/60 sm:mt-5 sm:text-sm">{t('scannerHelp')} <bdi>{context.date} · {context.venue}</bdi></p></div></FadeIn>
+      <div className="relative mx-auto mt-6 aspect-[2.2] max-w-lg overflow-hidden rounded-[24px] border border-[#D4AF37]/70 bg-[#071f18] sm:mt-12 sm:aspect-[1.2] sm:rounded-[30px]"><div className="absolute inset-4 rounded-2xl border border-[#D4AF37]/80 sm:inset-5" /><QrCode size={54} strokeWidth={.55} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-white/20 sm:h-[72px] sm:w-[72px]" /></div>
+      <div className="mx-auto mt-5 max-w-lg sm:mt-8"><div className="flex flex-col gap-2 sm:flex-row"><input ref={inputRef} value={token} onChange={(event) => { setToken(event.target.value); setScan({ status: 'ready' }); }} onKeyDown={(event) => event.key === 'Enter' && verify()} data-testid="input-scanner-token" placeholder={t('scannerPlaceholder')} dir="ltr" className="focus-ring min-h-14 min-w-0 flex-1 rounded-full border border-[#D4AF37]/50 bg-white/10 px-5 py-3 text-base text-white outline-none placeholder:text-white/35" /><Button className="min-h-14" variant="gold" icon={Search} onClick={verify}>{t('verify')}</Button></div><p className="mt-3 text-center text-[10px] leading-5 text-white/45">{t('scannerBoundary')}</p></div>
+      <div className="mx-auto mt-8 max-w-lg" aria-live="polite"><AnimatePresence mode="wait">{scan.status !== 'ready' && <motion.div key={scan.status} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className={`rounded-[28px] border p-6 ${guest ? 'border-[#D4AF37] bg-[#D4AF37]/10' : 'border-[#d58c78] bg-[#d58c78]/10'}`}>{guest ? <div><div className="flex items-start gap-4"><Check className="mt-1 shrink-0 text-[#D4AF37]" /><div className="min-w-0 flex-1"><Eyebrow>{scan.status === 'already-checked-in' ? t('alreadyCheckedIn') : t('verified')}</Eyebrow><h2 className="mt-2 truncate text-xl font-semibold">{guest.name}</h2><p className="mt-1 text-sm text-white/70">{t(guest.rsvp)} · {t('invitationFor')} {guest.guestCount || 1}</p></div></div><div className="mt-5 flex flex-col gap-2 sm:flex-row">{scan.status === 'valid' && <Button className="flex-1" variant="gold" icon={Check} onClick={checkIn}>{t('checkIn')}</Button>}<Button className="flex-1" variant="ivory" onClick={reset}>{t('scanNextGuest')}</Button></div></div> : <div><div className="flex items-center gap-4"><XCircle className="text-[#d58c78]" /><div><Eyebrow className="text-[#d58c78]">{t('notRecognized')}</Eyebrow><p className="mt-1 text-sm text-white/70">{t('tryAgain')}</p></div></div><Button className="mt-5 w-full" variant="ivory" onClick={reset}>{t('scanNextGuest')}</Button></div>}</motion.div>}</AnimatePresence></div>
     </main>
   </div>;
 }
@@ -775,11 +814,14 @@ function ProjectRoutePage({ type }: { type: ProjectType }) {
   if (!project) return <TokenError />;
 
   let content: ReactNode;
-  if (section === 'overview') content = <ProjectOverview project={project} guestCount={1} response={t(state.rsvp)} checkedIn={state.checkedIn} />;
+  const guests = guestsForProject(state.operations, projectKey(project.type, project.id));
+  const stats = operationalStats(guests);
+  const deadline = type === 'wedding' ? weddingProject?.event.rsvpDeadline ?? '' : state.partyEvent.rsvpDeadline;
+  if (section === 'overview') content = <ProjectOverview project={project} stats={stats} rsvpDeadline={deadline} />;
   else if (section === 'invitation') content = type === 'wedding' ? <WeddingStudioPage embedded /> : <PartyStudioPage embedded />;
-  else if (section === 'guests') content = <GuestManager />;
+  else if (section === 'guests') content = <GuestManager project={project} />;
   else if (section === 'scanner') content = <ScannerPage project={project} />;
-  else if (section === 'send') content = <EmptyProjectSection title={t('sendTitle')}>{t('sendHelp')}</EmptyProjectSection>;
+  else if (section === 'send') content = <SendPage project={project} />;
   else content = <div className="space-y-4"><EmptyProjectSection title={t('settingsTitle')}>{t('settingsHelp')}</EmptyProjectSection><section className="mx-auto max-w-2xl rounded-3xl border border-[#D9D2C5] bg-white p-7"><h2 className="font-semibold">{t('appLanguage')}</h2><p className="mt-2 text-sm text-[#756F66]">{t('appLanguageHelp')}</p><div className="mt-4"><AppLanguageControl /></div></section></div>;
 
   return <ProjectShell project={project} section={section}>{content}</ProjectShell>;
@@ -788,6 +830,19 @@ function ProjectRoutePage({ type }: { type: ProjectType }) {
 function WeddingProjectRoute() { return <ProjectRoutePage type="wedding" />; }
 function PartyProjectRoute() { return <ProjectRoutePage type="party" />; }
 function GuestRoute() { return <GuestPage />; }
+
+function AdminRoute() {
+  const { section } = useParams<{ section?: string }>();
+  const workspace = useWeddingWorkspace();
+  const { state } = useEngine();
+  const projects = [...workspace.projects.map(weddingProjectSummary), partyProjectSummary(state.partyEvent)];
+  const events: AdminEventRecord[] = projects.map((project) => {
+    const stats = operationalStats(guestsForProject(state.operations, projectKey(project.type, project.id)));
+    return { ...project, guests: stats.guests, checkedIn: stats.checkedIn };
+  });
+  const totalGuests = projects.flatMap((project) => guestsForProject(state.operations, projectKey(project.type, project.id)));
+  return <AdminPage section={resolveAdminSection(section)} events={events} summary={{ projects: projects.length, ...operationalStats(totalGuests) }} saveStatus={workspace.saveStatus} storageError={workspace.storageError} />;
+}
 
 function LegacyRedirect({ path }: { path: '/studio/wedding' | '/studio/party' | '/scanner' }) {
   const { activeProject } = useWeddingWorkspace();
@@ -815,7 +870,8 @@ function Router() {
         <Route path="/i/:token" component={GuestRoute} />
         <Route path="/weddings/:eventId/:section" component={WeddingProjectRoute} />
         <Route path="/parties/:eventId/:section" component={PartyProjectRoute} />
-        <Route path="/admin" component={AdminPage} />
+        <Route path="/admin/:section" component={AdminRoute} />
+        <Route path="/admin" component={AdminRoute} />
         <Route path="/studio/party">{() => <LegacyRedirect path="/studio/party" />}</Route>
         <Route path="/studio/wedding">{() => <LegacyRedirect path="/studio/wedding" />}</Route>
         <Route path="/studio" component={StudioHubPage} />
