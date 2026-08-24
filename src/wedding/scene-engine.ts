@@ -3,11 +3,185 @@ import {
   type WeddingEventData,
   type WeddingGuestData,
 } from "./model.ts";
-import type { WeddingSceneTiming } from "./presentation.ts";
+import type {
+  WeddingMotionPreset,
+  WeddingSceneId,
+  WeddingSceneTiming,
+} from "./presentation.ts";
 export { weddingSceneIds } from "./presentation.ts";
 
 export type WeddingRsvpStatus = "pending" | "accepted" | "declined";
 export type { WeddingSceneTiming } from "./presentation.ts";
+
+export const weddingTimelineEnd = 18_000;
+
+export type WeddingChoreographyItem = {
+  block: WeddingSemanticBlock;
+  entersAt: number;
+  exitsAt?: number;
+  phase: "entering" | "active" | "exiting";
+  role: "hero" | "supporting" | "detail" | "action";
+  retained: boolean;
+};
+
+export type WeddingChoreographyFrame = {
+  sceneId: WeddingSceneId;
+  elapsed: number;
+  behavior: WeddingMotionPreset["behavior"];
+  direction: "rtl" | "ltr";
+  items: WeddingChoreographyItem[];
+  density: "normal" | "compact" | "dense";
+  final: boolean;
+  backgroundMotion: "still" | "restrained";
+};
+
+type ChoreographyOptions = {
+  direction?: "rtl" | "ltr";
+  reduceMotion?: boolean;
+  settleScene?: boolean;
+  artworkMode?: "template" | "fit" | "fill";
+};
+
+const semanticScenes: Record<WeddingSemanticBlock["id"], WeddingSceneId> = {
+  opening: "opening",
+  occasion: "hosts",
+  hosts: "hosts",
+  principals: "names",
+  "date-time": "details",
+  venue: "details",
+  rsvp: "rsvp",
+};
+
+const sceneStarts: Record<WeddingSceneId, number> = {
+  opening: 0,
+  hosts: 3_000,
+  names: 6_000,
+  details: 10_000,
+  rsvp: 14_000,
+};
+
+const sceneOrder: WeddingSceneId[] = ["opening", "hosts", "names", "details", "rsvp"];
+
+function blockLength(block: WeddingSemanticBlock): number {
+  if ("text" in block) return block.text.length;
+  if (block.id === "principals") return block.lines.join("").length;
+  return Object.values(block).filter((value) => typeof value === "string").join("").length;
+}
+
+function roleFor(block: WeddingSemanticBlock, sceneId: WeddingSceneId) {
+  if (block.id === "principals") return sceneId === "names" ? "hero" as const : "supporting" as const;
+  if (block.id === "date-time" || block.id === "venue") return "detail" as const;
+  if (block.id === "rsvp") return "action" as const;
+  return "supporting" as const;
+}
+
+function cueSchedule(blocks: ReadonlyArray<WeddingSemanticBlock>) {
+  const cues = new Map<WeddingSemanticBlock["id"], number>();
+  for (const sceneId of sceneOrder) {
+    const present = blocks.filter((block) => semanticScenes[block.id] === sceneId);
+    present.forEach((block, index) => cues.set(block.id, sceneStarts[sceneId] + index * 320));
+  }
+  return cues;
+}
+
+export function resolveWeddingChoreographyBoundaries(
+  blocks: ReadonlyArray<WeddingSemanticBlock>,
+  motionPreset: WeddingMotionPreset,
+): number[] {
+  const cues = cueSchedule(blocks);
+  const boundaries = new Set<number>([
+    ...Object.values(sceneStarts),
+    weddingTimelineEnd,
+    ...cues.values(),
+  ]);
+  if (motionPreset.behavior !== "progressive") {
+    for (const startsAt of Object.values(sceneStarts).slice(1, -1)) {
+      boundaries.add(startsAt + motionPreset.exitDurationMs);
+    }
+    blocks.forEach((_, index) => boundaries.add(sceneStarts.rsvp + index * 150));
+  }
+  return [...boundaries].filter((value) => value <= weddingTimelineEnd).sort((a, b) => a - b);
+}
+
+export function resolveWeddingChoreography(
+  blocks: ReadonlyArray<WeddingSemanticBlock>,
+  motionPreset: WeddingMotionPreset,
+  elapsed: number,
+  options: ChoreographyOptions = {},
+): WeddingChoreographyFrame {
+  const position = Math.max(0, Math.min(weddingTimelineEnd, elapsed));
+  const sceneId = sceneOrder[getWeddingSceneIndex(
+    sceneOrder.map((id) => ({ id, startsAt: sceneStarts[id] })),
+    position,
+  )];
+  const final = position >= weddingTimelineEnd;
+  const progressive = motionPreset.behavior === "progressive";
+  const cues = cueSchedule(blocks);
+  const sceneIndex = sceneOrder.indexOf(sceneId);
+  const previousScene = sceneOrder[sceneIndex - 1];
+  const sceneStart = sceneStarts[sceneId];
+  const overlapEnds = sceneStart + motionPreset.exitDurationMs;
+
+  let candidates: Array<{ block: WeddingSemanticBlock; entersAt: number; exitsAt?: number; retained: boolean }>;
+  if (sceneId === "rsvp" && !progressive) {
+    candidates = blocks.map((block, index) => ({
+      block,
+      entersAt: sceneStart + index * 150,
+      retained: false,
+    }));
+  } else if (progressive) {
+    candidates = blocks
+      .filter((block) => sceneOrder.indexOf(semanticScenes[block.id]) <= sceneIndex)
+      .map((block) => ({ block, entersAt: cues.get(block.id)!, retained: semanticScenes[block.id] !== sceneId }));
+  } else {
+    const current = blocks
+      .filter((block) => semanticScenes[block.id] === sceneId)
+      .map((block) => ({ block, entersAt: cues.get(block.id)!, retained: false }));
+    const outgoing = !options.settleScene && previousScene && position < overlapEnds
+      ? blocks
+          .filter((block) => semanticScenes[block.id] === previousScene)
+          .map((block) => ({ block, entersAt: cues.get(block.id)!, exitsAt: sceneStart, retained: false }))
+      : [];
+    candidates = [...outgoing, ...current];
+  }
+
+  const items = candidates
+    .filter(({ entersAt }) => options.settleScene || entersAt <= position)
+    .map(({ block, entersAt, exitsAt, retained }) => ({
+      block,
+      entersAt,
+      exitsAt,
+      retained,
+      role: roleFor(block, sceneId),
+      phase: options.settleScene
+        ? "active" as const
+        : exitsAt !== undefined
+        ? "exiting" as const
+        : position < entersAt + motionPreset.enterDurationMs
+          ? "entering" as const
+          : "active" as const,
+    }));
+  const length = blocks.reduce((total, block) => total + blockLength(block), 0);
+  const density = blocks.length >= 7 || length > 220
+    ? "dense" as const
+    : blocks.length >= 5 || length > 140
+      ? "compact" as const
+      : "normal" as const;
+  const artworkMode = options.artworkMode ?? "template";
+  return {
+    sceneId,
+    elapsed: position,
+    behavior: motionPreset.behavior,
+    direction: options.direction ?? "rtl",
+    items,
+    density,
+    final,
+    backgroundMotion:
+      !options.reduceMotion && motionPreset.behavior === "cinematic" && artworkMode !== "fit"
+        ? "restrained"
+        : "still",
+  };
+}
 
 export type WeddingSemanticBlock =
   | { id: "opening"; text: string }

@@ -1,49 +1,72 @@
+import type { CSSProperties, ReactNode } from "react";
 import type { WeddingVisualTemplateId } from "./model";
 import type { WeddingVisualSelection } from "./upload";
+
+type RuntimeStyle = CSSProperties & {
+  "--wedding-runtime-origin": string;
+  "--wedding-runtime-play-state": "running" | "paused";
+};
 
 export function WeddingVisualLayer({
   templateId,
   visual,
+  backgroundMotion = "still",
+  elapsed = 0,
+  isPlaying = false,
+  resolved = false,
 }: {
   templateId: WeddingVisualTemplateId;
   visual: WeddingVisualSelection;
+  backgroundMotion?: "still" | "restrained";
+  elapsed?: number;
+  isPlaying?: boolean;
+  resolved?: boolean;
 }) {
+  const focal = visual.source === "uploaded-background"
+    ? visual.focalPoint
+    : { x: 0.5, y: 0.5 };
+  const runtimeStyle: RuntimeStyle = {
+    "--wedding-runtime-origin": `${focal.x * 100}% ${focal.y * 100}%`,
+    "--wedding-runtime-play-state": isPlaying ? "running" : "paused",
+    animationDelay: `${-elapsed}ms`,
+    animationPlayState: isPlaying ? "running" : "paused",
+  };
+  let artwork: ReactNode;
   if (visual.source === "uploaded-background") {
-    return (
-      <div className="wedding-visual-layer" aria-hidden="true">
-        <img
-          className={`wedding-uploaded-artwork wedding-uploaded-artwork--${visual.fitMode}`}
-          src={visual.uploadedBackground.dataUrl}
-          alt=""
-          draggable={false}
-          style={{
-            objectPosition: `${visual.backgroundPosition.x * 100}% ${visual.backgroundPosition.y * 100}%`,
-            transform: `scale(${visual.fitMode === "fill" ? visual.backgroundZoom : 1})`,
-            transformOrigin: `${visual.backgroundPosition.x * 100}% ${visual.backgroundPosition.y * 100}%`,
-          }}
-        />
-      </div>
+    artwork = <img
+      className={`wedding-uploaded-artwork wedding-uploaded-artwork--${visual.fitMode}`}
+      src={visual.uploadedBackground.dataUrl}
+      alt=""
+      draggable={false}
+      style={{
+        objectPosition: `${visual.backgroundPosition.x * 100}% ${visual.backgroundPosition.y * 100}%`,
+        transform: `scale(${visual.fitMode === "fill" ? visual.backgroundZoom : 1})`,
+        transformOrigin: `${visual.backgroundPosition.x * 100}% ${visual.backgroundPosition.y * 100}%`,
+      }}
+    />;
+  } else {
+    artwork = (
+      <>
+        <div className="wedding-paper-texture" />
+        {templateId === "soft-floral-garden" && <FloralGardenFrame />}
+        {templateId === "pearl-arch" && (
+          <div className="wedding-pearl-frame"><i /><i /><span /></div>
+        )}
+        {templateId === "midnight-gold" && (
+          <div className="wedding-midnight-frame"><i /><i /><span /></div>
+        )}
+      </>
     );
   }
 
   return (
     <div className="wedding-visual-layer" aria-hidden="true">
-      <div className="wedding-paper-texture" />
-      {templateId === "soft-floral-garden" && <FloralGardenFrame />}
-      {templateId === "pearl-arch" && (
-        <div className="wedding-pearl-frame">
-          <i />
-          <i />
-          <span />
-        </div>
-      )}
-      {templateId === "midnight-gold" && (
-        <div className="wedding-midnight-frame">
-          <i />
-          <i />
-          <span />
-        </div>
-      )}
+      <div
+        className={`wedding-visual-runtime wedding-visual-runtime--${backgroundMotion} ${resolved ? "is-resolved" : ""}`}
+        style={runtimeStyle}
+      >
+        {artwork}
+      </div>
     </div>
   );
 }

@@ -15,9 +15,12 @@ import {
 import {
   getWeddingRemainingDelay,
   getWeddingSceneIndex,
+  resolveWeddingChoreography,
+  resolveWeddingChoreographyBoundaries,
   resolveWeddingSemanticBlocks,
   resolveWeddingScenes,
   weddingSceneIds,
+  weddingTimelineEnd,
 } from "./scene-engine.ts";
 import {
   canonicalWeddingSceneTimings,
@@ -355,6 +358,113 @@ test("semantic blocks keep stable order and whole Arabic phrases", () => {
   assert.deepEqual(blocks.map(({ id }) => id), ["opening", "occasion", "hosts", "principals", "date-time", "venue", "rsvp"]);
   assert.deepEqual(blocks.find(({ id }) => id === "opening"), { id: "opening", text: "بسم الله الرحمن الرحيم" });
   assert.deepEqual(blocks.find(({ id }) => id === "principals"), { id: "principals", lines: ["فيصل", "ريم"] });
+});
+
+test("cinematic V2 preserves canonical starts and adds one deterministic final endpoint", () => {
+  assert.deepEqual(canonicalWeddingSceneTimings, [
+    { id: "opening", startsAt: 0 },
+    { id: "hosts", startsAt: 3000 },
+    { id: "names", startsAt: 6000 },
+    { id: "details", startsAt: 10000 },
+    { id: "rsvp", startsAt: 14000 },
+  ]);
+  assert.equal(weddingTimelineEnd, 18000);
+  const blocks = resolveWeddingSemanticBlocks(defaultWeddingEvent, defaultWeddingGuest);
+  const boundaries = resolveWeddingChoreographyBoundaries(blocks, WeddingMotionPresets["editorial-glide"]);
+  for (const boundary of [0, 3000, 6000, 10000, 14000, 18000]) assert.ok(boundaries.includes(boundary));
+});
+
+test("choreography resolves deterministically at every required timeline boundary", () => {
+  const blocks = resolveWeddingSemanticBlocks(defaultWeddingEvent, defaultWeddingGuest);
+  for (const elapsed of [0, 2999, 3000, 5999, 6000, 9999, 10000, 13999, 14000, 17999, 18000]) {
+    for (const preset of Object.values(WeddingMotionPresets)) {
+      const first = resolveWeddingChoreography(blocks, preset, elapsed);
+      const second = resolveWeddingChoreography(blocks, preset, elapsed);
+      assert.deepEqual(first, second);
+    }
+  }
+  assert.equal(resolveWeddingChoreography(blocks, WeddingMotionPresets["soft-dissolve"], 2999).sceneId, "opening");
+  assert.equal(resolveWeddingChoreography(blocks, WeddingMotionPresets["soft-dissolve"], 3000).sceneId, "hosts");
+  assert.equal(resolveWeddingChoreography(blocks, WeddingMotionPresets["soft-dissolve"], 18000).final, true);
+});
+
+test("Elegant, Cinematic, and Progressive are behaviorally distinct", () => {
+  const blocks = resolveWeddingSemanticBlocks(defaultWeddingEvent, defaultWeddingGuest);
+  const elegant = resolveWeddingChoreography(blocks, WeddingMotionPresets["soft-dissolve"], 10320);
+  const cinematic = resolveWeddingChoreography(blocks, WeddingMotionPresets["cinematic-rise"], 10320);
+  const progressive = resolveWeddingChoreography(blocks, WeddingMotionPresets["editorial-glide"], 10320);
+  assert.equal(elegant.behavior, "elegant");
+  assert.equal(elegant.backgroundMotion, "still");
+  assert.equal(cinematic.behavior, "cinematic");
+  assert.equal(cinematic.backgroundMotion, "restrained");
+  assert.equal(progressive.behavior, "progressive");
+  assert.ok(progressive.items.length > cinematic.items.length);
+  assert.ok(progressive.items.some((item) => item.retained));
+});
+
+test("Progressive accumulates semantic order, compacts optional groups, and completes", () => {
+  const event = mergeWeddingEvent({
+    openingWording: "دعوة كريمة",
+    invitationWording: "يسرنا دعوتكم",
+    hostNames: "",
+    familyNames: "",
+    invitationVariant: "women",
+    brideName: "ريم",
+    groomName: "",
+    eventDay: "",
+    gregorianDate: "24 مايو 2027",
+    hijriDate: "",
+    startTime: "",
+    receptionTime: "",
+    dinnerTime: "",
+    venue: "قاعة النخيل",
+    city: "",
+    mapUrl: "",
+    rsvpDeadline: "",
+  });
+  const blocks = resolveWeddingSemanticBlocks(event, defaultWeddingGuest);
+  assert.deepEqual(blocks.map(({ id }) => id), ["opening", "occasion", "principals", "date-time", "venue", "rsvp"]);
+  const preset = WeddingMotionPresets["editorial-glide"];
+  const hosts = resolveWeddingChoreography(blocks, preset, 3000);
+  assert.deepEqual(hosts.items.map(({ block }) => block.id), ["opening", "occasion"]);
+  assert.equal(hosts.items.find(({ block }) => block.id === "occasion")?.entersAt, 3000);
+  const details = resolveWeddingChoreography(blocks, preset, 10320);
+  assert.deepEqual(details.items.map(({ block }) => block.id), ["opening", "occasion", "principals", "date-time", "venue"]);
+  const final = resolveWeddingChoreography(blocks, preset, weddingTimelineEnd);
+  assert.deepEqual(final.items.map(({ block }) => block.id), blocks.map(({ id }) => id));
+  assert.ok(final.items.every(({ phase }) => phase === "active"));
+});
+
+test("principal lines remain whole and receive hero treatment in both directions", () => {
+  const arabic = resolveWeddingSemanticBlocks(defaultWeddingEvent, defaultWeddingGuest);
+  const preset = WeddingMotionPresets["cinematic-rise"];
+  const rtl = resolveWeddingChoreography(arabic, preset, 6000, { direction: "rtl" });
+  const principals = rtl.items.find(({ block }) => block.id === "principals");
+  assert.equal(principals?.role, "hero");
+  assert.deepEqual(principals?.block, { id: "principals", lines: ["فيصل", "ريم"] });
+  const englishEvent = mergeWeddingEvent({ invitationLocale: "en", groomName: "Faisal", brideName: "Reem" });
+  const english = resolveWeddingSemanticBlocks(englishEvent, defaultWeddingGuest);
+  const ltr = resolveWeddingChoreography(english, preset, 6000, { direction: "ltr" });
+  assert.equal(ltr.direction, "ltr");
+  assert.deepEqual(ltr.items.find(({ block }) => block.id === "principals")?.block, { id: "principals", lines: ["Faisal", "Reem"] });
+});
+
+test("every motion resolves a complete stable final invitation", () => {
+  const blocks = resolveWeddingSemanticBlocks(defaultWeddingEvent, defaultWeddingGuest);
+  for (const preset of Object.values(WeddingMotionPresets)) {
+    const frame = resolveWeddingChoreography(blocks, preset, weddingTimelineEnd);
+    assert.equal(frame.final, true);
+    assert.deepEqual(frame.items.map(({ block }) => block.id), blocks.map(({ id }) => id));
+    assert.ok(frame.items.every(({ phase }) => phase === "active"));
+  }
+});
+
+test("reduced motion and uploaded Fit disable runtime camera treatment", () => {
+  const blocks = resolveWeddingSemanticBlocks(defaultWeddingEvent, defaultWeddingGuest);
+  const preset = WeddingMotionPresets["cinematic-rise"];
+  assert.equal(resolveWeddingChoreography(blocks, preset, 6000, { artworkMode: "fit" }).backgroundMotion, "still");
+  assert.equal(resolveWeddingChoreography(blocks, preset, 6000, { artworkMode: "fill" }).backgroundMotion, "restrained");
+  assert.equal(resolveWeddingChoreography(blocks, preset, 6000, { artworkMode: "fill", reduceMotion: true }).backgroundMotion, "still");
 });
 
 test("optional semantic groups and RSVP wording omit without empty rows", () => {

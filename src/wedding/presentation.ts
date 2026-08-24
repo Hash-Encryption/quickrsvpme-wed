@@ -70,9 +70,12 @@ export type WeddingMotionTarget = {
 
 export type WeddingMotionPreset = {
   id: WeddingMotionPresetId;
+  behavior: "elegant" | "cinematic" | "progressive";
   name: string;
   nameAr: string;
   descriptionAr: string;
+  enterDurationMs: number;
+  exitDurationMs: number;
   enter: WeddingMotionState;
   active: WeddingMotionState;
   exit: WeddingMotionState;
@@ -138,9 +141,12 @@ export const WeddingMotionPresets: Record<
 > = {
   "soft-dissolve": {
     id: "soft-dissolve",
-    name: "Soft Dissolve",
-    nameAr: "تلاشي ناعم",
-    descriptionAr: "ظهور هادئ بحركة رأسية تكاد لا تُرى.",
+    behavior: "elegant",
+    name: "Elegant",
+    nameAr: "أناقة هادئة",
+    descriptionAr: "تتابع فاخر وهادئ بتلاشي ناعم واستقرار رقيق.",
+    enterDurationMs: 720,
+    exitDurationMs: 320,
     enter: { opacity: 0, blockOffset: 8 },
     active: { opacity: 1, blockOffset: 0 },
     exit: { opacity: 0, blockOffset: -3 },
@@ -149,9 +155,12 @@ export const WeddingMotionPresets: Record<
   },
   "cinematic-rise": {
     id: "cinematic-rise",
+    behavior: "cinematic",
     name: "Cinematic Rise",
     nameAr: "صعود سينمائي",
     descriptionAr: "صعود فاخر ومقيد مع تغير طفيف في الحجم.",
+    enterDurationMs: 880,
+    exitDurationMs: 380,
     enter: { opacity: 0, blockOffset: 26, scale: 0.985 },
     active: { opacity: 1, blockOffset: 0, scale: 1 },
     exit: { opacity: 0, blockOffset: -8, scale: 0.995 },
@@ -160,9 +169,12 @@ export const WeddingMotionPresets: Record<
   },
   "editorial-glide": {
     id: "editorial-glide",
-    name: "Editorial Glide",
-    nameAr: "انسياب تحريري",
-    descriptionAr: "دخول أفقي واعٍ باتجاه العربية بإيقاع تحريري.",
+    behavior: "progressive",
+    name: "Progressive Classic",
+    nameAr: "كلاسيكية متتابعة",
+    descriptionAr: "تتراكم معلومات الدعوة بهدوء حتى تكتمل في مشهد واحد.",
+    enterDurationMs: 560,
+    exitDurationMs: 0,
     enter: { opacity: 0, inlineOffset: 22 },
     active: { opacity: 1, inlineOffset: 0 },
     exit: { opacity: 0, inlineOffset: -8 },

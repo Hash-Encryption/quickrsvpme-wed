@@ -10,7 +10,6 @@ import { Pause, Play, RotateCcw, Volume2, VolumeX } from "lucide-react";
 import { invitationT } from "../i18n/invitation";
 import { localeDirection, type InvitationLocale } from "../i18n/locale";
 import {
-  getWeddingRemainingDelay,
   getWeddingSceneIndex,
   type WeddingScene,
   type WeddingSceneTiming,
@@ -19,18 +18,31 @@ import {
 type WeddingSceneEngineProps = {
   scenes: ReadonlyArray<WeddingScene>;
   timings: ReadonlyArray<WeddingSceneTiming>;
+  cueTimes: ReadonlyArray<number>;
+  timelineEnd: number;
   musicUrl?: string;
   backgroundMediaUrl?: string;
   preview?: boolean;
   style?: CSSProperties;
   overlay?: ReactNode;
-  renderScene: (scene: WeddingScene, replayKey: number) => ReactNode;
+  renderScene: (
+    scene: WeddingScene,
+    playback: {
+      elapsed: number;
+      isPlaying: boolean;
+      reduceMotion: boolean;
+      settleScene: boolean;
+      replayKey: number;
+    },
+  ) => ReactNode;
   locale: InvitationLocale;
 };
 
 export function WeddingSceneEngine({
   scenes,
   timings,
+  cueTimes,
+  timelineEnd,
   musicUrl,
   backgroundMediaUrl,
   preview = false,
@@ -46,8 +58,8 @@ export function WeddingSceneEngine({
   const [elapsed, setElapsed] = useState(0);
   const [isPlaying, setIsPlaying] = useState(!reduceMotion);
   const [isMuted, setIsMuted] = useState(true);
+  const [settleScene, setSettleScene] = useState(reduceMotion);
   const [replayKey, setReplayKey] = useState(0);
-  const timelineEnd = timings.at(-1)?.startsAt ?? 0;
   const activeSceneIndex = getWeddingSceneIndex(timings, elapsed);
   const activeScene = scenes[activeSceneIndex] ?? scenes[0];
 
@@ -60,15 +72,17 @@ export function WeddingSceneEngine({
     if (!reduceMotion) return;
     setPosition(0);
     setIsPlaying(false);
+    setSettleScene(true);
   }, [reduceMotion]);
 
   useEffect(() => {
     if (reduceMotion || !isPlaying) return;
-    const delay = getWeddingRemainingDelay(timings, elapsedRef.current);
-    if (delay === null) {
+    const nextCue = cueTimes.find((startsAt) => startsAt > elapsedRef.current);
+    if (nextCue === undefined) {
       setIsPlaying(false);
       return;
     }
+    const delay = nextCue - elapsedRef.current;
     startedAtRef.current = performance.now() - elapsedRef.current;
     const timer = window.setTimeout(() => {
       const position = Math.min(
@@ -79,7 +93,7 @@ export function WeddingSceneEngine({
       if (position >= timelineEnd) setIsPlaying(false);
     }, delay);
     return () => window.clearTimeout(timer);
-  }, [elapsed, isPlaying, reduceMotion, timelineEnd, timings]);
+  }, [cueTimes, elapsed, isPlaying, reduceMotion, timelineEnd]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -90,14 +104,19 @@ export function WeddingSceneEngine({
   }, [isMuted, isPlaying, musicUrl]);
 
   const replay = () => {
+    if (audioRef.current) audioRef.current.currentTime = 0;
     setPosition(0);
     setReplayKey((value) => value + 1);
     setIsPlaying(!reduceMotion);
+    setSettleScene(reduceMotion);
   };
 
   const goToScene = (index: number) => {
     setIsPlaying(false);
-    setPosition(timings[index]?.startsAt ?? 0);
+    setSettleScene(true);
+    setPosition(index === timings.length - 1
+      ? timelineEnd
+      : timings[index]?.startsAt ?? 0);
   };
 
   const togglePlayback = () => {
@@ -105,7 +124,7 @@ export function WeddingSceneEngine({
       goToScene((activeSceneIndex + 1) % timings.length);
       return;
     }
-    if (activeSceneIndex === timings.length - 1) {
+    if (!isPlaying && elapsedRef.current >= timelineEnd) {
       replay();
       return;
     }
@@ -114,8 +133,10 @@ export function WeddingSceneEngine({
         Math.min(timelineEnd, performance.now() - startedAtRef.current),
       );
       setIsPlaying(false);
+      setSettleScene(false);
     } else {
       startedAtRef.current = performance.now() - elapsedRef.current;
+      setSettleScene(false);
       setIsPlaying(true);
     }
   };
@@ -143,7 +164,13 @@ export function WeddingSceneEngine({
       )}
       {musicUrl && <audio ref={audioRef} src={musicUrl} loop preload="none" />}
 
-      {activeScene && renderScene(activeScene, replayKey)}
+      {activeScene && renderScene(activeScene, {
+        elapsed,
+        isPlaying,
+        reduceMotion,
+        settleScene,
+        replayKey,
+      })}
 
       <div className="wedding-controls" aria-label={invitationT(locale, "controls")}>
         <button

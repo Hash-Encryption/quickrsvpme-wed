@@ -1,62 +1,72 @@
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import type { WeddingChoreographyFrame, WeddingSemanticBlock } from "./scene-engine";
 import type {
   WeddingLayoutPreset,
   WeddingMotionPreset,
   WeddingSafeZone,
-  WeddingSceneId,
 } from "./presentation";
-import { resolveWeddingMotionTarget, resolveWeddingSafeZone } from "./presentation";
+import { resolveWeddingSafeZone } from "./presentation";
+
+type MotionStyle = CSSProperties & {
+  "--wedding-inline-enter": string;
+};
 
 type WeddingMotionLayerProps = {
-  children: ReactNode;
-  sceneId: WeddingSceneId;
+  frame: WeddingChoreographyFrame;
   replayKey: number;
+  isPlaying: boolean;
+  reduceMotion: boolean;
+  settleScene: boolean;
   layout: WeddingLayoutPreset;
   motionPreset: WeddingMotionPreset;
   safeZone: WeddingSafeZone;
   focalY?: number;
-  direction?: "rtl" | "ltr";
+  renderBlock: (block: WeddingSemanticBlock) => ReactNode;
 };
 
 export function WeddingMotionLayer({
-  children,
-  sceneId,
+  frame,
   replayKey,
+  isPlaying,
+  reduceMotion,
+  settleScene,
   layout,
   motionPreset,
   safeZone,
   focalY,
-  direction = "rtl",
+  renderBlock,
 }: WeddingMotionLayerProps) {
-  const reduceMotion = Boolean(useReducedMotion());
-  const rule = layout.scenes[sceneId];
+  const rule = layout.scenes[frame.sceneId];
   const vertical = resolveWeddingSafeZone(safeZone, rule.vertical, focalY);
-  const target = (state: WeddingMotionPreset["active"]) =>
-    resolveWeddingMotionTarget(state, direction, reduceMotion);
+  const resolved = reduceMotion || settleScene || frame.final;
 
   return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key={`${sceneId}:${replayKey}`}
-        className={`wedding-motion-layer wedding-layout-vertical--${vertical} wedding-layout-horizontal--${rule.horizontal} wedding-layout-width--${rule.width}`}
-        initial={target(motionPreset.enter)}
-        animate={{
-          ...target(motionPreset.active),
-          transition: reduceMotion
-            ? { duration: 0 }
-            : motionPreset.enterTransition,
-        }}
-        exit={{
-          ...target(motionPreset.exit),
-          transition: reduceMotion
-            ? { duration: 0 }
-            : motionPreset.exitTransition,
-        }}
-        data-motion-preset={motionPreset.id}
-      >
-        {children}
-      </motion.div>
-    </AnimatePresence>
+    <div
+      className={`wedding-motion-layer wedding-layout-vertical--${vertical} wedding-layout-horizontal--${rule.horizontal} wedding-layout-width--${rule.width} ${frame.sceneId === "rsvp" ? "is-complete-motion" : ""}`}
+      data-motion-preset={motionPreset.id}
+      data-motion-behavior={frame.behavior}
+    >
+      <div className={`wedding-choreography wedding-choreography--${frame.behavior} wedding-choreography--${frame.density} ${frame.sceneId === "rsvp" ? "is-complete-invitation" : ""} ${resolved ? "is-resolved" : ""}`}>
+        {frame.items.map((item) => {
+          const anchor = item.exitsAt ?? item.entersAt;
+          const style: MotionStyle = {
+            "--wedding-inline-enter": frame.direction === "rtl" ? "18px" : "-18px",
+            animationDelay: `${anchor - frame.elapsed}ms`,
+            animationDuration: `${item.phase === "exiting" ? motionPreset.exitDurationMs : motionPreset.enterDurationMs}ms`,
+            animationPlayState: isPlaying ? "running" : "paused",
+          };
+          return (
+            <div
+              key={`${item.block.id}:${item.entersAt}:${replayKey}`}
+              className={`wedding-choreography-block wedding-choreography-block--${item.block.id} is-${item.phase} is-${item.role} ${item.retained ? "is-retained" : ""}`}
+              style={style}
+              data-semantic-block={item.block.id}
+            >
+              {renderBlock(item.block)}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }

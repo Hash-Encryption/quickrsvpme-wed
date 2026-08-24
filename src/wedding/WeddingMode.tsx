@@ -40,7 +40,15 @@ import {
 import { WeddingMotionLayer } from "./WeddingMotionLayer";
 import { WeddingSceneEngine } from "./WeddingSceneEngine";
 import { WeddingVisualLayer } from "./WeddingVisualLayer";
-import { resolveWeddingScenes, type WeddingScene } from "./scene-engine";
+import {
+  resolveWeddingChoreography,
+  resolveWeddingChoreographyBoundaries,
+  resolveWeddingScenes,
+  resolveWeddingSemanticBlocks,
+  weddingTimelineEnd,
+  type WeddingChoreographyFrame,
+  type WeddingSemanticBlock,
+} from "./scene-engine";
 import {
   defaultWeddingArtworkSettings,
   moveWeddingArtwork,
@@ -93,6 +101,8 @@ export function WeddingInvitationRenderer({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const theme = floralThemes[event.style.floralTheme] ?? floralThemes["neutral-ivory"];
   const scenes = resolveWeddingScenes(event, guest, rsvpStatus);
+  const semanticBlocks = resolveWeddingSemanticBlocks(event, guest, rsvpStatus);
+  const cueTimes = resolveWeddingChoreographyBoundaries(semanticBlocks, motionPreset);
   const uploaded = event.visual.source === "uploaded-background";
   const darkControls = template.id === "midnight-gold";
 
@@ -120,14 +130,16 @@ export function WeddingInvitationRenderer({
       locale={event.invitationLocale}
       scenes={scenes}
       timings={canonicalWeddingSceneTimings}
+      cueTimes={cueTimes}
+      timelineEnd={weddingTimelineEnd}
       musicUrl={event.musicUrl}
       backgroundMediaUrl={event.backgroundMediaUrl}
       preview={preview}
       style={style}
-      renderScene={(scene, replayKey) => (
+      renderScene={(_scene, playback) => (
         <WeddingInvitationSceneRenderer
-          scene={scene}
-          replayKey={replayKey}
+          blocks={semanticBlocks}
+          playback={playback}
           layoutPreset={layoutPreset}
           motionPreset={motionPreset}
           templateId={template.id as WeddingVisualTemplateId}
@@ -158,8 +170,8 @@ export function WeddingInvitationRenderer({
 }
 
 function WeddingInvitationSceneRenderer({
-  scene,
-  replayKey,
+  blocks,
+  playback,
   layoutPreset,
   motionPreset,
   templateId,
@@ -168,8 +180,14 @@ function WeddingInvitationSceneRenderer({
   onOpenRsvp,
   locale,
 }: {
-  scene: WeddingScene;
-  replayKey: number;
+  blocks: ReadonlyArray<WeddingSemanticBlock>;
+  playback: {
+    elapsed: number;
+    isPlaying: boolean;
+    reduceMotion: boolean;
+    settleScene: boolean;
+    replayKey: number;
+  };
   layoutPreset: WeddingLayoutPreset;
   motionPreset: WeddingMotionPreset;
   templateId: WeddingVisualTemplateId;
@@ -178,127 +196,136 @@ function WeddingInvitationSceneRenderer({
   onOpenRsvp: () => void;
   locale: InvitationLocale;
 }) {
-  const className =
-    scene.id === "names"
-      ? "wedding-principals"
-      : scene.id === "rsvp"
-        ? "wedding-rsvp-reveal"
-        : `wedding-${scene.id}`;
+  const direction = localeDirection(locale);
+  const artworkMode = visual.source === "uploaded-background" ? visual.fitMode : "template";
+  const frame: WeddingChoreographyFrame = resolveWeddingChoreography(
+    blocks,
+    motionPreset,
+    playback.elapsed,
+    { direction, reduceMotion: playback.reduceMotion, settleScene: playback.settleScene, artworkMode },
+  );
   return (
     <div
       className={`wedding-paper wedding-paper--${visual.source === "uploaded-background" ? "uploaded-background" : templateId} wedding-layout--${layoutPreset.id}`}
-      key={replayKey}
+      key={playback.replayKey}
       data-layout-preset={layoutPreset.id}
     >
-      <WeddingVisualLayer templateId={templateId} visual={visual} />
-      <div className="wedding-content">
+      <WeddingVisualLayer
+        templateId={templateId}
+        visual={visual}
+        backgroundMotion={frame.backgroundMotion}
+        elapsed={playback.elapsed}
+        isPlaying={playback.isPlaying}
+        resolved={playback.reduceMotion || playback.settleScene || frame.final}
+      />
+      <div className={`wedding-content ${frame.sceneId === "rsvp" ? "wedding-content--complete" : ""}`}>
         <WeddingMotionLayer
-          sceneId={scene.id}
-          replayKey={replayKey}
+          frame={frame}
+          replayKey={playback.replayKey}
+          isPlaying={playback.isPlaying}
+          reduceMotion={playback.reduceMotion}
+          settleScene={playback.settleScene}
           layout={layoutPreset}
           motionPreset={motionPreset}
           safeZone={safeZone}
           focalY={visual.source === "uploaded-background" ? visual.focalPoint.y : undefined}
-          direction={localeDirection(locale)}
-        >
-          <div className={`wedding-scene ${className}`}>
-            <WeddingSceneContent scene={scene} onOpenRsvp={onOpenRsvp} locale={locale} />
-          </div>
-        </WeddingMotionLayer>
+          renderBlock={(block) => (
+            <WeddingSemanticBlockContent
+              block={block}
+              onOpenRsvp={onOpenRsvp}
+              locale={locale}
+            />
+          )}
+        />
       </div>
     </div>
   );
 }
 
-function WeddingSceneContent({
-  scene,
+function WeddingSemanticBlockContent({
+  block,
   onOpenRsvp,
   locale,
 }: {
-  scene: WeddingScene;
+  block: WeddingSemanticBlock;
   onOpenRsvp: () => void;
   locale: InvitationLocale;
 }) {
-  if (scene.id === "opening")
+  if (block.id === "opening")
     return (
-      <>
+      <div className="wedding-scene wedding-opening">
         <span className="wedding-ornament">۞</span>
-        {scene.wording && <p>{scene.wording}</p>}
-      </>
+        <p>{block.text}</p>
+      </div>
     );
-  if (scene.id === "hosts")
+  if (block.id === "occasion")
+    return <div className="wedding-scene wedding-hosts"><p>{block.text}</p></div>;
+  if (block.id === "hosts")
     return (
-      <>
-        {scene.hostNames && (
-          <p className="wedding-host-name">{scene.hostNames}</p>
-        )}
-        {scene.invitationWording && <p>{scene.invitationWording}</p>}
-      </>
+      <div className="wedding-scene wedding-hosts">
+        <p className="wedding-host-name">{block.text}</p>
+      </div>
     );
-  if (scene.id === "names")
-    return <PrincipalNames lines={scene.lines} fallback={scene.fallback} locale={locale} />;
-  if (scene.id === "details") {
+  if (block.id === "principals")
+    return <div className="wedding-scene wedding-principals"><PrincipalNames lines={block.lines} locale={locale} /></div>;
+  if (block.id === "date-time") {
     const hasDate =
-      scene.startTime ||
-      scene.eventDay ||
-      scene.gregorianDate ||
-      scene.hijriDate;
+      block.startTime ||
+      block.eventDay ||
+      block.gregorianDate ||
+      block.hijriDate;
     return (
-      <>
+      <div className="wedding-scene wedding-details">
         {hasDate && <div className="wedding-date-rule" />}
         {hasDate && (
           <div className="wedding-date-grid">
-            {scene.startTime && <span>{scene.startTime}</span>}
-            {(scene.eventDay || scene.gregorianDate) && (
+            {block.startTime && <span>{block.startTime}</span>}
+            {(block.eventDay || block.gregorianDate) && (
               <strong>
-                {scene.eventDay && <small>{scene.eventDay}</small>}
-                {scene.gregorianDate}
+                {block.eventDay && <small>{block.eventDay}</small>}
+                {block.gregorianDate}
               </strong>
             )}
-            {scene.hijriDate && <span dir="rtl">{scene.hijriDate}</span>}
+            {block.hijriDate && <span dir="rtl">{block.hijriDate}</span>}
           </div>
         )}
-        {scene.venue && <p className="wedding-venue">{scene.venue}</p>}
-        {scene.city && <p className="wedding-city">{scene.city}</p>}
-        {(scene.receptionTime || scene.dinnerTime) && (
+        {(block.receptionTime || block.dinnerTime) && (
           <div className="wedding-schedule">
-            {scene.receptionTime && (
+            {block.receptionTime && (
               <span>
-                {invitationT(locale, "reception")} <b>{scene.receptionTime}</b>
+                {invitationT(locale, "reception")} <b>{block.receptionTime}</b>
               </span>
             )}
-            {scene.dinnerTime && (
+            {block.dinnerTime && (
               <span>
-                {invitationT(locale, "dinner")} <b>{scene.dinnerTime}</b>
+                {invitationT(locale, "dinner")} <b>{block.dinnerTime}</b>
               </span>
             )}
           </div>
         )}
-        {scene.mapUrl && (
-          <a
-            className="wedding-map"
-            href={scene.mapUrl}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <MapPin size={13} /> {invitationT(locale, "viewLocation")}
-          </a>
-        )}
-      </>
+      </div>
     );
   }
+  if (block.id === "venue")
+    return (
+      <div className="wedding-scene wedding-details">
+        {block.venue && <p className="wedding-venue">{block.venue}</p>}
+        {block.city && <p className="wedding-city">{block.city}</p>}
+        {block.mapUrl && <a className="wedding-map" href={block.mapUrl} target="_blank" rel="noreferrer"><MapPin size={13} /> {invitationT(locale, "viewLocation")}</a>}
+      </div>
+    );
   return (
-    <>
-      <p className="wedding-rsvp-guest">{invitationT(locale, "privateInvitation")} {scene.guestName}</p>
+    <div className="wedding-scene wedding-rsvp-reveal">
+      <p className="wedding-rsvp-guest">{invitationT(locale, "privateInvitation")} {block.guestName}</p>
       <button
         className="wedding-rsvp-button"
         onClick={onOpenRsvp}
         data-testid="button-wedding-rsvp"
       >
-        <span>{invitationT(locale, scene.status === "pending" ? "confirmAttendance" : "editResponse")}</span>
-        {scene.deadline && <small>{scene.deadline}</small>}
+        <span>{invitationT(locale, block.status === "pending" ? "confirmAttendance" : "editResponse")}</span>
+        {block.deadline && <small>{block.deadline}</small>}
       </button>
-    </>
+    </div>
   );
 }
 
