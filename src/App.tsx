@@ -10,6 +10,18 @@ import {
 import { Link, Route, Switch, Router as WouterRouter, useLocation, useParams } from 'wouter';
 import { WeddingInvitationRenderer, WeddingStudio } from '@/wedding/WeddingMode';
 import { WeddingWorkspaceProvider, useWeddingWorkspace } from '@/wedding/WeddingWorkspaceProvider';
+import type { WeddingProject } from '@/wedding/workspace';
+import { AdminPage } from '@/admin/AdminPage';
+import { DashboardPage } from '@/app/DashboardPage';
+import { EmptyProjectSection, ProjectOverview, ProjectShell } from '@/app/ProjectShell';
+import {
+  buildProjectRoute,
+  legacyProjectRoute,
+  partyProject,
+  resolveProjectSection,
+  type ProjectSummary,
+  type ProjectType,
+} from '@/app/projects';
 import {
   defaultWeddingEvent,
   defaultWeddingGuest,
@@ -393,7 +405,7 @@ function StudioHubPage() {
   );
 }
 
-function PartyStudioPage() {
+function PartyStudioPage({ embedded = false }: { embedded?: boolean }) {
   const { state, ready, toggleBlock, reorderBlocks, updateBlock, setMode } = useEngine();
   const [activeEditor, setActiveEditor] = useState<BlockKey | null>(null);
   const activeBlock = state.blocks.find((b) => b.key === activeEditor);
@@ -408,10 +420,10 @@ function PartyStudioPage() {
   if (!ready) return <LoadingPage />;
 
   return (
-    <div className="grain min-h-[100dvh] bg-[#FAF7F2] text-[#2D2421]">
+    <div className={`grain bg-[#FAF7F2] text-[#2D2421] ${embedded ? 'rounded-3xl py-6' : 'min-h-[100dvh]'}`}>
       <div className="gold-thread" />
-      <QuietHeader studio />
-      <main className="relative z-10 mx-auto max-w-7xl px-5 pb-20 sm:px-8 lg:px-14">
+      {!embedded && <QuietHeader studio />}
+      <main className={`relative z-10 mx-auto max-w-7xl px-5 sm:px-8 ${embedded ? 'pb-6' : 'pb-20 lg:px-14'}`}>
         <FadeIn>
           <div className="flex flex-col justify-between gap-7 border-b border-[#D4AF37]/35 pb-8 md:flex-row md:items-end">
             <div>
@@ -438,8 +450,8 @@ function PartyStudioPage() {
           </div>
         </FadeIn>
 
-        <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_340px]">
-          <div className="space-y-8">
+        <div className="mt-8 grid grid-cols-[minmax(0,1fr)] gap-8 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="min-w-0 space-y-8">
             <div className="grid gap-3 sm:grid-cols-3">
               <StudioStat label="Invitation status" value="Live" detail="private link active" icon={Sparkles} />
               <StudioStat label="Responses" value={accepted ? '1 / 1' : '0 / 1'} detail={accepted ? 'Hashim confirmed' : 'awaiting first reply'} icon={ClipboardCheck} />
@@ -479,7 +491,7 @@ function PartyStudioPage() {
                 ))}
               </Reorder.Group>
             </div>
-            <GuestManager />
+            {!embedded && <GuestManager />}
           </div>
           <aside className="space-y-6">
             <SuiteCard className="p-6">
@@ -573,7 +585,7 @@ function WeddingWorkspaceControls() {
   </section>;
 }
 
-function WeddingStudioPage() {
+function WeddingStudioPage({ embedded = false }: { embedded?: boolean }) {
   const { state, ready, setMode } = useEngine();
   const { activeProject, updateActiveEvent } = useWeddingWorkspace();
 
@@ -586,10 +598,10 @@ function WeddingStudioPage() {
   if (!ready) return <LoadingPage />;
 
   return (
-    <div className="grain min-h-[100dvh] bg-[#FAF7F2] text-[#2D2421]">
+    <div className={`grain bg-[#FAF7F2] text-[#2D2421] ${embedded ? 'rounded-3xl py-6' : 'min-h-[100dvh]'}`}>
       <div className="gold-thread" />
-      <QuietHeader studio />
-      <main className="relative z-10 mx-auto max-w-7xl px-5 pb-20 sm:px-8 lg:px-14">
+      {!embedded && <QuietHeader studio />}
+      <main className={`relative z-10 mx-auto max-w-7xl px-5 sm:px-8 ${embedded ? 'pb-6' : 'pb-20 lg:px-14'}`}>
         <FadeIn>
           <div className="flex flex-col justify-between gap-7 border-b border-[#D4AF37]/35 pb-8 md:flex-row md:items-end">
             <div>
@@ -623,9 +635,7 @@ function WeddingStudioPage() {
           rsvpStatus={state.rsvp}
           onChange={updateActiveEvent}
         />
-        <div className="mt-8">
-          <GuestManager />
-        </div>
+        {!embedded && <div className="mt-8"><GuestManager /></div>}
       </main>
     </div>
   );
@@ -667,22 +677,83 @@ function GuestManager() {
     link.click();
     URL.revokeObjectURL(url);
   };
-  return <div className="suite-card overflow-hidden p-6 sm:p-8"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><Eyebrow>GUEST LIST / 01</Eyebrow><h2 className="mt-2 font-display text-4xl text-[#0A2E23]">The people who matter.</h2></div><Button variant="ivory" icon={ArrowDownToLine} onClick={exportGuests}>Caterer export</Button></div><div className="mt-6 overflow-x-auto"><table className="w-full min-w-[590px] text-left"><thead><tr className="border-b border-[#D4AF37]/35 text-[10px] uppercase tracking-[.12em] text-[#2D2421]/50"><th className="pb-3 font-semibold">Guest</th><th className="pb-3 font-semibold">Party</th><th className="pb-3 font-semibold">Response</th><th className="pb-3 text-right font-semibold">Invite</th></tr></thead><tbody><tr className="border-b border-[#D4AF37]/20"><td className="py-4"><div className="flex items-center gap-3"><InitialsAvatar /><div><p className="text-sm font-semibold text-[#0A2E23]" data-testid="row-guest-hashim">{guest.name}</p><p className="text-[10px] text-[#2D2421]/50">{guest.token}</p></div></div></td><td className="py-4 text-sm">{partySize} {partySize === 1 ? 'guest' : 'guests'}</td><td className="py-4"><span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-[.1em] ${state.rsvp === 'accepted' ? 'bg-[#0A2E23]/10 text-[#0A2E23]' : 'bg-[#D4AF37]/15 text-[#8A6712]'}`}>{state.rsvp}</span></td><td className="py-4 text-right"><button onClick={sendWhatsApp} data-testid="button-whatsapp-hashim" className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-full border border-[#D4AF37]/60 px-3 py-2 text-[10px] font-bold uppercase tracking-[.08em] text-[#0A2E23] hover:bg-[#D4AF37]/10"><MessageCircle size={14} /> WhatsApp</button></td></tr></tbody></table></div><p className="mt-5 flex items-center gap-2 text-[10px] text-[#2D2421]/50"><Link2 size={12} className="text-[#A98219]" /> Personal link ready · /i/{guest.token}</p></div>;
+  const responseClass = state.rsvp === 'accepted' ? 'bg-[#0A2E23]/10 text-[#0A2E23]' : 'bg-[#D4AF37]/15 text-[#8A6712]';
+  return <div className="suite-card overflow-hidden p-6 sm:p-8">
+    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><Eyebrow>GUEST LIST / 01</Eyebrow><h2 className="mt-2 font-display text-4xl text-[#0A2E23]">The people who matter.</h2></div><Button variant="ivory" icon={ArrowDownToLine} onClick={exportGuests}>Caterer export</Button></div>
+    <div className="mt-6 rounded-2xl border border-[#D4AF37]/35 bg-[#FFFDF9]/45 p-4 sm:hidden">
+      <div className="flex items-center gap-3"><InitialsAvatar /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-[#0A2E23]" data-testid="row-guest-hashim-mobile">{guest.name}</p><p className="text-[10px] text-[#2D2421]/50">{guest.token}</p></div><span className={`rounded-full px-2 py-1 text-[9px] font-bold uppercase ${responseClass}`}>{state.rsvp}</span></div>
+      <div className="mt-4 flex items-center justify-between border-t border-[#D4AF37]/25 pt-4"><p className="text-xs text-[#2D2421]/65">{partySize} {partySize === 1 ? 'guest' : 'guests'}</p><button onClick={sendWhatsApp} data-testid="button-whatsapp-hashim-mobile" className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-full border border-[#D4AF37]/60 px-3 py-2 text-[10px] font-bold uppercase text-[#0A2E23]"><MessageCircle size={14} /> WhatsApp</button></div>
+    </div>
+    <div className="mt-6 hidden overflow-x-auto sm:block"><table className="w-full min-w-[590px] text-left"><thead><tr className="border-b border-[#D4AF37]/35 text-[10px] uppercase tracking-[.12em] text-[#2D2421]/50"><th className="pb-3 font-semibold">Guest</th><th className="pb-3 font-semibold">Party</th><th className="pb-3 font-semibold">Response</th><th className="pb-3 text-right font-semibold">Invite</th></tr></thead><tbody><tr className="border-b border-[#D4AF37]/20"><td className="py-4"><div className="flex items-center gap-3"><InitialsAvatar /><div><p className="text-sm font-semibold text-[#0A2E23]" data-testid="row-guest-hashim">{guest.name}</p><p className="text-[10px] text-[#2D2421]/50">{guest.token}</p></div></div></td><td className="py-4 text-sm">{partySize} {partySize === 1 ? 'guest' : 'guests'}</td><td className="py-4"><span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-[.1em] ${responseClass}`}>{state.rsvp}</span></td><td className="py-4 text-right"><button onClick={sendWhatsApp} data-testid="button-whatsapp-hashim" className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-full border border-[#D4AF37]/60 px-3 py-2 text-[10px] font-bold uppercase tracking-[.08em] text-[#0A2E23] hover:bg-[#D4AF37]/10"><MessageCircle size={14} /> WhatsApp</button></td></tr></tbody></table></div>
+    <p className="mt-5 flex items-center gap-2 text-[10px] text-[#2D2421]/50"><Link2 size={12} className="text-[#A98219]" /> Personal link ready · /i/{guest.token}</p>
+  </div>;
 }
 
-function ScannerPage() {
+function ScannerPage({ project }: { project?: ProjectSummary }) {
   const { state, ready, setCheckedIn } = useEngine();
   const { activeProject } = useWeddingWorkspace();
   const [token, setToken] = useState('');
   const [scan, setScan] = useState<'idle' | 'verified' | 'rejected'>('idle');
   const verify = () => setScan(isValidGuestToken(token, state.weddingGuest.token) ? 'verified' : 'rejected');
   if (!ready) return <LoadingPage />;
-  return <div className="grain min-h-[100dvh] bg-[#0A2E23] text-[#FFFDF9]"><div className="gold-thread opacity-45" /><header className="relative z-10 flex items-center justify-between px-5 py-6 sm:px-10"><Link href="/studio" data-testid="link-scanner-back" className="focus-ring flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.16em] text-[#FFFDF9]/70"><ArrowLeft size={15} /> Studio</Link><div className="flex items-center gap-2"><div className="font-display text-2xl text-[#D4AF37]">M<span className="text-[#FFFDF9]">&amp;</span>L</div><Eyebrow>DOOR / 01</Eyebrow></div></header><main className="relative z-10 mx-auto max-w-2xl px-5 pb-16 pt-10 sm:pt-16"><FadeIn><div className="text-center"><Eyebrow>CONCIERGE CHECK-IN</Eyebrow><h1 className="mt-4 font-display text-6xl leading-[.85] text-[#FFFDF9] sm:text-7xl">Welcome them<br /><span className="text-[#D4AF37]">by name.</span></h1><p className="mx-auto mt-5 max-w-sm text-sm leading-6 text-[#FFFDF9]/60">Scan a guest’s private pass or enter their token to verify the evening.</p></div></FadeIn><div className="relative mx-auto mt-12 aspect-[1.2] max-w-lg overflow-hidden rounded-[30px] border border-[#D4AF37]/70 bg-[#071f18] shadow-[0_18px_50px_rgba(0,0,0,.3)]"><div className="absolute inset-5 rounded-2xl border border-[#D4AF37]/80"><span className="absolute -left-px -top-px h-10 w-10 border-l-2 border-t-2 border-[#D4AF37]" /><span className="absolute -right-px -top-px h-10 w-10 border-r-2 border-t-2 border-[#D4AF37]" /><span className="absolute -bottom-px -left-px h-10 w-10 border-b-2 border-l-2 border-[#D4AF37]" /><span className="absolute -bottom-px -right-px h-10 w-10 border-b-2 border-r-2 border-[#D4AF37]" /><motion.div animate={{ y: ['12%', '86%', '12%'] }} transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }} className="absolute left-[10%] right-[10%] h-px bg-[#D4AF37] shadow-[0_0_12px_rgba(212,175,55,.7)]" /></div><div className="absolute inset-0 flex items-center justify-center"><QrCode size={72} strokeWidth={.55} className="text-[#FFFDF9]/20" /></div><div className="absolute bottom-5 left-0 right-0 text-center text-[9px] font-bold uppercase tracking-[.2em] text-[#D4AF37]/75">camera viewfinder · ready</div></div><div className="mx-auto mt-8 max-w-lg"><div className="flex gap-2"><input value={token} onChange={(e) => { setToken(e.target.value); setScan('idle'); }} onKeyDown={(e) => e.key === 'Enter' && verify()} data-testid="input-scanner-token" placeholder={`Enter guest token · ${state.weddingGuest.token}`} className="focus-ring min-w-0 flex-1 rounded-full border border-[#D4AF37]/50 bg-[#FFFDF9]/10 px-5 py-3 text-sm text-[#FFFDF9] outline-none placeholder:text-[#FFFDF9]/35" /><Button variant="gold" icon={Search} onClick={verify}>Verify</Button></div><p className="mt-3 text-center text-[10px] uppercase tracking-[.15em] text-[#FFFDF9]/40">Demo mode · no camera permission required</p></div><AnimatePresence>{scan !== 'idle' && <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className={`mx-auto mt-8 max-w-lg rounded-[28px] border p-6 ${scan === 'verified' ? 'border-[#D4AF37] bg-[#D4AF37]/10' : 'border-[#d58c78] bg-[#d58c78]/10'}`}>{scan === 'verified' ? <div className="flex items-center gap-4"><div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#D4AF37] text-[#0A2E23]"><Check size={23} /></div><div className="min-w-0 flex-1"><Eyebrow>VERIFIED · {state.mode === 'wedding' ? state.weddingGuest.name : 'HASHIM ALNIMARI'}</Eyebrow><p className="mt-1 text-sm text-[#FFFDF9]/75">Invitation for {state.mode === 'wedding' ? Math.max(1, state.weddingResponse.guestCount) : 1} · {state.mode === 'wedding' ? activeProject.event.venue : 'The Grand Palace Hall'}</p></div>{state.checkedIn ? <span className="text-right text-[10px] font-bold uppercase tracking-[.1em] text-[#D4AF37]">Checked in</span> : <Button variant="gold" icon={Check} onClick={setCheckedIn}>Check in</Button>}</div> : <div className="flex items-center gap-4"><XCircle className="text-[#d58c78]" size={30} /><div><Eyebrow className="text-[#d58c78]">NOT RECOGNIZED</Eyebrow><p className="mt-1 text-sm text-[#FFFDF9]/70">Try the guest token again.</p></div></div>}</motion.div>}</AnimatePresence></main></div>;
+  const context = project ?? weddingProjectSummary(activeProject);
+  const backRoute = buildProjectRoute(context.type, context.id, 'overview');
+  return <div className="grain min-h-[100dvh] bg-[#0A2E23] text-[#FFFDF9]"><div className="gold-thread opacity-45" /><header className="relative z-10 flex items-center justify-between px-5 py-6 sm:px-10"><Link href={backRoute} data-testid="link-scanner-back" className="focus-ring flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.16em] text-[#FFFDF9]/70"><ArrowLeft size={15} /> Project</Link><div className="min-w-0 text-right"><p className="truncate text-sm font-semibold text-[#D4AF37]">{context.name}</p><p className="text-[9px] uppercase tracking-[.14em] text-white/45">{context.type} · {context.id}</p></div></header><main className="relative z-10 mx-auto max-w-2xl px-5 pb-16 pt-10 sm:pt-16"><FadeIn><div className="text-center"><Eyebrow>CONCIERGE CHECK-IN</Eyebrow><h1 className="mt-4 font-display text-6xl leading-[.85] text-[#FFFDF9] sm:text-7xl">Welcome them<br /><span className="text-[#D4AF37]">by name.</span></h1><p className="mx-auto mt-5 max-w-sm text-sm leading-6 text-[#FFFDF9]/60">Demo verification for {context.date} · {context.venue}</p></div></FadeIn><div className="relative mx-auto mt-12 aspect-[1.2] max-w-lg overflow-hidden rounded-[30px] border border-[#D4AF37]/70 bg-[#071f18] shadow-[0_18px_50px_rgba(0,0,0,.3)]"><div className="absolute inset-5 rounded-2xl border border-[#D4AF37]/80"><span className="absolute -left-px -top-px h-10 w-10 border-l-2 border-t-2 border-[#D4AF37]" /><span className="absolute -right-px -top-px h-10 w-10 border-r-2 border-t-2 border-[#D4AF37]" /><span className="absolute -bottom-px -left-px h-10 w-10 border-b-2 border-l-2 border-[#D4AF37]" /><span className="absolute -bottom-px -right-px h-10 w-10 border-b-2 border-r-2 border-[#D4AF37]" /><motion.div animate={{ y: ['12%', '86%', '12%'] }} transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }} className="absolute left-[10%] right-[10%] h-px bg-[#D4AF37] shadow-[0_0_12px_rgba(212,175,55,.7)]" /></div><div className="absolute inset-0 flex items-center justify-center"><QrCode size={72} strokeWidth={.55} className="text-[#FFFDF9]/20" /></div><div className="absolute bottom-5 left-0 right-0 text-center text-[9px] font-bold uppercase tracking-[.2em] text-[#D4AF37]/75">demo viewfinder · ready</div></div><div className="mx-auto mt-8 max-w-lg"><div className="flex flex-col gap-2 sm:flex-row"><input value={token} onChange={(e) => { setToken(e.target.value); setScan('idle'); }} onKeyDown={(e) => e.key === 'Enter' && verify()} data-testid="input-scanner-token" placeholder={`Enter guest token · ${state.weddingGuest.token}`} className="focus-ring min-h-12 min-w-0 flex-1 rounded-full border border-[#D4AF37]/50 bg-[#FFFDF9]/10 px-5 py-3 text-sm text-[#FFFDF9] outline-none placeholder:text-[#FFFDF9]/35" /><Button variant="gold" icon={Search} onClick={verify}>Verify</Button></div><p className="mt-3 text-center text-[10px] uppercase tracking-[.15em] text-[#FFFDF9]/40">Frontend demo only · no camera or secure database verification</p></div><AnimatePresence>{scan !== 'idle' && <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className={`mx-auto mt-8 max-w-lg rounded-[28px] border p-6 ${scan === 'verified' ? 'border-[#D4AF37] bg-[#D4AF37]/10' : 'border-[#d58c78] bg-[#d58c78]/10'}`}>{scan === 'verified' ? <div className="flex flex-col gap-4 sm:flex-row sm:items-center"><div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#D4AF37] text-[#0A2E23]"><Check size={23} /></div><div className="min-w-0 flex-1"><Eyebrow>VERIFIED · {state.mode === 'wedding' ? state.weddingGuest.name : 'HASHIM ALNIMARI'}</Eyebrow><p className="mt-1 text-sm text-[#FFFDF9]/75">Invitation for {state.mode === 'wedding' ? Math.max(1, state.weddingResponse.guestCount) : 1} · {context.venue}</p></div>{state.checkedIn ? <span className="text-[10px] font-bold uppercase tracking-[.1em] text-[#D4AF37]">Checked in</span> : <Button variant="gold" icon={Check} onClick={setCheckedIn}>Check in</Button>}</div> : <div className="flex items-center gap-4"><XCircle className="text-[#d58c78]" size={30} /><div><Eyebrow className="text-[#d58c78]">NOT RECOGNIZED</Eyebrow><p className="mt-1 text-sm text-[#FFFDF9]/70">Try the guest token again.</p></div></div>}</motion.div>}</AnimatePresence></main></div>;
 }
 
-function RedirectHome() {
+function weddingProjectSummary(project: WeddingProject): ProjectSummary {
+  return {
+    id: project.id,
+    type: 'wedding',
+    name: project.name,
+    date: project.event.gregorianDate,
+    venue: [project.event.venue, project.event.city].filter(Boolean).join(', '),
+  };
+}
+
+function DashboardRoute() {
+  const { projects } = useWeddingWorkspace();
+  return <DashboardPage projects={[...projects.map(weddingProjectSummary), partyProject]} />;
+}
+
+function ProjectRoutePage({ type }: { type: ProjectType }) {
+  const { eventId, section: rawSection } = useParams<{ eventId: string; section: string }>();
+  const { state, ready, setMode } = useEngine();
+  const workspace = useWeddingWorkspace();
+  const weddingProject = type === 'wedding' ? workspace.projects.find((item) => item.id === eventId) : undefined;
+  const project = type === 'wedding'
+    ? weddingProject && weddingProjectSummary(weddingProject)
+    : eventId === partyProject.id ? partyProject : undefined;
+  const section = resolveProjectSection(type, rawSection);
+
+  useEffect(() => {
+    if (!ready || !project) return;
+    const mode = type === 'wedding' ? 'wedding' : 'standard';
+    if (state.mode !== mode) setMode(mode);
+    if (weddingProject && workspace.activeProject.id !== weddingProject.id) void workspace.openProject(weddingProject.id).catch(() => undefined);
+  }, [project, ready, setMode, state.mode, type, weddingProject, workspace]);
+
+  if (!ready) return <LoadingPage />;
+  if (!project) return <TokenError />;
+
+  let content: ReactNode;
+  if (section === 'overview') content = <ProjectOverview project={project} guestCount={1} response={state.rsvp} checkedIn={state.checkedIn} />;
+  else if (section === 'invitation') content = type === 'wedding' ? <WeddingStudioPage embedded /> : <PartyStudioPage embedded />;
+  else if (section === 'guests') content = <GuestManager />;
+  else if (section === 'scanner') content = <ScannerPage project={project} />;
+  else if (section === 'send') content = <EmptyProjectSection title="Send invitations">WhatsApp and campaign delivery will connect here in a later phase. For now, use the guest list’s demo share action; no message is sent by QuickRSVP.</EmptyProjectSection>;
+  else content = <EmptyProjectSection title="Project settings">Project-level frontend settings will live here. Production accounts, permissions, billing, and database settings are intentionally absent.</EmptyProjectSection>;
+
+  return <ProjectShell project={project} section={section}>{content}</ProjectShell>;
+}
+
+function WeddingProjectRoute() { return <ProjectRoutePage type="wedding" />; }
+function PartyProjectRoute() { return <ProjectRoutePage type="party" />; }
+
+function LegacyRedirect({ path }: { path: '/studio/wedding' | '/studio/party' | '/scanner' }) {
+  const { activeProject } = useWeddingWorkspace();
   const [, setLocation] = useLocation();
-  useEffect(() => { setLocation('/i/demo'); }, [setLocation]);
+  useEffect(() => { setLocation(legacyProjectRoute(path, activeProject.id), { replace: true }); }, [activeProject.id, path, setLocation]);
   return <LoadingPage />;
 }
 
@@ -690,16 +761,26 @@ function NotFound() {
   return <TokenError />;
 }
 
+function ScrollToTop() {
+  const [location] = useLocation();
+  useEffect(() => { window.scrollTo({ top: 0, left: 0 }); }, [location]);
+  return null;
+}
+
 function Router() {
   return (
     <ErrorBoundary resetKey={window.location.pathname}>
+      <ScrollToTop />
       <Switch>
-        <Route path="/" component={RedirectHome} />
+        <Route path="/" component={DashboardRoute} />
         <Route path="/i/:token" component={GuestPage} />
-        <Route path="/studio/party" component={PartyStudioPage} />
-        <Route path="/studio/wedding" component={WeddingStudioPage} />
+        <Route path="/weddings/:eventId/:section" component={WeddingProjectRoute} />
+        <Route path="/parties/:eventId/:section" component={PartyProjectRoute} />
+        <Route path="/admin" component={AdminPage} />
+        <Route path="/studio/party">{() => <LegacyRedirect path="/studio/party" />}</Route>
+        <Route path="/studio/wedding">{() => <LegacyRedirect path="/studio/wedding" />}</Route>
         <Route path="/studio" component={StudioHubPage} />
-        <Route path="/scanner" component={ScannerPage} />
+        <Route path="/scanner">{() => <LegacyRedirect path="/scanner" />}</Route>
         <Route component={NotFound} />
       </Switch>
     </ErrorBoundary>
