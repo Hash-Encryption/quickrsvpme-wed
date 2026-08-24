@@ -15,7 +15,9 @@ const icons: Record<ProjectSection, LucideIcon> = {
 export function ProjectShell({ project, section, children }: { project: ProjectSummary; section: ProjectSection; children: React.ReactNode }) {
   const sections = projectSections[project.type];
   const { t } = useAppLocale();
-  const labels: Record<ProjectSection, string> = { overview: t('overview'), invitation: t('invitation'), guests: t('guests'), send: t('send'), scanner: t('scanner'), settings: t('settings') };
+  const labels: Record<ProjectSection, string> = project.type === 'party'
+    ? { overview: t('event'), invitation: t('designNav'), guests: t('guests'), send: t('send'), scanner: t('scanner'), settings: t('more') }
+    : { overview: t('overview'), invitation: t('invitation'), guests: t('guests'), send: t('send'), scanner: t('scanner'), settings: t('settings') };
   return <div className="project-shell min-h-[100dvh] bg-[#F5F2EC] text-[#17251F] md:grid md:grid-cols-[248px_minmax(0,1fr)]">
     <aside className="project-sidebar hidden min-h-[100dvh] border-r border-[#D9D2C5] bg-[#0C2D24] px-5 py-7 text-[#F9F6F0] md:flex md:flex-col">
       <Link href="/" className="focus-ring text-xl font-semibold tracking-[-.04em]">Quick<span className="text-[#C8A75A]">RSVP</span></Link>
@@ -39,7 +41,7 @@ export function ProjectShell({ project, section, children }: { project: ProjectS
     </div>
     <nav className="fixed inset-x-0 bottom-0 z-40 grid min-h-[72px] border-t border-[#D9D2C5] bg-[#FCFAF6]/95 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden" style={{ gridTemplateColumns: `repeat(${sections.length}, minmax(0, 1fr))` }} aria-label="Mobile project navigation">{sections.map((item) => {
       const Icon = icons[item];
-      return <Link key={item} href={buildProjectRoute(project.type, project.id, item)} className={`focus-ring flex min-w-0 flex-col items-center justify-center gap-1 px-1 text-[9px] font-semibold ${section === item ? 'text-[#0C2D24]' : 'text-[#756F66]'}`}><Icon size={19} /><span className="truncate">{labels[item]}</span></Link>;
+      return <Link key={item} href={buildProjectRoute(project.type, project.id, item)} aria-current={section === item ? 'page' : undefined} className={`focus-ring flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 px-1 text-[9px] font-semibold ${section === item ? 'text-[#0C2D24]' : 'text-[#756F66]'}`}><Icon size={19} /><span className="max-w-full truncate">{labels[item]}</span></Link>;
     })}</nav>
   </div>;
 }

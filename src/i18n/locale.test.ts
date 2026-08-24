@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { invitationTranslations } from './invitation.ts';
-import { resolvePartyInvitationLocale } from './party.ts';
+import { partyInvitationT, resolvePartyInvitationLocale } from './party.ts';
 import { APP_LOCALE_STORAGE_KEY, localeDirection, normalizeLocale, persistAppLocale, readPersistedAppLocale, type AppLocale, type InvitationLocale } from './locale.ts';
 
 test('AppLocale defaults to Arabic and normalizes persisted values', () => {
@@ -33,4 +33,9 @@ test('legacy Party state remains readable and invitation locale persists', () =>
   assert.equal(resolvePartyInvitationLocale({}), 'ar');
   assert.equal(resolvePartyInvitationLocale({ invitationLocale: 'en' }), 'en');
   assert.equal(resolvePartyInvitationLocale({ invitationLocale: 'broken' }), 'ar');
+});
+
+test('Party invitation system copy follows InvitationLocale independently', () => {
+  assert.equal(partyInvitationT('en', 'noAccount'), 'No account required');
+  assert.equal(partyInvitationT('ar', 'noAccount'), 'لا يلزم إنشاء حساب');
 });
