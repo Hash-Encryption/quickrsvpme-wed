@@ -36,25 +36,24 @@ export function WeddingMotionLayer({
   focalY,
   renderBlock,
 }: WeddingMotionLayerProps) {
-  const rule = layout.scenes[frame.sceneId];
+  const rule = layout.scenes.rsvp;
   const vertical = resolveWeddingSafeZone(safeZone, rule.vertical, focalY);
   const resolved = reduceMotion || settleScene || frame.final;
 
   return (
     <div
-      className={`wedding-motion-layer wedding-layout-vertical--${vertical} wedding-layout-horizontal--${rule.horizontal} wedding-layout-width--${rule.width} ${frame.sceneId === "rsvp" ? "is-complete-motion" : ""}`}
+      className={`wedding-motion-layer wedding-layout-vertical--${vertical} wedding-layout-horizontal--${rule.horizontal} wedding-layout-width--${rule.width} is-complete-motion`}
       data-motion-preset={motionPreset.id}
       data-motion-behavior={frame.behavior}
     >
-      <div className={`wedding-choreography wedding-choreography--${frame.behavior} wedding-choreography--${frame.density} ${frame.sceneId === "rsvp" ? "is-complete-invitation" : ""} ${resolved ? "is-resolved" : ""}`}>
+      <div className={`wedding-choreography wedding-choreography--${frame.behavior} wedding-choreography--${frame.density} is-complete-invitation ${resolved ? "is-resolved" : ""}`}>
         {frame.items.map((item) => {
-          const anchor = item.exitsAt ?? item.entersAt;
-          const style: MotionStyle = {
+          const style: MotionStyle | undefined = item.phase === "entering" ? {
             "--wedding-inline-enter": frame.direction === "rtl" ? "18px" : "-18px",
-            animationDelay: `${anchor - frame.elapsed}ms`,
-            animationDuration: `${item.phase === "exiting" ? motionPreset.exitDurationMs : motionPreset.enterDurationMs}ms`,
+            animationDelay: `${item.entersAt - frame.elapsed}ms`,
+            animationDuration: `${motionPreset.enterDurationMs}ms`,
             animationPlayState: isPlaying ? "running" : "paused",
-          };
+          } : undefined;
           return (
             <div
               key={`${item.block.id}:${item.entersAt}:${replayKey}`}

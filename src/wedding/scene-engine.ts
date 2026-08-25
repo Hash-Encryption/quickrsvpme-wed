@@ -18,8 +18,7 @@ export const weddingTimelineEnd = 18_000;
 export type WeddingChoreographyItem = {
   block: WeddingSemanticBlock;
   entersAt: number;
-  exitsAt?: number;
-  phase: "entering" | "active" | "exiting";
+  phase: "pending" | "entering" | "active";
   role: "hero" | "supporting" | "detail" | "action";
   retained: boolean;
 };
@@ -86,7 +85,6 @@ function cueSchedule(blocks: ReadonlyArray<WeddingSemanticBlock>) {
 
 export function resolveWeddingChoreographyBoundaries(
   blocks: ReadonlyArray<WeddingSemanticBlock>,
-  motionPreset: WeddingMotionPreset,
 ): number[] {
   const cues = cueSchedule(blocks);
   const boundaries = new Set<number>([
@@ -94,12 +92,6 @@ export function resolveWeddingChoreographyBoundaries(
     weddingTimelineEnd,
     ...cues.values(),
   ]);
-  if (motionPreset.behavior !== "progressive") {
-    for (const startsAt of Object.values(sceneStarts).slice(1, -1)) {
-      boundaries.add(startsAt + motionPreset.exitDurationMs);
-    }
-    blocks.forEach((_, index) => boundaries.add(sceneStarts.rsvp + index * 150));
-  }
   return [...boundaries].filter((value) => value <= weddingTimelineEnd).sort((a, b) => a - b);
 }
 
@@ -109,55 +101,27 @@ export function resolveWeddingChoreography(
   elapsed: number,
   options: ChoreographyOptions = {},
 ): WeddingChoreographyFrame {
-  const position = Math.max(0, Math.min(weddingTimelineEnd, elapsed));
+  const position = options.reduceMotion
+    ? weddingTimelineEnd
+    : Math.max(0, Math.min(weddingTimelineEnd, elapsed));
   const sceneId = sceneOrder[getWeddingSceneIndex(
     sceneOrder.map((id) => ({ id, startsAt: sceneStarts[id] })),
     position,
   )];
   const final = position >= weddingTimelineEnd;
-  const progressive = motionPreset.behavior === "progressive";
   const cues = cueSchedule(blocks);
   const sceneIndex = sceneOrder.indexOf(sceneId);
-  const previousScene = sceneOrder[sceneIndex - 1];
-  const sceneStart = sceneStarts[sceneId];
-  const overlapEnds = sceneStart + motionPreset.exitDurationMs;
-
-  let candidates: Array<{ block: WeddingSemanticBlock; entersAt: number; exitsAt?: number; retained: boolean }>;
-  if (sceneId === "rsvp" && !progressive) {
-    candidates = blocks.map((block, index) => ({
+  const items = blocks
+    .map((block) => ({
       block,
-      entersAt: sceneStart + index * 150,
-      retained: false,
-    }));
-  } else if (progressive) {
-    candidates = blocks
-      .filter((block) => sceneOrder.indexOf(semanticScenes[block.id]) <= sceneIndex)
-      .map((block) => ({ block, entersAt: cues.get(block.id)!, retained: semanticScenes[block.id] !== sceneId }));
-  } else {
-    const current = blocks
-      .filter((block) => semanticScenes[block.id] === sceneId)
-      .map((block) => ({ block, entersAt: cues.get(block.id)!, retained: false }));
-    const outgoing = !options.settleScene && previousScene && position < overlapEnds
-      ? blocks
-          .filter((block) => semanticScenes[block.id] === previousScene)
-          .map((block) => ({ block, entersAt: cues.get(block.id)!, exitsAt: sceneStart, retained: false }))
-      : [];
-    candidates = [...outgoing, ...current];
-  }
-
-  const items = candidates
-    .filter(({ entersAt }) => options.settleScene || entersAt <= position)
-    .map(({ block, entersAt, exitsAt, retained }) => ({
-      block,
-      entersAt,
-      exitsAt,
-      retained,
+      entersAt: cues.get(block.id)!,
+      retained: sceneOrder.indexOf(semanticScenes[block.id]) < sceneIndex,
       role: roleFor(block, sceneId),
-      phase: options.settleScene
+      phase: cues.get(block.id)! > position
+        ? "pending" as const
+        : options.settleScene
         ? "active" as const
-        : exitsAt !== undefined
-        ? "exiting" as const
-        : position < entersAt + motionPreset.enterDurationMs
+        : position < cues.get(block.id)! + motionPreset.enterDurationMs
           ? "entering" as const
           : "active" as const,
     }));

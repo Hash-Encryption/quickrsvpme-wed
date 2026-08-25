@@ -371,7 +371,7 @@ test("cinematic V2 preserves canonical starts and adds one deterministic final e
   ]);
   assert.equal(weddingTimelineEnd, 18000);
   const blocks = resolveWeddingSemanticBlocks(defaultWeddingEvent, defaultWeddingGuest);
-  const boundaries = resolveWeddingChoreographyBoundaries(blocks, WeddingMotionPresets["editorial-glide"]);
+  const boundaries = resolveWeddingChoreographyBoundaries(blocks);
   for (const boundary of [0, 3000, 6000, 10000, 14000, 18000]) assert.ok(boundaries.includes(boundary));
 });
 
@@ -399,11 +399,25 @@ test("Elegant, Cinematic, and Progressive are behaviorally distinct", () => {
   assert.equal(cinematic.behavior, "cinematic");
   assert.equal(cinematic.backgroundMotion, "restrained");
   assert.equal(progressive.behavior, "progressive");
-  assert.ok(progressive.items.length > cinematic.items.length);
-  assert.ok(progressive.items.some((item) => item.retained));
+  assert.notEqual(
+    WeddingMotionPresets["soft-dissolve"].enterDurationMs,
+    WeddingMotionPresets["cinematic-rise"].enterDurationMs,
+  );
+  assert.notEqual(
+    WeddingMotionPresets["cinematic-rise"].enterDurationMs,
+    WeddingMotionPresets["editorial-glide"].enterDurationMs,
+  );
+  assert.deepEqual(
+    elegant.items.map(({ block }) => block.id),
+    cinematic.items.map(({ block }) => block.id),
+  );
+  assert.deepEqual(
+    cinematic.items.map(({ block }) => block.id),
+    progressive.items.map(({ block }) => block.id),
+  );
 });
 
-test("Progressive accumulates semantic order, compacts optional groups, and completes", () => {
+test("every motion accumulates semantic order in one stable composition", () => {
   const event = mergeWeddingEvent({
     openingWording: "دعوة كريمة",
     invitationWording: "يسرنا دعوتكم",
@@ -425,15 +439,20 @@ test("Progressive accumulates semantic order, compacts optional groups, and comp
   });
   const blocks = resolveWeddingSemanticBlocks(event, defaultWeddingGuest);
   assert.deepEqual(blocks.map(({ id }) => id), ["opening", "occasion", "principals", "date-time", "venue", "rsvp"]);
-  const preset = WeddingMotionPresets["editorial-glide"];
-  const hosts = resolveWeddingChoreography(blocks, preset, 3000);
-  assert.deepEqual(hosts.items.map(({ block }) => block.id), ["opening", "occasion"]);
-  assert.equal(hosts.items.find(({ block }) => block.id === "occasion")?.entersAt, 3000);
-  const details = resolveWeddingChoreography(blocks, preset, 10320);
-  assert.deepEqual(details.items.map(({ block }) => block.id), ["opening", "occasion", "principals", "date-time", "venue"]);
-  const final = resolveWeddingChoreography(blocks, preset, weddingTimelineEnd);
-  assert.deepEqual(final.items.map(({ block }) => block.id), blocks.map(({ id }) => id));
-  assert.ok(final.items.every(({ phase }) => phase === "active"));
+  const visibleIds = (elapsed: number, preset: (typeof WeddingMotionPresets)[keyof typeof WeddingMotionPresets]) =>
+    resolveWeddingChoreography(blocks, preset, elapsed).items
+      .filter(({ phase }) => phase !== "pending")
+      .map(({ block }) => block.id);
+  for (const preset of Object.values(WeddingMotionPresets)) {
+    const hosts = resolveWeddingChoreography(blocks, preset, 3000);
+    assert.deepEqual(hosts.items.map(({ block }) => block.id), blocks.map(({ id }) => id));
+    assert.deepEqual(visibleIds(3000, preset), ["opening", "occasion"]);
+    assert.equal(hosts.items.find(({ block }) => block.id === "occasion")?.entersAt, 3000);
+    assert.deepEqual(visibleIds(10320, preset), ["opening", "occasion", "principals", "date-time", "venue"]);
+    const final = resolveWeddingChoreography(blocks, preset, weddingTimelineEnd);
+    assert.deepEqual(final.items.map(({ block }) => block.id), blocks.map(({ id }) => id));
+    assert.ok(final.items.every(({ phase }) => phase === "active"));
+  }
 });
 
 test("principal lines remain whole and receive hero treatment in both directions", () => {
@@ -466,6 +485,9 @@ test("reduced motion and uploaded Fit disable runtime camera treatment", () => {
   assert.equal(resolveWeddingChoreography(blocks, preset, 6000, { artworkMode: "fit" }).backgroundMotion, "still");
   assert.equal(resolveWeddingChoreography(blocks, preset, 6000, { artworkMode: "fill" }).backgroundMotion, "restrained");
   assert.equal(resolveWeddingChoreography(blocks, preset, 6000, { artworkMode: "fill", reduceMotion: true }).backgroundMotion, "still");
+  const reduced = resolveWeddingChoreography(blocks, preset, 0, { reduceMotion: true });
+  assert.equal(reduced.final, true);
+  assert.ok(reduced.items.every(({ phase }) => phase === "active"));
 });
 
 test("optional semantic groups and RSVP wording omit without empty rows", () => {

@@ -105,7 +105,7 @@ export function WeddingInvitationRenderer({
   const theme = floralThemes[event.style.floralTheme] ?? floralThemes["neutral-ivory"];
   const scenes = resolveWeddingScenes(event, guest, rsvpStatus);
   const semanticBlocks = resolveWeddingSemanticBlocks(event, guest, rsvpStatus);
-  const cueTimes = resolveWeddingChoreographyBoundaries(semanticBlocks, motionPreset);
+  const cueTimes = resolveWeddingChoreographyBoundaries(semanticBlocks);
   const uploaded = event.visual.source === "uploaded-background";
   const darkControls = template.id === "midnight-gold";
 
@@ -222,7 +222,7 @@ function WeddingInvitationSceneRenderer({
         isPlaying={playback.isPlaying}
         resolved={playback.reduceMotion || playback.settleScene || frame.final}
       />
-      <div className={`wedding-content ${frame.sceneId === "rsvp" ? "wedding-content--complete" : ""}`}>
+      <div className="wedding-content wedding-content--complete">
         <WeddingMotionLayer
           frame={frame}
           replayKey={playback.replayKey}

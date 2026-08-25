@@ -312,39 +312,35 @@
 .wedding-choreography-block {
   width: 100%;
   animation-fill-mode: both;
-  will-change: opacity, transform, clip-path;
 }
-.wedding-choreography--elegant .wedding-choreography-block:not(.is-exiting) {
+.wedding-choreography-block.is-pending {
+  visibility: hidden;
+  opacity: 0;
+}
+.wedding-choreography-block.is-entering {
+  will-change: opacity, transform;
+}
+.wedding-choreography--elegant .wedding-choreography-block.is-entering {
   animation-name: wedding-elegant-enter;
   animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
-.wedding-choreography--cinematic .wedding-choreography-block:not(.is-exiting) {
+.wedding-choreography--cinematic .wedding-choreography-block.is-entering {
   animation-name: wedding-cinematic-enter;
   animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
 }
-.wedding-choreography--progressive .wedding-choreography-block:not(.is-exiting) {
+.wedding-choreography--progressive .wedding-choreography-block.is-entering {
   animation-name: wedding-progressive-enter;
   animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
-.wedding-choreography-block.is-exiting {
-  position: absolute;
-  inset-inline: 0;
-  animation-name: wedding-choreography-exit;
-  animation-timing-function: ease-in;
-}
-.wedding-choreography.is-resolved .wedding-choreography-block {
+.wedding-choreography.is-resolved .wedding-choreography-block:not(.is-pending) {
   animation: none;
   opacity: 1;
   transform: none;
-  clip-path: inset(-8%);
   will-change: auto;
 }
 .wedding-choreography--progressive,
 .wedding-choreography.is-complete-invitation {
   align-content: center;
-}
-.wedding-choreography--progressive .is-retained:not(.is-hero) {
-  font-size: 0.86em;
 }
 .wedding-choreography.is-complete-invitation {
   gap: clamp(2px, 0.55dvh, 6px);
@@ -1778,16 +1774,12 @@
   to { opacity: 1; transform: none; }
 }
 @keyframes wedding-cinematic-enter {
-  from { opacity: 0; transform: translateY(24px) scale(0.985); clip-path: inset(18% 0 0); }
-  to { opacity: 1; transform: none; clip-path: inset(-8%); }
+  from { opacity: 0; transform: translateY(24px) scale(0.985); }
+  to { opacity: 1; transform: none; }
 }
 @keyframes wedding-progressive-enter {
-  from { opacity: 0; transform: translateX(var(--wedding-inline-enter)); clip-path: inset(0 12% 0 12%); }
-  to { opacity: 1; transform: none; clip-path: inset(-8%); }
-}
-@keyframes wedding-choreography-exit {
-  from { opacity: 1; transform: none; }
-  to { opacity: 0; transform: translateY(-4px); }
+  from { opacity: 0; transform: translateX(var(--wedding-inline-enter)); }
+  to { opacity: 1; transform: none; }
 }
 @keyframes wedding-runtime-camera {
   0%, 100% { transform: scale(1); }

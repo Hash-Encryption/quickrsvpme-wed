@@ -53,9 +53,9 @@ export function WeddingSceneEngine({
 }: WeddingSceneEngineProps) {
   const reduceMotion = Boolean(useReducedMotion());
   const audioRef = useRef<HTMLAudioElement>(null);
-  const elapsedRef = useRef(0);
+  const elapsedRef = useRef(reduceMotion ? timelineEnd : 0);
   const startedAtRef = useRef(performance.now());
-  const [elapsed, setElapsed] = useState(0);
+  const [elapsed, setElapsed] = useState(reduceMotion ? timelineEnd : 0);
   const [isPlaying, setIsPlaying] = useState(!reduceMotion);
   const [isMuted, setIsMuted] = useState(true);
   const [settleScene, setSettleScene] = useState(reduceMotion);
@@ -70,10 +70,10 @@ export function WeddingSceneEngine({
 
   useEffect(() => {
     if (!reduceMotion) return;
-    setPosition(0);
+    setPosition(timelineEnd);
     setIsPlaying(false);
     setSettleScene(true);
-  }, [reduceMotion]);
+  }, [reduceMotion, timelineEnd]);
 
   useEffect(() => {
     if (reduceMotion || !isPlaying) return;
@@ -105,7 +105,7 @@ export function WeddingSceneEngine({
 
   const replay = () => {
     if (audioRef.current) audioRef.current.currentTime = 0;
-    setPosition(0);
+    setPosition(reduceMotion ? timelineEnd : 0);
     setReplayKey((value) => value + 1);
     setIsPlaying(!reduceMotion);
     setSettleScene(reduceMotion);
