@@ -54,6 +54,18 @@ test('RSVP and overview counts honor companion limits', () => {
   assert.deepEqual(operationalStats([guest]), { guests: 1, invitedSeats: 3, accepted: 1, declined: 0, pending: 0, checkedIn: 0 });
 });
 
+test('Party response changes clamp companions without crossing project boundaries', () => {
+  const state = normalizeOperationalState({ version: 1, guestsByProject: {
+    [weddingKey]: [{ ...defaultWeddingGuest, id: 'w', rsvp: 'pending', guestCount: 0, message: '', checkedIn: false }],
+    [partyKey]: [{ ...defaultWeddingGuest, id: 'p', rsvp: 'pending', guestCount: 0, message: '', checkedIn: false }],
+  } }, {}, 'wed-1', 'party-demo');
+  const accepted = updateOperationalGuest(state, partyKey, 'p', { rsvp: 'accepted', guestCount: 99 });
+  const changed = updateOperationalGuest(accepted, partyKey, 'p', { rsvp: 'declined', guestCount: 0 });
+  assert.equal(guestsForProject(accepted, partyKey)[0].guestCount, 3);
+  assert.equal(guestsForProject(changed, partyKey)[0].rsvp, 'declined');
+  assert.deepEqual(guestsForProject(changed, weddingKey), guestsForProject(state, weddingKey));
+});
+
 test('CSV and personal links include only the selected project data', () => {
   const state = normalizeOperationalState({ version: 1, guestsByProject: {
     [weddingKey]: [{ ...defaultWeddingGuest, id: 'w', rsvp: 'pending', guestCount: 0, message: '', checkedIn: false }],

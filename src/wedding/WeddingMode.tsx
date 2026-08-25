@@ -19,6 +19,7 @@ import {
 import {
   WeddingTemplateRegistry,
   clampGuestCount,
+  normalizeWeddingRsvpDraft,
   floralThemes,
   weddingFonts,
   type ArabicFont,
@@ -65,6 +66,7 @@ type WeddingRendererProps = {
   event: WeddingEventData;
   guest: WeddingGuestData;
   rsvpStatus?: "pending" | "accepted" | "declined";
+  rsvpResponse?: Pick<WeddingRsvp, "guestCount" | "message">;
   preview?: boolean;
   onSubmit: (response: WeddingRsvp) => void | Promise<void>;
 };
@@ -86,6 +88,7 @@ export function WeddingInvitationRenderer({
   event,
   guest,
   rsvpStatus = "pending",
+  rsvpResponse = { guestCount: 1, message: "" },
   preview = false,
   onSubmit,
 }: WeddingRendererProps) {
@@ -156,6 +159,7 @@ export function WeddingInvitationRenderer({
               guest={guest}
               locale={event.invitationLocale}
               status={rsvpStatus}
+              response={rsvpResponse}
               onClose={() => setDrawerOpen(false)}
               onSubmit={async (response) => {
                 await onSubmit(response);
@@ -359,20 +363,21 @@ function WeddingRSVPDrawer({
   guest,
   locale,
   status,
+  response,
   onClose,
   onSubmit,
 }: {
   guest: WeddingGuestData;
   locale: InvitationLocale;
   status: "pending" | "accepted" | "declined";
+  response: Pick<WeddingRsvp, "guestCount" | "message">;
   onClose: () => void;
   onSubmit: (response: WeddingRsvp) => void | Promise<void>;
 }) {
-  const [attendance, setAttendance] = useState<"accepted" | "declined">(
-    status === "declined" ? "declined" : "accepted",
-  );
-  const [guestCount, setGuestCount] = useState(1);
-  const [message, setMessage] = useState("");
+  const draft = normalizeWeddingRsvpDraft(status, response, guest.allowedCompanions);
+  const [attendance, setAttendance] = useState<"accepted" | "declined">(draft.status);
+  const [guestCount, setGuestCount] = useState(draft.guestCount || 1);
+  const [message, setMessage] = useState(draft.message);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const drawerRef = useRef<HTMLDivElement>(null);
@@ -538,6 +543,7 @@ type WeddingStudioProps = {
   event: WeddingEventData;
   guest: WeddingGuestData;
   rsvpStatus: "pending" | "accepted" | "declined";
+  rsvpResponse: Pick<WeddingRsvp, "guestCount" | "message">;
   onChange: (event: WeddingEventData) => void;
 };
 
@@ -547,6 +553,7 @@ export function WeddingStudio({
   event,
   guest,
   rsvpStatus,
+  rsvpResponse,
   onChange,
 }: WeddingStudioProps) {
   const { t, dir, locale } = useAppLocale();
@@ -690,6 +697,7 @@ export function WeddingStudio({
               event={previewEvent}
               guest={guest}
               rsvpStatus={rsvpStatus}
+              rsvpResponse={rsvpResponse}
               preview
               onSubmit={() => undefined}
             />
@@ -750,10 +758,8 @@ function TemplateStep({
           ...defaultWeddingArtworkSettings,
         },
       });
-    } catch (error) {
-      setUploadError(
-        error instanceof Error ? error.message : w("uploadError"),
-      );
+    } catch {
+      setUploadError(w("uploadError"));
     } finally {
       setUploading(false);
       if (inputRef.current) inputRef.current.value = "";
@@ -1052,7 +1058,7 @@ function StyleStep({
                 event.style.backgroundColor === color ? "is-selected" : ""
               }
               onClick={() => updateStyle({ backgroundColor: color })}
-              aria-label={`خلفية ${color}`}
+              aria-label={`${w("background")} ${color}`}
               aria-pressed={event.style.backgroundColor === color}
             />
           ))}
@@ -1067,7 +1073,7 @@ function StyleStep({
               style={{ backgroundColor: color }}
               className={event.style.accentColor === color ? "is-selected" : ""}
               onClick={() => updateStyle({ accentColor: color })}
-              aria-label={`لون عنوان ${color}`}
+              aria-label={`${w("headingColor")} ${color}`}
               aria-pressed={event.style.accentColor === color}
             />
           ))}

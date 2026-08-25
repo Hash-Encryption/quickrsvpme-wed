@@ -8,6 +8,7 @@ import {
   getWhatsAppShareUrl,
   isValidGuestToken,
   mergeWeddingEvent,
+  normalizeWeddingRsvpDraft,
   resolveInvitationTitle,
   WeddingTemplateRegistry,
   type EventMode,
@@ -680,6 +681,17 @@ test("guest count is limited by the invitation allowance", () => {
   assert.equal(clampGuestCount(5, 0), 1);
   assert.equal(clampGuestCount(-2, 3), 1);
   assert.equal(clampGuestCount(2.7, 3), 3);
+});
+
+test("Wedding RSVP drafts restore and clamp the existing response", () => {
+  assert.deepEqual(
+    normalizeWeddingRsvpDraft("accepted", { guestCount: 9, message: "See you" }, 2),
+    { status: "accepted", guestCount: 3, message: "See you" },
+  );
+  assert.deepEqual(
+    normalizeWeddingRsvpDraft("declined", { guestCount: 3, message: "With love" }, 2),
+    { status: "declined", guestCount: 0, message: "With love" },
+  );
 });
 
 test("a second event reuses the template without losing style defaults", () => {

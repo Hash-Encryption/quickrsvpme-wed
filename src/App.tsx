@@ -1,5 +1,5 @@
 import { type ReactNode, type ComponentType, useContext, useEffect, useMemo, useRef, useState, createContext } from 'react';
-import { ErrorBoundary } from '@/components/error-boundary';
+import { ErrorBoundary, type ErrorFallbackProps } from '@/components/error-boundary';
 import { AppLanguageControl, AppLocaleProvider, useAppLocale } from '@/i18n/app-locale';
 import { localeDirection, type InvitationLocale } from '@/i18n/locale';
 import { invitationT } from '@/i18n/invitation';
@@ -30,6 +30,7 @@ import {
 import {
   defaultWeddingEvent,
   defaultWeddingGuest,
+  clampGuestCount,
   getWhatsAppShareUrl,
   isValidGuestToken,
   type EventMode,
@@ -97,7 +98,7 @@ const defaultState: EngineState = {
 type EngineContextValue = {
   state: EngineState;
   ready: boolean;
-  setRsvp: (value: RSVPStatus) => void;
+  setRsvp: (value: RSVPStatus, guestCount?: number) => void;
   setSong: (value: string) => void;
   setMeal: (value: string) => void;
   toggleBlock: (key: BlockKey) => void;
@@ -108,6 +109,7 @@ type EngineContextValue = {
   updatePartyEvent: (patch: Partial<PartyEventData>) => void;
   submitWeddingRsvp: (response: WeddingRsvp) => void;
   checkInGuest: (key: string, guestId: string) => void;
+  storageAvailable: boolean;
 };
 const EngineContext = createContext<EngineContextValue | null>(null);
 
@@ -116,8 +118,17 @@ function EngineProvider({ children }: { children: ReactNode }) {
   const initialWeddingId = useRef(activeProject.id).current;
   const [state, setState] = useState<EngineState>(defaultState);
   const [ready, setReady] = useState(false);
+  const [storageAvailable, setStorageAvailable] = useState(true);
   useEffect(() => {
-    const raw = localStorage.getItem('luxury-rsvp-engine');
+    let raw: string | null;
+    try {
+      raw = localStorage.getItem('luxury-rsvp-engine');
+    } catch {
+      setStorageAvailable(false);
+      setState({ ...defaultState, operations: normalizeOperationalState(undefined, defaultState, initialWeddingId, partyProject.id) });
+      setReady(true);
+      return;
+    }
     try {
       const saved = raw ? JSON.parse(raw) as Partial<EngineState> & { weddingEvent?: unknown } : {};
       const { weddingEvent: _legacyWedding, ...genericSaved } = saved;
@@ -136,7 +147,7 @@ function EngineProvider({ children }: { children: ReactNode }) {
     setReady(true);
   }, [initialWeddingId]);
   useEffect(() => {
-    if (ready) {
+    if (ready && storageAvailable) {
       try {
         const existing = JSON.parse(localStorage.getItem('luxury-rsvp-engine') ?? '{}') as { weddingEvent?: unknown };
         const persisted = preserveLegacyWedding && existing.weddingEvent
@@ -144,14 +155,20 @@ function EngineProvider({ children }: { children: ReactNode }) {
           : state;
         localStorage.setItem('luxury-rsvp-engine', JSON.stringify(persisted));
       }
-      catch { /* The bounded upload remains usable for this session if storage is unavailable. */ }
+      catch { setStorageAvailable(false); }
     }
-  }, [state, ready, preserveLegacyWedding]);
+  }, [state, ready, preserveLegacyWedding, storageAvailable]);
   const value = useMemo(() => ({
     state, ready,
-    setRsvp: (rsvp: RSVPStatus) => setState((s) => {
+    setRsvp: (rsvp: RSVPStatus, guestCount?: number) => setState((s) => {
       const key = projectKey(s.mode === 'wedding' ? 'wedding' : 'party', s.mode === 'wedding' ? activeProject.id : partyProject.id);
-      return { ...s, rsvp, operations: updateOperationalGuestByToken(s.operations, key, s.weddingGuest.token, { rsvp, guestCount: rsvp === 'accepted' ? 1 : 0 }) };
+      const acceptedCount = clampGuestCount(guestCount ?? s.plusOnes + 1, s.weddingGuest.allowedCompanions);
+      return {
+        ...s,
+        rsvp,
+        plusOnes: guestCount === undefined ? s.plusOnes : acceptedCount - 1,
+        operations: updateOperationalGuestByToken(s.operations, key, s.weddingGuest.token, { rsvp, guestCount: rsvp === 'accepted' ? acceptedCount : 0 }),
+      };
     }),
     setSong: (song: string) => setState((s) => ({ ...s, song })),
     setMeal: (meal: string) => setState((s) => ({ ...s, meal })),
@@ -169,7 +186,8 @@ function EngineProvider({ children }: { children: ReactNode }) {
       operations: updateOperationalGuestByToken(s.operations, projectKey('wedding', activeProject.id), s.weddingGuest.token, { rsvp: response.status, guestCount: response.guestCount, message: response.message }),
     })),
     checkInGuest: (key: string, guestId: string) => setState((s) => ({ ...s, operations: checkInOperationalGuest(s.operations, key, guestId) })),
-  }), [activeProject.id, state, ready]);
+    storageAvailable,
+  }), [activeProject.id, state, ready, storageAvailable]);
   return <EngineContext.Provider value={value}>{children}</EngineContext.Provider>;
 }
 
@@ -194,7 +212,7 @@ function Button({ children, onClick, variant = 'dark', icon: Icon, className = '
 }
 
 function Eyebrow({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <p className={`tracking-suite whitespace-nowrap text-[10px] font-semibold uppercase text-[#A98219] ${className}`}>{children}</p>;
+  return <p className={`tracking-suite break-words text-[10px] font-semibold uppercase text-[#A98219] ${className}`}>{children}</p>;
 }
 
 function Monogram({ compact = false }: { compact?: boolean }) {
@@ -221,9 +239,9 @@ function InitialsAvatar() {
   return <div className="flex h-11 w-11 items-center justify-center rounded-full border border-[#D4AF37] bg-[#0A2E23] font-display text-lg text-[#D4AF37]" data-testid="avatar-hashim">HA</div>;
 }
 
-function QRMark() {
+function QRMark({ label }: { label: string }) {
   const cells = useMemo(() => Array.from({ length: 81 }, (_, i) => [0, 2, 6, 8, 18, 20, 24, 26, 54, 56, 60, 62].includes(i) || (i * 7 + 3) % 5 < 2), []);
-  return <div className="grid grid-cols-9 gap-[3px] rounded-lg bg-[#FFFDF9] p-3 shadow-inner" aria-label="Web QR pass" data-testid="qr-pass">{cells.map((filled, i) => <span key={i} className={`aspect-square rounded-[1px] ${filled ? 'bg-[#0A2E23]' : 'bg-transparent'}`} />)}</div>;
+  return <div className="grid grid-cols-9 gap-[3px] rounded-lg bg-[#FFFDF9] p-3 shadow-inner" aria-label={label} data-testid="qr-pass">{cells.map((filled, i) => <span key={i} className={`aspect-square rounded-[1px] ${filled ? 'bg-[#0A2E23]' : 'bg-transparent'}`} />)}</div>;
 }
 
 const blockIcons: Record<BlockKey, IconType> = { catering: Utensils, dress: Shirt, schedule: CalendarDays, registry: Heart, song: Music2, faq: HelpCircle };
@@ -237,32 +255,35 @@ function GuestPage({ preview = false }: { preview?: boolean } = {}) {
   const visibleBlocks = state.blocks.filter((block) => block.enabled);
   const displayedRsvp = preview ? 'accepted' : state.rsvp;
   const partyEvent = state.partyEvent;
+  const partyGuestCount = clampGuestCount(state.plusOnes + 1, state.weddingGuest.allowedCompanions);
   if (!ready) return <LoadingPage />;
   if (!validToken) return <TokenError />;
   if (state.mode === 'wedding') return <WeddingInvitationRenderer
     event={activeProject.event}
     guest={{ ...state.weddingGuest, token: token ?? state.weddingGuest.token }}
     rsvpStatus={state.rsvp}
+    rsvpResponse={state.weddingResponse}
     onSubmit={submitWeddingRsvp}
   />;
   return <div className={`party-invitation party-template--${partyEvent.templateId} grain min-h-[100dvh] overflow-hidden text-[#2D2421] ${preview ? 'party-invitation--preview' : ''}`} lang={state.invitationLocale} dir={localeDirection(state.invitationLocale)}>
     <div className="gold-thread" />
-    <QuietHeader />
+    <header className="relative z-20 flex items-center justify-between px-5 py-6 sm:px-10" aria-label={invitationT(state.invitationLocale, 'invitation')}><Monogram compact /></header>
     <main className="relative z-10 mx-auto max-w-4xl px-5 pb-28 sm:px-8">
       <FadeIn className="relative flex flex-col items-center pb-16 pt-10 text-center sm:pt-16">
         <div className="party-hero-mark mb-7 flex h-24 w-24 items-center justify-center rounded-full border shadow-[0_12px_25px_rgba(10,46,35,.18)]"><PartyPopper size={34} strokeWidth={1.35} /></div>
-        <Eyebrow><bdi>{partyEvent.venue} · {partyEvent.city}</bdi></Eyebrow>
-        <h1 className="party-title mt-5 max-w-2xl font-display text-6xl leading-[.9] sm:text-8xl" data-testid="text-event-title"><bdi>{partyEvent.title}</bdi></h1>
-        <p className="mt-5 max-w-xl font-display text-2xl italic text-[#2D2421]/65"><bdi>{partyEvent.invitationWording}</bdi></p>
+        <Eyebrow className="max-w-full text-center"><bdi>{partyEvent.venue} · {partyEvent.city}</bdi></Eyebrow>
+        <h1 className="party-title mt-5 max-w-2xl break-words font-display text-6xl leading-[.9] sm:text-8xl" data-testid="text-event-title"><bdi>{partyEvent.title}</bdi></h1>
+        <p className="mt-5 max-w-xl break-words font-display text-2xl italic text-[#2D2421]/65"><bdi>{partyEvent.invitationWording}</bdi></p>
         <div className="mt-7 flex flex-wrap items-center justify-center gap-3 text-[11px] font-semibold uppercase tracking-[.08em] text-[#2D2421]/65"><time dateTime={partyEvent.date}>{formatPartyDate(partyEvent.date, state.invitationLocale)}</time><span className="h-1 w-1 rounded-full bg-[#D4AF37]" /><time dateTime={partyEvent.startTime} dir="ltr">{partyEvent.startTime}</time></div>
       </FadeIn>
 
       <AnimatePresence mode="wait">
         {displayedRsvp === 'pending' && <motion.div key="rsvp" initial={{ opacity: 0, scale: .98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="suite-card mx-auto max-w-xl p-7 text-center sm:p-12">
-          <Eyebrow>{partyInvitationT(state.invitationLocale, 'privateFor')} HASHIM</Eyebrow>
+          <Eyebrow>{partyInvitationT(state.invitationLocale, 'privateFor')} {state.weddingGuest.name}</Eyebrow>
           <h2 className="mt-3 font-display text-4xl text-[#0A2E23]">{invitationT(state.invitationLocale, 'rsvpTitle')}</h2>
           <p className="mx-auto mt-3 max-w-sm text-sm leading-7 text-[#2D2421]/70">{partyInvitationT(state.invitationLocale, 'replyBy')} <time dateTime={partyEvent.rsvpDeadline}>{formatPartyDate(partyEvent.rsvpDeadline, state.invitationLocale)}</time>.</p>
-          <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row"><Button onClick={() => setRsvp('accepted')} icon={Check}>{invitationT(state.invitationLocale, 'attending')}</Button><Button onClick={() => setRsvp('declined')} variant="ghost" icon={X}>{invitationT(state.invitationLocale, 'declining')}</Button></div>
+          <div className="mx-auto mt-7 flex max-w-xs items-center justify-between rounded-2xl border border-[#D4AF37]/45 bg-[#FFFDF9]/45 p-3"><span className="text-start text-xs font-semibold">{invitationT(state.invitationLocale, 'guestCount')}<small className="mt-1 block font-normal text-[#2D2421]/55">{invitationT(state.invitationLocale, 'allowed')}: {1 + state.weddingGuest.allowedCompanions}</small></span><div className="flex items-center gap-3"><button className="focus-ring flex h-11 w-11 items-center justify-center rounded-full border border-[#D4AF37]/55" onClick={() => setRsvp('pending', partyGuestCount - 1)} disabled={partyGuestCount <= 1} aria-label={invitationT(state.invitationLocale, 'decreaseGuests')}>−</button><b>{partyGuestCount}</b><button className="focus-ring flex h-11 w-11 items-center justify-center rounded-full border border-[#D4AF37]/55" onClick={() => setRsvp('pending', partyGuestCount + 1)} disabled={partyGuestCount >= 1 + state.weddingGuest.allowedCompanions} aria-label={invitationT(state.invitationLocale, 'increaseGuests')}>+</button></div></div>
+          <div className="mt-5 flex flex-col justify-center gap-3 sm:flex-row"><Button onClick={() => setRsvp('accepted', partyGuestCount)} icon={Check}>{invitationT(state.invitationLocale, 'attending')}</Button><Button onClick={() => setRsvp('declined')} variant="ghost" icon={X}>{invitationT(state.invitationLocale, 'declining')}</Button></div>
           <div className="mt-6 flex items-center justify-center gap-2 text-[10px] uppercase tracking-[.12em] text-[#2D2421]/45"><LockKeyhole size={12} /> {partyInvitationT(state.invitationLocale, 'noAccount')}</div>
         </motion.div>}
         {displayedRsvp === 'declined' && <motion.div key="declined" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="suite-card mx-auto max-w-xl p-8 text-center sm:p-12">
@@ -274,12 +295,13 @@ function GuestPage({ preview = false }: { preview?: boolean } = {}) {
         {displayedRsvp === 'accepted' && <motion.div key="accepted" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mx-auto max-w-2xl">
           <SuiteCard className="p-7 sm:p-10">
             <div className="flex items-start justify-between gap-5"><div><Eyebrow>{partyInvitationT(state.invitationLocale, 'onList')}</Eyebrow><h2 className="mt-2 font-display text-4xl text-[#0A2E23]">{partyInvitationT(state.invitationLocale, 'acceptedTitle')}</h2><p className="mt-1 text-sm text-[#2D2421]/65">{partyInvitationT(state.invitationLocale, 'acceptedBody')}</p></div><CheckCircle2 className="shrink-0 text-[#0A2E23]" size={28} strokeWidth={1.4} /></div>
-            <div className="mt-7 flex items-center gap-3 border-t border-[#D4AF37]/35 pt-5"><InitialsAvatar /><div><p className="font-semibold text-[#0A2E23]" data-testid="text-guest-name">Hashim Alnimari</p><p className="text-[11px] uppercase tracking-[.12em] text-[#2D2421]/55">1 {partyInvitationT(state.invitationLocale, 'guest')} · token {token ?? 'demo'}</p></div><span className="ms-auto rounded-full bg-[#0A2E23]/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23]">{partyInvitationT(state.invitationLocale, 'confirmed')}</span></div>
+            <div className="mt-7 flex items-center gap-3 border-t border-[#D4AF37]/35 pt-5"><InitialsAvatar /><div className="min-w-0"><p className="break-words font-semibold text-[#0A2E23]" data-testid="text-guest-name">{state.weddingGuest.name}</p><p className="break-all text-[11px] uppercase tracking-[.12em] text-[#2D2421]/55">{partyGuestCount} {partyInvitationT(state.invitationLocale, 'guest')} · {partyInvitationT(state.invitationLocale, 'token')} {token ?? 'demo'}</p></div><span className="ms-auto shrink-0 rounded-full bg-[#0A2E23]/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23]">{partyInvitationT(state.invitationLocale, 'confirmed')}</span></div>
+            <button onClick={() => setRsvp('pending')} data-testid="button-change-rsvp" className="focus-ring mt-7 min-h-11 text-[10px] font-bold uppercase tracking-[.18em] text-[#A98219] underline underline-offset-4">{partyInvitationT(state.invitationLocale, 'changeResponse')}</button>
           </SuiteCard>
           <div className="my-16 text-center"><Eyebrow>{partyInvitationT(state.invitationLocale, 'details')}</Eyebrow><p className="mt-3 font-display text-3xl text-[#0A2E23]">{partyInvitationT(state.invitationLocale, 'detailsTitle')}</p></div>
           {visibleBlocks.map((block, index) => <GuestBlock key={block.key} block={block} index={index} openFaq={openFaq} setOpenFaq={setOpenFaq} song={state.song} setSong={preview ? () => undefined : setSong} meal={state.meal} setMeal={preview ? () => undefined : setMeal} />)}
           <SuiteCard className="mt-14 p-8 text-center sm:p-12">
-            <Eyebrow>{partyInvitationT(state.invitationLocale, 'digitalPass')}</Eyebrow><h2 className="mt-3 font-display text-4xl text-[#0A2E23]">{partyInvitationT(state.invitationLocale, 'passTitle')}</h2><p className="mx-auto mt-3 max-w-xs text-sm leading-6 text-[#2D2421]/65">{partyInvitationT(state.invitationLocale, 'passBody')}</p><div className="mx-auto mt-7 w-fit"><QRMark /></div><p className="mt-4 font-mono text-[10px] tracking-[.12em] text-[#2D2421]/50"><bdi>{partyEvent.title} · HA-001</bdi></p>
+            <Eyebrow>{partyInvitationT(state.invitationLocale, 'digitalPass')}</Eyebrow><h2 className="mt-3 font-display text-4xl text-[#0A2E23]">{partyInvitationT(state.invitationLocale, 'passTitle')}</h2><p className="mx-auto mt-3 max-w-xs text-sm leading-6 text-[#2D2421]/65">{partyInvitationT(state.invitationLocale, 'passBody')}</p><div className="mx-auto mt-7 w-fit"><QRMark label={partyInvitationT(state.invitationLocale, 'digitalPass')} /></div><p className="mt-4 break-all font-mono text-[10px] tracking-[.12em] text-[#2D2421]/50"><bdi>{partyEvent.title} · {state.weddingGuest.passId}</bdi></p>
           </SuiteCard>
         </motion.div>}
       </AnimatePresence>
@@ -295,19 +317,31 @@ function GuestBlock({ block, index, openFaq, setOpenFaq, song, setSong, meal, se
   return <SuiteCard className="mb-10 p-7 sm:p-10" id={`guest-${block.key}`}>
     <div className="mb-8 flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-full border border-[#D4AF37] text-[#0A2E23]"><Icon size={16} strokeWidth={1.5} /></div><Eyebrow>{c.note ? block.eyebrow : block.eyebrow}</Eyebrow><span className="ml-auto font-mono text-[10px] text-[#2D2421]/35">0{index + 1}</span></div>
     {block.key === 'catering' && <><h2 className="font-display text-4xl text-[#0A2E23]">{c.heading}</h2><p className="mt-2 text-sm leading-6 text-[#2D2421]/65">{partyInvitationT(state.invitationLocale, 'choosePlate')}</p><div className="mt-7 grid gap-3 sm:grid-cols-3">{c.entree?.map((dish) => <button key={dish} onClick={() => setMeal(dish)} data-testid={`button-entree-${dish}`} className={`focus-ring min-h-11 rounded-2xl border p-4 text-start transition ${meal === dish ? 'border-[#0A2E23] bg-[#0A2E23] text-[#FFFDF9]' : 'border-[#D4AF37]/45 bg-[#FFFDF9]/45 hover:bg-[#FFFDF9]'}`}><span className="mb-4 block h-2 w-10 rounded-full" style={{ background: c.swatches?.[c.entree?.indexOf(dish) ?? 0] }} /><span className="text-xs font-semibold">{dish}</span></button>)}</div><p className="mt-4 text-[10px] uppercase tracking-[.12em] text-[#2D2421]/45">{partyInvitationT(state.invitationLocale, 'selected')}: {meal || partyInvitationT(state.invitationLocale, 'notSelected')}</p></>}
-    {block.key === 'dress' && <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="font-display text-4xl text-[#0A2E23]">{c.heading}</h2><p className="mt-3 max-w-md text-sm leading-7 text-[#2D2421]/65">{c.note}</p></div><div className="flex -space-x-2" aria-label="Suggested colors"><span className="h-10 w-10 rounded-full border-2 border-[#EADBC8] bg-[#6D3F35]" /><span className="h-10 w-10 rounded-full border-2 border-[#EADBC8] bg-[#C48B63]" /><span className="h-10 w-10 rounded-full border-2 border-[#EADBC8] bg-[#34594B]" /></div></div>}
+    {block.key === 'dress' && <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="font-display text-4xl text-[#0A2E23]">{c.heading}</h2><p className="mt-3 max-w-md text-sm leading-7 text-[#2D2421]/65">{c.note}</p></div><div className="flex -space-x-2" aria-label={partyInvitationT(state.invitationLocale, 'suggestedColors')}><span className="h-10 w-10 rounded-full border-2 border-[#EADBC8] bg-[#6D3F35]" /><span className="h-10 w-10 rounded-full border-2 border-[#EADBC8] bg-[#C48B63]" /><span className="h-10 w-10 rounded-full border-2 border-[#EADBC8] bg-[#34594B]" /></div></div>}
     {block.key === 'schedule' && <><h2 className="font-display text-4xl text-[#0A2E23]">{c.heading}</h2><div className="mt-7 space-y-0">{[['17:30', 'arrival'], ['18:15', 'ceremony'], ['19:00', 'dinner'], ['21:30', 'dancing']].map(([time, key]) => <div key={time} className="flex gap-5 border-s border-[#D4AF37] py-3 ps-5"><span className="w-20 shrink-0 font-mono text-[10px] font-bold text-[#A98219]" dir="ltr">{time}</span><span className="text-sm text-[#2D2421]/75">{partyInvitationT(state.invitationLocale, key as PartyInvitationKey)}</span></div>)}</div></>}
     {block.key === 'registry' && <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-display text-4xl text-[#0A2E23]">{c.heading}</h2><p className="mt-2 max-w-md text-sm leading-6 text-[#2D2421]/65">{partyInvitationT(state.invitationLocale, 'registryBody')}</p></div><Button variant="ivory" icon={ExternalLink} onClick={() => window.open('https://example.com', '_blank')}>{partyInvitationT(state.invitationLocale, 'viewRegistry')}</Button></div>}
-    {block.key === 'song' && <><h2 className="font-display text-4xl text-[#0A2E23]">{c.heading}</h2><p className="mt-2 text-sm text-[#2D2421]/65">{partyInvitationT(state.invitationLocale, 'songHelp')}</p><div className="mt-6 flex flex-col gap-3 sm:flex-row"><input value={song} onChange={(e) => setSong(e.target.value)} data-testid="input-song-request" placeholder="Artist — song title" className="focus-ring min-h-11 min-w-0 flex-1 rounded-full border border-[#D4AF37]/50 bg-[#FFFDF9]/60 px-5 py-3 text-sm outline-none placeholder:text-[#2D2421]/35" /><Button variant="dark" icon={Music2} onClick={() => setSong(song)}>{partyInvitationT(state.invitationLocale, 'saveSong')}</Button></div></>}
-    {block.key === 'faq' && <><h2 className="font-display text-4xl text-[#0A2E23]">{c.heading}</h2><div className="mt-5">{c.questions?.map((item, qIndex) => <div key={item.q} className="border-b border-[#D4AF37]/35"><button onClick={() => setOpenFaq(openFaq === qIndex ? null : qIndex)} data-testid={`button-faq-${qIndex}`} className="focus-ring flex w-full items-center justify-between py-4 text-left text-sm font-semibold text-[#2D2421]"><span>{item.q}</span><ChevronDown size={16} className={`text-[#A98219] transition-transform ${openFaq === qIndex ? 'rotate-180' : ''}`} /></button><AnimatePresence initial={false}>{openFaq === qIndex && <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden pb-4 text-sm leading-6 text-[#2D2421]/65">{item.a}</motion.p>}</AnimatePresence></div>)}</div></>}
+    {block.key === 'song' && <><h2 className="break-words font-display text-4xl text-[#0A2E23]">{c.heading}</h2><p className="mt-2 text-sm text-[#2D2421]/65">{partyInvitationT(state.invitationLocale, 'songHelp')}</p><div className="mt-6 flex flex-col gap-3 sm:flex-row"><input value={song} onChange={(e) => setSong(e.target.value)} data-testid="input-song-request" aria-label={partyInvitationT(state.invitationLocale, 'songPlaceholder')} placeholder={partyInvitationT(state.invitationLocale, 'songPlaceholder')} className="focus-ring min-h-11 min-w-0 flex-1 rounded-full border border-[#D4AF37]/50 bg-[#FFFDF9]/60 px-5 py-3 text-sm outline-none placeholder:text-[#2D2421]/35" /><Button variant="dark" icon={Music2} onClick={() => setSong(song)}>{partyInvitationT(state.invitationLocale, 'saveSong')}</Button></div></>}
+    {block.key === 'faq' && <><h2 className="break-words font-display text-4xl text-[#0A2E23]">{c.heading}</h2><div className="mt-5">{c.questions?.map((item, qIndex) => <div key={item.q} className="border-b border-[#D4AF37]/35"><button onClick={() => setOpenFaq(openFaq === qIndex ? null : qIndex)} data-testid={`button-faq-${qIndex}`} aria-expanded={openFaq === qIndex} className="focus-ring flex w-full items-center justify-between gap-3 py-4 text-start text-sm font-semibold text-[#2D2421]"><span className="break-words">{item.q}</span><ChevronDown aria-hidden="true" size={16} className={`shrink-0 text-[#A98219] transition-transform ${openFaq === qIndex ? 'rotate-180' : ''}`} /></button><AnimatePresence initial={false}>{openFaq === qIndex && <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden pb-4 text-sm leading-6 text-[#2D2421]/65">{item.a}</motion.p>}</AnimatePresence></div>)}</div></>}
   </SuiteCard>;
 }
 
 function LoadingPage() {
-  return <div className="min-h-[100dvh] bg-[#FAF7F2] p-6"><div className="mx-auto mt-20 max-w-xl space-y-4"><div className="h-5 w-24 animate-pulse rounded-full bg-[#EADBC8]" /><div className="h-44 animate-pulse rounded-[28px] bg-[#EADBC8]" /><div className="h-24 animate-pulse rounded-[28px] bg-[#EADBC8]" /></div></div>;
+  const { t } = useAppLocale();
+  return <div className="min-h-[100dvh] bg-[#FAF7F2] p-6" role="status" aria-live="polite"><span className="sr-only">{t('loading')}</span><div className="mx-auto mt-20 max-w-xl space-y-4" aria-hidden="true"><div className="h-5 w-24 animate-pulse rounded-full bg-[#EADBC8]" /><div className="h-44 animate-pulse rounded-[28px] bg-[#EADBC8]" /><div className="h-24 animate-pulse rounded-[28px] bg-[#EADBC8]" /></div></div>;
 }
 function TokenError() {
-  return <div className="grain flex min-h-[100dvh] items-center justify-center bg-[#FAF7F2] p-6 text-center"><div className="gold-thread" /><SuiteCard className="relative z-10 max-w-md p-10"><XCircle className="mx-auto text-[#A98219]" size={34} strokeWidth={1.3} /><h1 className="mt-5 font-display text-4xl text-[#0A2E23]">This invitation has moved.</h1><p className="mt-3 text-sm leading-6 text-[#2D2421]/65">Please check the link from your invitation or ask the hosts to send it again.</p><Link href="/i/demo" data-testid="link-demo-invitation" className="focus-ring mt-6 inline-flex rounded-full bg-[#0A2E23] px-5 py-3 text-[11px] font-bold uppercase tracking-[.12em] text-[#FFFDF9]">Open demo invitation</Link></SuiteCard></div>;
+  const { t } = useAppLocale();
+  return <div className="grain flex min-h-[100dvh] items-center justify-center bg-[#FAF7F2] p-6 text-center"><div className="gold-thread" /><SuiteCard className="relative z-10 max-w-md p-10"><XCircle className="mx-auto text-[#A98219]" size={34} strokeWidth={1.3} /><h1 className="mt-5 font-display text-4xl text-[#0A2E23]">{t('invalidInvitationTitle')}</h1><p className="mt-3 text-sm leading-6 text-[#2D2421]/65">{t('invalidInvitationHelp')}</p><Link href="/i/demo" data-testid="link-demo-invitation" className="focus-ring mt-6 inline-flex rounded-full bg-[#0A2E23] px-5 py-3 text-[11px] font-bold uppercase tracking-[.12em] text-[#FFFDF9]">{t('openDemoInvitation')}</Link></SuiteCard></div>;
+}
+
+function NotFoundPage() {
+  const { t } = useAppLocale();
+  return <div className="flex min-h-[100dvh] items-center justify-center bg-[#F5F2EC] p-6 text-center"><div className="max-w-md"><XCircle className="mx-auto text-[#A4813C]" /><h1 className="mt-5 text-4xl font-semibold">{t('notFoundTitle')}</h1><p className="mt-3 text-sm leading-6 text-[#756F66]">{t('notFoundHelp')}</p><Link href="/" className="focus-ring mt-6 inline-flex min-h-11 items-center rounded-full bg-[#0C2D24] px-5 text-xs font-semibold text-white">{t('backToProjects')}</Link></div></div>;
+}
+
+function AppErrorFallback({ resetError }: ErrorFallbackProps) {
+  const { t } = useAppLocale();
+  return <div className="flex min-h-[100dvh] items-center justify-center bg-[#F5F2EC] p-6 text-center"><div className="max-w-md"><XCircle className="mx-auto text-[#A4813C]" /><h1 className="mt-5 text-4xl font-semibold">{t('appErrorTitle')}</h1><p className="mt-3 text-sm leading-6 text-[#756F66]">{t('appErrorHelp')}</p><button type="button" onClick={resetError} className="focus-ring mt-6 min-h-11 rounded-full bg-[#0C2D24] px-5 text-xs font-semibold text-white">{t('tryAgain')}</button></div></div>;
 }
 
 function StudioHubPage() {
@@ -677,6 +711,7 @@ function WeddingStudioPage({ embedded = false }: { embedded?: boolean }) {
           event={activeProject.event}
           guest={state.weddingGuest}
           rsvpStatus={state.rsvp}
+          rsvpResponse={state.weddingResponse}
           onChange={updateActiveEvent}
         />
         {!embedded && <div className="mt-8"><GuestManager /></div>}
@@ -699,7 +734,7 @@ function EditorPanel({ block, close, updateBlock }: { block: StudioBlock; close:
 
 function GuestManager({ project }: { project?: ProjectSummary } = {}) {
   const { t } = useAppLocale();
-  const { state } = useEngine();
+  const { state, storageAvailable } = useEngine();
   const { activeProject } = useWeddingWorkspace();
   const context = project ?? (state.mode === 'wedding' ? weddingProjectSummary(activeProject) : partyProjectSummary(state.partyEvent));
   const guests = guestsForProject(state.operations, projectKey(context.type, context.id));
@@ -722,11 +757,11 @@ function GuestManager({ project }: { project?: ProjectSummary } = {}) {
     URL.revokeObjectURL(url);
   };
   return <div className="suite-card overflow-hidden p-6 sm:p-8">
-    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><Eyebrow>{t('guestList')} / {String(guests.length).padStart(2, '0')}</Eyebrow><h2 className="mt-2 font-display text-4xl text-[#0A2E23]">{t('guestListTitle')}</h2><p className="mt-2 text-xs text-[#2D2421]/55">{t('localGuestData')}</p></div><Button variant="ivory" icon={ArrowDownToLine} onClick={exportGuests}>{t('catererExport')}</Button></div>
-    <div className="mt-6 grid gap-2 sm:grid-cols-[minmax(0,1fr)_180px]"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('searchGuests')} className="focus-ring min-h-11 rounded-xl border border-[#D4AF37]/45 bg-[#FFFDF9] px-4 text-sm" /><select value={filter} onChange={(event) => setFilter(event.target.value as RSVPStatus | 'all')} className="focus-ring min-h-11 rounded-xl border border-[#D4AF37]/45 bg-[#FFFDF9] px-4 text-sm"><option value="all">{t('allResponses')}</option><option value="pending">{t('pending')}</option><option value="accepted">{t('accepted')}</option><option value="declined">{t('declined')}</option></select></div>
+    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><Eyebrow>{t('guestList')} / {String(guests.length).padStart(2, '0')}</Eyebrow><h2 className="mt-2 break-words font-display text-4xl text-[#0A2E23]">{t('guestListTitle')}</h2><p className="mt-2 text-xs text-[#2D2421]/55">{storageAvailable ? t('localGuestData') : t('sessionOnlyData')}</p></div><Button variant="ivory" icon={ArrowDownToLine} onClick={exportGuests}>{t('catererExport')}</Button></div>
+    <div className="mt-6 grid gap-2 sm:grid-cols-[minmax(0,1fr)_180px]"><label className="sr-only" htmlFor="guest-search">{t('searchGuests')}</label><input id="guest-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('searchGuests')} className="focus-ring min-h-11 rounded-xl border border-[#D4AF37]/45 bg-[#FFFDF9] px-4 text-sm" /><label className="sr-only" htmlFor="guest-response-filter">{t('response')}</label><select id="guest-response-filter" value={filter} onChange={(event) => setFilter(event.target.value as RSVPStatus | 'all')} className="focus-ring min-h-11 rounded-xl border border-[#D4AF37]/45 bg-[#FFFDF9] px-4 text-sm"><option value="all">{t('allResponses')}</option><option value="pending">{t('pending')}</option><option value="accepted">{t('accepted')}</option><option value="declined">{t('declined')}</option></select></div>
     {visibleGuests.length === 0 ? <div className="mt-6 rounded-2xl border border-dashed border-[#D4AF37]/45 p-8 text-center text-sm text-[#2D2421]/55">{t('noGuests')}</div> : <div className="mt-6 grid gap-3">{visibleGuests.map((guest) => {
       const responseClass = guest.rsvp === 'accepted' ? 'bg-[#0A2E23]/10 text-[#0A2E23]' : 'bg-[#D4AF37]/15 text-[#8A6712]';
-      return <article key={guest.id} className="rounded-2xl border border-[#D4AF37]/35 bg-[#FFFDF9]/45 p-4"><div className="flex flex-wrap items-center gap-3"><InitialsAvatar /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-[#0A2E23]">{guest.name}</p><p className="text-[10px] text-[#2D2421]/50"><bdi>{guest.phone || t('missingPhone')} · {guest.token}</bdi></p></div><span className={`rounded-full px-2 py-1 text-[9px] font-bold uppercase ${responseClass}`}>{t(guest.rsvp)}</span>{guest.checkedIn && <span className="rounded-full bg-[#0A2E23] px-2 py-1 text-[9px] font-bold text-white">{t('checkedIn')}</span>}</div><div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[#D4AF37]/25 pt-4"><p className="me-auto text-xs text-[#2D2421]/65">{guest.guestCount || 1} {t('guest')} · +{guest.allowedCompanions}</p><button onClick={() => void copyInvitation(guest)} className="focus-ring min-h-11 rounded-full border border-[#D4AF37]/60 px-3 text-[10px] font-bold uppercase text-[#0A2E23]">{copied === guest.id ? t('linkCopied') : t('copyLink')}</button><Link href={`/i/${encodeURIComponent(guest.token)}`} target="_blank" className="focus-ring inline-flex min-h-11 items-center rounded-full border border-[#D4AF37]/60 px-3 text-[10px] font-bold uppercase text-[#0A2E23]">{t('openInvitation')}</Link><button onClick={() => sendWhatsApp(guest)} className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-full border border-[#D4AF37]/60 px-3 text-[10px] font-bold uppercase text-[#0A2E23]"><MessageCircle size={14} /> WhatsApp</button></div></article>;
+      return <article key={guest.id} className="rounded-2xl border border-[#D4AF37]/35 bg-[#FFFDF9]/45 p-4"><div className="flex flex-wrap items-center gap-3"><InitialsAvatar /><div className="min-w-0 flex-1"><p className="break-words text-sm font-semibold text-[#0A2E23]">{guest.name}</p><p className="break-all text-[10px] text-[#2D2421]/50"><bdi>{guest.phone || t('missingPhone')} · {guest.token}</bdi></p></div><span className={`rounded-full px-2 py-1 text-[9px] font-bold uppercase ${responseClass}`}>{t(guest.rsvp)}</span>{guest.checkedIn && <span className="rounded-full bg-[#0A2E23] px-2 py-1 text-[9px] font-bold text-white">{t('checkedIn')}</span>}</div><div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[#D4AF37]/25 pt-4"><p className="me-auto text-xs text-[#2D2421]/65">{guest.guestCount || 1} {t('guest')} · +{guest.allowedCompanions}</p><button onClick={() => void copyInvitation(guest)} className="focus-ring min-h-11 rounded-full border border-[#D4AF37]/60 px-3 text-[10px] font-bold uppercase text-[#0A2E23]">{copied === guest.id ? t('linkCopied') : t('copyLink')}</button><Link href={`/i/${encodeURIComponent(guest.token)}`} target="_blank" className="focus-ring inline-flex min-h-11 items-center rounded-full border border-[#D4AF37]/60 px-3 text-[10px] font-bold uppercase text-[#0A2E23]">{t('openInvitation')}</Link><button onClick={() => sendWhatsApp(guest)} className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-full border border-[#D4AF37]/60 px-3 text-[10px] font-bold uppercase text-[#0A2E23]"><MessageCircle size={14} /> WhatsApp</button></div></article>;
     })}</div>}
   </div>;
 }
@@ -766,8 +801,8 @@ function ScannerPage({ project }: { project?: ProjectSummary }) {
     <header className="relative z-10 flex items-center justify-between px-5 py-6 sm:px-10"><Link href={backRoute} data-testid="link-scanner-back" className="focus-ring flex items-center gap-2 text-xs font-semibold text-white/70"><ArrowLeft className={dir === 'rtl' ? 'rotate-180' : ''} size={15} />{t('project')}</Link><div className="min-w-0 text-end"><p className="truncate text-sm font-semibold text-[#D4AF37]">{context.name}</p><p className="text-[9px] text-white/45"><bdi>{context.type} · {context.id}</bdi></p></div></header>
     <main className="relative z-10 mx-auto max-w-2xl px-5 pb-16 pt-3 sm:pt-16"><FadeIn><div className="text-center"><Eyebrow>{t('scanner')}</Eyebrow><h1 className="mt-3 font-display text-5xl leading-[.9] text-white sm:mt-4 sm:text-7xl">{t('scannerTitle')}</h1><p className="mx-auto mt-3 max-w-sm text-xs text-white/60 sm:mt-5 sm:text-sm">{t('scannerHelp')} <bdi>{context.date} · {context.venue}</bdi></p></div></FadeIn>
       <div className="relative mx-auto mt-6 aspect-[2.2] max-w-lg overflow-hidden rounded-[24px] border border-[#D4AF37]/70 bg-[#071f18] sm:mt-12 sm:aspect-[1.2] sm:rounded-[30px]"><div className="absolute inset-4 rounded-2xl border border-[#D4AF37]/80 sm:inset-5" /><QrCode size={54} strokeWidth={.55} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-white/20 sm:h-[72px] sm:w-[72px]" /></div>
-      <div className="mx-auto mt-5 max-w-lg sm:mt-8"><div className="flex flex-col gap-2 sm:flex-row"><input ref={inputRef} value={token} onChange={(event) => { setToken(event.target.value); setScan({ status: 'ready' }); }} onKeyDown={(event) => event.key === 'Enter' && verify()} data-testid="input-scanner-token" placeholder={t('scannerPlaceholder')} dir="ltr" className="focus-ring min-h-14 min-w-0 flex-1 rounded-full border border-[#D4AF37]/50 bg-white/10 px-5 py-3 text-base text-white outline-none placeholder:text-white/35" /><Button className="min-h-14" variant="gold" icon={Search} onClick={verify}>{t('verify')}</Button></div><p className="mt-3 text-center text-[10px] leading-5 text-white/45">{t('scannerBoundary')}</p></div>
-      <div className="mx-auto mt-8 max-w-lg" aria-live="polite"><AnimatePresence mode="wait">{scan.status !== 'ready' && <motion.div key={scan.status} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className={`rounded-[28px] border p-6 ${guest ? 'border-[#D4AF37] bg-[#D4AF37]/10' : 'border-[#d58c78] bg-[#d58c78]/10'}`}>{guest ? <div><div className="flex items-start gap-4"><Check className="mt-1 shrink-0 text-[#D4AF37]" /><div className="min-w-0 flex-1"><Eyebrow>{scan.status === 'already-checked-in' ? t('alreadyCheckedIn') : t('verified')}</Eyebrow><h2 className="mt-2 truncate text-xl font-semibold">{guest.name}</h2><p className="mt-1 text-sm text-white/70">{t(guest.rsvp)} · {t('invitationFor')} {guest.guestCount || 1}</p></div></div><div className="mt-5 flex flex-col gap-2 sm:flex-row">{scan.status === 'valid' && <Button className="flex-1" variant="gold" icon={Check} onClick={checkIn}>{t('checkIn')}</Button>}<Button className="flex-1" variant="ivory" onClick={reset}>{t('scanNextGuest')}</Button></div></div> : <div><div className="flex items-center gap-4"><XCircle className="text-[#d58c78]" /><div><Eyebrow className="text-[#d58c78]">{t('notRecognized')}</Eyebrow><p className="mt-1 text-sm text-white/70">{t('tryAgain')}</p></div></div><Button className="mt-5 w-full" variant="ivory" onClick={reset}>{t('scanNextGuest')}</Button></div>}</motion.div>}</AnimatePresence></div>
+      <div className="mx-auto mt-5 max-w-lg sm:mt-8"><div className="flex flex-col gap-2 sm:flex-row"><label className="sr-only" htmlFor="scanner-token">{t('scannerPlaceholder')}</label><input id="scanner-token" ref={inputRef} value={token} onChange={(event) => { setToken(event.target.value); setScan({ status: 'ready' }); }} onKeyDown={(event) => event.key === 'Enter' && verify()} data-testid="input-scanner-token" placeholder={t('scannerPlaceholder')} dir="ltr" className="focus-ring min-h-14 min-w-0 flex-1 rounded-full border border-[#D4AF37]/50 bg-white/10 px-5 py-3 text-base text-white outline-none placeholder:text-white/35" /><Button className="min-h-14" variant="gold" icon={Search} onClick={verify}>{t('verify')}</Button></div><p className="mt-3 text-center text-[10px] leading-5 text-white/45">{t('scannerBoundary')}</p></div>
+      <div className="mx-auto mt-8 max-w-lg" aria-live="polite"><AnimatePresence mode="wait">{scan.status !== 'ready' && <motion.div key={scan.status} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className={`rounded-[28px] border p-6 ${guest ? 'border-[#D4AF37] bg-[#D4AF37]/10' : 'border-[#d58c78] bg-[#d58c78]/10'}`}>{guest ? <div><div className="flex items-start gap-4"><Check className="mt-1 shrink-0 text-[#D4AF37]" /><div className="min-w-0 flex-1"><Eyebrow>{scan.status === 'already-checked-in' ? t('alreadyCheckedIn') : t('verified')}</Eyebrow><h2 className="mt-2 break-words text-xl font-semibold">{guest.name}</h2><p className="mt-1 text-sm text-white/70">{t(guest.rsvp)} · {t('invitationFor')} {guest.guestCount || 1}</p></div></div><div className="mt-5 flex flex-col gap-2 sm:flex-row">{scan.status === 'valid' && <Button className="flex-1" variant="gold" icon={Check} onClick={checkIn}>{t('checkIn')}</Button>}<Button className="flex-1" variant="ivory" onClick={reset}>{t('scanNextGuest')}</Button></div></div> : <div><div className="flex items-center gap-4"><XCircle className="text-[#d58c78]" /><div><Eyebrow className="text-[#d58c78]">{t('notRecognized')}</Eyebrow><p className="mt-1 text-sm text-white/70">{t('tryAgain')}</p></div></div><Button className="mt-5 w-full" variant="ivory" onClick={reset}>{t('scanNextGuest')}</Button></div>}</motion.div>}</AnimatePresence></div>
     </main>
   </div>;
 }
@@ -794,7 +829,7 @@ function DashboardRoute() {
 
 function ProjectRoutePage({ type }: { type: ProjectType }) {
   const { eventId, section: rawSection } = useParams<{ eventId: string; section: string }>();
-  const { state, ready, setMode } = useEngine();
+  const { state, ready, setMode, storageAvailable } = useEngine();
   const workspace = useWeddingWorkspace();
   const { t } = useAppLocale();
   const weddingProject = type === 'wedding' ? workspace.projects.find((item) => item.id === eventId) : undefined;
@@ -811,7 +846,8 @@ function ProjectRoutePage({ type }: { type: ProjectType }) {
   }, [project, ready, setMode, state.mode, type, weddingProject, workspace]);
 
   if (!ready) return <LoadingPage />;
-  if (!project) return <TokenError />;
+  if (!project) return <NotFoundPage />;
+  if (weddingProject && workspace.activeProject.id !== weddingProject.id) return <LoadingPage />;
 
   let content: ReactNode;
   const guests = guestsForProject(state.operations, projectKey(project.type, project.id));
@@ -824,7 +860,7 @@ function ProjectRoutePage({ type }: { type: ProjectType }) {
   else if (section === 'send') content = <SendPage project={project} />;
   else content = <div className="space-y-4"><EmptyProjectSection title={t('settingsTitle')}>{t('settingsHelp')}</EmptyProjectSection><section className="mx-auto max-w-2xl rounded-3xl border border-[#D9D2C5] bg-white p-7"><h2 className="font-semibold">{t('appLanguage')}</h2><p className="mt-2 text-sm text-[#756F66]">{t('appLanguageHelp')}</p><div className="mt-4"><AppLanguageControl /></div></section></div>;
 
-  return <ProjectShell project={project} section={section}>{content}</ProjectShell>;
+  return <ProjectShell project={project} section={section}>{!storageAvailable && <p className="mb-4 rounded-2xl border border-[#A98219]/35 bg-[#FFF8E5] p-4 text-sm text-[#6B5518]" role="status">{t('sessionOnlyData')}</p>}{content}</ProjectShell>;
 }
 
 function WeddingProjectRoute() { return <ProjectRoutePage type="wedding" />; }
@@ -834,14 +870,14 @@ function GuestRoute() { return <GuestPage />; }
 function AdminRoute() {
   const { section } = useParams<{ section?: string }>();
   const workspace = useWeddingWorkspace();
-  const { state } = useEngine();
+  const { state, storageAvailable } = useEngine();
   const projects = [...workspace.projects.map(weddingProjectSummary), partyProjectSummary(state.partyEvent)];
   const events: AdminEventRecord[] = projects.map((project) => {
     const stats = operationalStats(guestsForProject(state.operations, projectKey(project.type, project.id)));
     return { ...project, guests: stats.guests, checkedIn: stats.checkedIn };
   });
   const totalGuests = projects.flatMap((project) => guestsForProject(state.operations, projectKey(project.type, project.id)));
-  return <AdminPage section={resolveAdminSection(section)} events={events} summary={{ projects: projects.length, ...operationalStats(totalGuests) }} saveStatus={workspace.saveStatus} storageError={workspace.storageError} />;
+  return <AdminPage section={resolveAdminSection(section)} events={events} summary={{ projects: projects.length, ...operationalStats(totalGuests) }} saveStatus={workspace.saveStatus} storageError={workspace.storageError} engineStorageAvailable={storageAvailable} />;
 }
 
 function LegacyRedirect({ path }: { path: '/studio/wedding' | '/studio/party' | '/scanner' }) {
@@ -852,7 +888,7 @@ function LegacyRedirect({ path }: { path: '/studio/wedding' | '/studio/party' | 
 }
 
 function NotFound() {
-  return <TokenError />;
+  return <NotFoundPage />;
 }
 
 function ScrollToTop() {
@@ -863,7 +899,7 @@ function ScrollToTop() {
 
 function Router() {
   return (
-    <ErrorBoundary resetKey={window.location.pathname}>
+    <ErrorBoundary resetKey={window.location.pathname} FallbackComponent={AppErrorFallback}>
       <ScrollToTop />
       <Switch>
         <Route path="/" component={DashboardRoute} />

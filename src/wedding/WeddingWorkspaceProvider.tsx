@@ -55,9 +55,9 @@ const WeddingWorkspaceContext = createContext<WeddingWorkspaceContextValue | nul
 const legacyStorageKey = "luxury-rsvp-engine";
 
 function removeLegacyWeddingEvent(): void {
-  const raw = localStorage.getItem(legacyStorageKey);
-  if (!raw) return;
   try {
+    const raw = localStorage.getItem(legacyStorageKey);
+    if (!raw) return;
     const value = JSON.parse(raw) as Record<string, unknown>;
     if (!("weddingEvent" in value)) return;
     delete value.weddingEvent;
@@ -116,7 +116,12 @@ export function WeddingWorkspaceProvider({
 
   useEffect(() => {
     let live = true;
-    const legacyRaw = localStorage.getItem(legacyStorageKey);
+    let legacyRaw: string | null = null;
+    try {
+      legacyRaw = localStorage.getItem(legacyStorageKey);
+    } catch {
+      // IndexedDB remains the Wedding authority when legacy storage is unavailable.
+    }
     initializeWeddingWorkspace(storageRef.current, legacyRaw, { onMigrationCommitted: removeLegacyWeddingEvent })
       .then((next) => {
         if (live) setWorkspace(next);

@@ -326,6 +326,20 @@ export function clampGuestCount(
   );
 }
 
+export function normalizeWeddingRsvpDraft(
+  status: "pending" | WeddingRsvp["status"],
+  response: Pick<WeddingRsvp, "guestCount" | "message">,
+  allowedCompanions: number,
+): WeddingRsvp {
+  return {
+    status: status === "declined" ? "declined" : "accepted",
+    guestCount: status === "declined"
+      ? 0
+      : clampGuestCount(response.guestCount, allowedCompanions),
+    message: response.message,
+  };
+}
+
 export function isValidGuestToken(
   token?: string,
   customGuestToken?: string,

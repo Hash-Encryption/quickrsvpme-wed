@@ -1058,7 +1058,7 @@
   background: #fffdf8;
   padding: 11px;
   color: #4f4a45;
-  text-align: right;
+  text-align: start;
 }
 .wedding-template-list > button.is-selected {
   border-color: #71808d;
