@@ -12,6 +12,9 @@ import {
   Utensils, X, XCircle,
 } from 'lucide-react';
 import { Link, Route, Switch, Router as WouterRouter, useLocation, useParams } from 'wouter';
+import { AuthPage } from '@/auth/AuthPage';
+import { AuthProvider, useAuth } from '@/auth/AuthProvider';
+import { RequireAuth } from '@/auth/RequireAuth';
 import { WeddingInvitationRenderer, WeddingStudio } from '@/wedding/WeddingMode';
 import { WeddingWorkspaceProvider, useWeddingWorkspace } from '@/wedding/WeddingWorkspaceProvider';
 import type { WeddingProject } from '@/wedding/workspace';
@@ -824,7 +827,18 @@ function partyProjectSummary(event: PartyEventData): ProjectSummary {
 function DashboardRoute() {
   const { projects } = useWeddingWorkspace();
   const { state } = useEngine();
-  return <DashboardPage projects={[...projects.map(weddingProjectSummary), partyProjectSummary(state.partyEvent)]} />;
+  const auth = useAuth();
+  return <DashboardPage
+    projects={[...projects.map(weddingProjectSummary), partyProjectSummary(state.partyEvent)]}
+    account={{
+      name: auth.client?.display_name ?? '',
+      email: auth.session?.user.email ?? '',
+      admin: auth.admin,
+      eventCount: auth.events.length,
+      access: Object.fromEntries(auth.entitlements.map((item) => [item.product_id, item.status])),
+    }}
+    onSignOut={() => void auth.signOut()}
+  />;
 }
 
 function ProjectRoutePage({ type }: { type: ProjectType }) {
@@ -902,16 +916,17 @@ function Router() {
     <ErrorBoundary resetKey={window.location.pathname} FallbackComponent={AppErrorFallback}>
       <ScrollToTop />
       <Switch>
-        <Route path="/" component={DashboardRoute} />
+        <Route path="/auth" component={AuthPage} />
         <Route path="/i/:token" component={GuestRoute} />
-        <Route path="/weddings/:eventId/:section" component={WeddingProjectRoute} />
-        <Route path="/parties/:eventId/:section" component={PartyProjectRoute} />
-        <Route path="/admin/:section" component={AdminRoute} />
-        <Route path="/admin" component={AdminRoute} />
-        <Route path="/studio/party">{() => <LegacyRedirect path="/studio/party" />}</Route>
-        <Route path="/studio/wedding">{() => <LegacyRedirect path="/studio/wedding" />}</Route>
-        <Route path="/studio" component={StudioHubPage} />
-        <Route path="/scanner">{() => <LegacyRedirect path="/scanner" />}</Route>
+        <Route path="/">{() => <RequireAuth><DashboardRoute /></RequireAuth>}</Route>
+        <Route path="/weddings/:eventId/:section">{() => <RequireAuth><WeddingProjectRoute /></RequireAuth>}</Route>
+        <Route path="/parties/:eventId/:section">{() => <RequireAuth><PartyProjectRoute /></RequireAuth>}</Route>
+        <Route path="/admin/:section">{() => <RequireAuth admin><AdminRoute /></RequireAuth>}</Route>
+        <Route path="/admin">{() => <RequireAuth admin><AdminRoute /></RequireAuth>}</Route>
+        <Route path="/studio/party">{() => <RequireAuth><LegacyRedirect path="/studio/party" /></RequireAuth>}</Route>
+        <Route path="/studio/wedding">{() => <RequireAuth><LegacyRedirect path="/studio/wedding" /></RequireAuth>}</Route>
+        <Route path="/studio">{() => <RequireAuth><StudioHubPage /></RequireAuth>}</Route>
+        <Route path="/scanner">{() => <RequireAuth><LegacyRedirect path="/scanner" /></RequireAuth>}</Route>
         <Route component={NotFound} />
       </Switch>
     </ErrorBoundary>
@@ -919,7 +934,7 @@ function Router() {
 }
 
 function App() {
-  return <AppLocaleProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><WeddingWorkspaceProvider><EngineProvider><Router /></EngineProvider></WeddingWorkspaceProvider></WouterRouter></AppLocaleProvider>;
+  return <AppLocaleProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><AuthProvider><WeddingWorkspaceProvider><EngineProvider><Router /></EngineProvider></WeddingWorkspaceProvider></AuthProvider></WouterRouter></AppLocaleProvider>;
 }
 
 export default App;

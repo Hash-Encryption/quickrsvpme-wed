@@ -8,10 +8,11 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test src/i18n/locale.test.ts src/app/projects.test.ts src/app/operations.test.ts src/party/model.test.ts src/wedding/model.test.ts src/wedding/workspace.test.ts",
+    "test": "node --experimental-strip-types --test src/i18n/locale.test.ts src/app/projects.test.ts src/app/operations.test.ts src/backend/errors.test.ts src/party/model.test.ts src/wedding/model.test.ts src/wedding/workspace.test.ts",
     "check": "npm run test && npm run typecheck && npm run build"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.112.4",
     "framer-motion": "^12.23.24",
     "lucide-react": "^0.545.0",
     "react": "19.1.0",
