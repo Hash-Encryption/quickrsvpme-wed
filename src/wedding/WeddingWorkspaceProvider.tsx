@@ -8,7 +8,10 @@ import {
   useEffect,
   type ReactNode,
 } from "react";
-import { defaultWeddingEvent, type WeddingEventData } from "./model.ts";
+import { defaultWeddingEvent, mergeWeddingEvent, type WeddingEventData } from "./model.ts";
+import { useAuth } from "../auth/AuthProvider.tsx";
+import { createDesignDraft, deleteDesignDraft, listDesignDrafts, listEventConfigs, publishArtwork, saveWeddingConfig, updateDesignDraft, type DesignDraft } from "../backend/phase2.ts";
+import { updateEvent } from "../backend/events.ts";
 import { IndexedDbWeddingWorkspaceStorage } from "./workspace-storage.ts";
 import {
   applySavedDesignToEvent,
@@ -78,6 +81,7 @@ export function WeddingWorkspaceProvider({
   children: ReactNode;
   storage?: WeddingWorkspaceStorage;
 }) {
+  const auth = useAuth();
   const fallbackRef = useRef(createWeddingProject(defaultWeddingEvent));
   const [workspace, setWorkspaceState] = useState<WeddingWorkspaceState | null>(null);
   const workspaceRef = useRef<WeddingWorkspaceState | null>(null);
@@ -92,6 +96,12 @@ export function WeddingWorkspaceProvider({
   }));
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editVersionRef = useRef(0);
+  const backendVersionsRef = useRef(new Map<string, number>());
+  const backendTemplatesRef = useRef(new Map<string, string | null>());
+  const backendTemplateKeysRef = useRef(new Map<string, string | null>());
+  const backendArtworkRef = useRef(new Map<string, string | null>());
+  const uploadedArtworkRef = useRef(new Map<string, string>());
+  const backendDraftsRef = useRef(new Map<string, DesignDraft<Record<string, unknown>>>());
 
   const setWorkspace = useCallback((next: WeddingWorkspaceState) => {
     workspaceRef.current = next;
@@ -146,6 +156,56 @@ export function WeddingWorkspaceProvider({
     };
   }, [setWorkspace]);
 
+  useEffect(() => {
+    if (!auth.session || auth.loading) return;
+    const events = auth.events.filter((event) => event.product_id === "wedding" && !event.deleted_at);
+    if (!events.length) return;
+    let live = true;
+    void Promise.all([listEventConfigs<Partial<WeddingEventData>>("wedding"), listDesignDrafts<Partial<WeddingEventData>>("wedding")]).then(([configs, drafts]) => {
+      if (!live) return;
+      const byEvent = new Map(configs.map((config) => [config.event_id, config]));
+      const projects = events.map((event) => {
+        const config = byEvent.get(event.id);
+        backendVersionsRef.current.set(event.id, config?.version ?? 0);
+        backendTemplatesRef.current.set(event.id, config?.template_version_id ?? null);
+        backendTemplateKeysRef.current.set(event.id, typeof config?.template_snapshot.templateId === "string" ? config.template_snapshot.templateId : null);
+        backendArtworkRef.current.set(event.id, config?.artwork_asset_id ?? null);
+        return createWeddingProject({ ...config?.configuration, invitationLocale: event.invitation_locale, venue: event.venue_name ?? config?.configuration.venue, city: event.city ?? config?.configuration.city }, event.title, { id: event.id, now: event.created_at });
+      });
+      const designs = drafts.map((draft) => {
+        backendDraftsRef.current.set(draft.id, draft as DesignDraft<Record<string, unknown>>);
+        return createSavedDesignFromEvent(mergeWeddingEvent(draft.configuration), draft.title, { id: draft.id, now: draft.created_at });
+      });
+      const current = workspaceRef.current;
+      const activeProjectId = projects.some((project) => project.id === current?.activeProjectId) ? current!.activeProjectId : projects[0].id;
+      setWorkspace({ projects, designs, activeProjectId, metadata: { schemaVersion: 1, activeProjectId, legacyMigrationVersion: 1 } });
+    }).catch((error) => {
+      if (!live) return;
+      setSaveStatus("error");
+      setStorageError(errorMessage(error));
+    });
+    return () => { live = false; };
+  }, [auth.events, auth.loading, auth.session, setWorkspace]);
+
+  const saveBackendProject = useCallback(async (project: WeddingProject) => {
+    if (!auth.session || !auth.events.some((event) => event.id === project.id)) return;
+    const configuration = structuredClone(project.event) as WeddingEventData & Record<string, unknown>;
+    let artworkId = backendArtworkRef.current.get(project.id) ?? null;
+    if (configuration.visual.source === "uploaded-background" && configuration.visual.uploadedBackground.dataUrl.startsWith("data:")) {
+      const dataUrl = configuration.visual.uploadedBackground.dataUrl;
+      artworkId = uploadedArtworkRef.current.get(dataUrl) ?? await publishArtwork(project.id, dataUrl, configuration.visual.uploadedBackground.mimeType);
+      uploadedArtworkRef.current.set(dataUrl, artworkId);
+      delete (configuration.visual.uploadedBackground as { dataUrl?: string }).dataUrl;
+    }
+    const existingTemplateId = backendTemplateKeysRef.current.get(project.id) === project.event.templateId ? backendTemplatesRef.current.get(project.id) : null;
+    const saved = await saveWeddingConfig(project.id, configuration, backendVersionsRef.current.get(project.id) ?? 0, artworkId, existingTemplateId);
+    backendVersionsRef.current.set(project.id, saved.version);
+    backendTemplatesRef.current.set(project.id, saved.template_version_id);
+    backendTemplateKeysRef.current.set(project.id, project.event.templateId);
+    backendArtworkRef.current.set(project.id, saved.artwork_asset_id ?? artworkId);
+    await updateEvent(project.id, { title: project.name, invitation_locale: project.event.invitationLocale, venue_name: project.event.venue || null, city: project.event.city || null });
+  }, [auth.events, auth.session]);
+
   const activeProject = useCallback(() => {
     const current = workspaceRef.current;
     if (!current) return fallbackRef.current;
@@ -156,8 +216,9 @@ export function WeddingWorkspaceProvider({
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = null;
     const version = editVersionRef.current;
-    await enqueue({ projects: [activeProject()] }, version);
-  }, [activeProject, enqueue]);
+    const project = activeProject();
+    await Promise.all([enqueue({ projects: [project] }, version), saveBackendProject(project)]);
+  }, [activeProject, enqueue, saveBackendProject]);
 
   const updateActiveEvent = useCallback((event: WeddingEventData) => {
     const current = workspaceRef.current;
@@ -173,9 +234,12 @@ export function WeddingWorkspaceProvider({
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
-      void enqueue({ projects: [updated] }, version).catch(() => undefined);
+      void Promise.all([enqueue({ projects: [updated] }, version), saveBackendProject(updated)]).catch((error) => {
+        setSaveStatus("error");
+        setStorageError(errorMessage(error));
+      });
     }, 500);
-  }, [activeProject, enqueue, setWorkspace]);
+  }, [activeProject, enqueue, saveBackendProject, setWorkspace]);
 
   const createProject = useCallback(async (name: string) => {
     await saveNow();
@@ -232,10 +296,14 @@ export function WeddingWorkspaceProvider({
   const saveCurrentDesign = useCallback(async (name: string) => {
     await saveNow();
     const current = workspaceRef.current!;
-    const design = createSavedDesignFromEvent(activeProject().event, name);
-    await enqueue({ designs: [design] });
+    let design = createSavedDesignFromEvent(activeProject().event, name);
+    if (auth.session) {
+      const record = await createDesignDraft("wedding", name, { templateId: design.templateId, visual: design.visual, style: design.style, presentation: design.presentation });
+      backendDraftsRef.current.set(record.id, record);
+      design = { ...design, id: record.id, createdAt: record.created_at, updatedAt: record.updated_at };
+    } else await enqueue({ designs: [design] });
     setWorkspace({ ...current, designs: [...current.designs, design] });
-  }, [activeProject, enqueue, saveNow, setWorkspace]);
+  }, [activeProject, auth.session, enqueue, saveNow, setWorkspace]);
 
   const applyDesign = useCallback((id: string) => {
     const current = workspaceRef.current;
@@ -250,16 +318,18 @@ export function WeddingWorkspaceProvider({
     const existing = current.designs.find((design) => design.id === id);
     if (!existing) return;
     const design = renameWeddingSavedDesign(existing, name);
-    await enqueue({ designs: [design] });
+    const backend = backendDraftsRef.current.get(id);
+    if (auth.session && backend) backendDraftsRef.current.set(id, await updateDesignDraft(backend, name, backend.configuration));
+    else await enqueue({ designs: [design] });
     setWorkspace({ ...current, designs: current.designs.map((item) => item.id === id ? design : item) });
-  }, [enqueue, saveNow, setWorkspace]);
+  }, [auth.session, enqueue, saveNow, setWorkspace]);
 
   const deleteDesign = useCallback(async (id: string) => {
     await saveNow();
     const current = workspaceRef.current!;
-    await enqueue({ deleteDesignIds: [id] });
+    if (auth.session) await deleteDesignDraft(id); else await enqueue({ deleteDesignIds: [id] });
     setWorkspace({ ...current, designs: current.designs.filter((design) => design.id !== id) });
-  }, [enqueue, saveNow, setWorkspace]);
+  }, [auth.session, enqueue, saveNow, setWorkspace]);
 
   const value = useMemo<WeddingWorkspaceContextValue>(() => ({
     ready: Boolean(workspace),

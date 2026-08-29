@@ -68,6 +68,7 @@ type WeddingRendererProps = {
   rsvpStatus?: "pending" | "accepted" | "declined";
   rsvpResponse?: Pick<WeddingRsvp, "guestCount" | "message">;
   preview?: boolean;
+  readOnly?: boolean;
   onSubmit: (response: WeddingRsvp) => void | Promise<void>;
 };
 
@@ -90,6 +91,7 @@ export function WeddingInvitationRenderer({
   rsvpStatus = "pending",
   rsvpResponse = { guestCount: 1, message: "" },
   preview = false,
+  readOnly = false,
   onSubmit,
 }: WeddingRendererProps) {
   const template =
@@ -149,12 +151,13 @@ export function WeddingInvitationRenderer({
           visual={event.visual}
           safeZone={presentation.safeZone}
           onOpenRsvp={() => setDrawerOpen(true)}
+          readOnly={readOnly}
           locale={event.invitationLocale}
         />
       )}
       overlay={
         <AnimatePresence>
-          {drawerOpen && (
+          {drawerOpen && !readOnly && (
             <WeddingRSVPDrawer
               guest={guest}
               locale={event.invitationLocale}
@@ -182,6 +185,7 @@ function WeddingInvitationSceneRenderer({
   visual,
   safeZone,
   onOpenRsvp,
+  readOnly,
   locale,
 }: {
   blocks: ReadonlyArray<WeddingSemanticBlock>;
@@ -198,6 +202,7 @@ function WeddingInvitationSceneRenderer({
   visual: WeddingEventData["visual"];
   safeZone: WeddingEventData["presentation"]["safeZone"];
   onOpenRsvp: () => void;
+  readOnly: boolean;
   locale: InvitationLocale;
 }) {
   const direction = localeDirection(locale);
@@ -237,6 +242,7 @@ function WeddingInvitationSceneRenderer({
             <WeddingSemanticBlockContent
               block={block}
               onOpenRsvp={onOpenRsvp}
+              readOnly={readOnly}
               locale={locale}
             />
           )}
@@ -249,10 +255,12 @@ function WeddingInvitationSceneRenderer({
 function WeddingSemanticBlockContent({
   block,
   onOpenRsvp,
+  readOnly,
   locale,
 }: {
   block: WeddingSemanticBlock;
   onOpenRsvp: () => void;
+  readOnly: boolean;
   locale: InvitationLocale;
 }) {
   if (block.id === "opening")
@@ -321,14 +329,14 @@ function WeddingSemanticBlockContent({
   return (
     <div className="wedding-scene wedding-rsvp-reveal">
       <p className="wedding-rsvp-guest">{invitationT(locale, "privateInvitation")} {block.guestName}</p>
-      <button
+      {!readOnly && <button
         className="wedding-rsvp-button"
         onClick={onOpenRsvp}
         data-testid="button-wedding-rsvp"
       >
         <span>{invitationT(locale, block.status === "pending" ? "confirmAttendance" : "editResponse")}</span>
         {block.deadline && <small>{block.deadline}</small>}
-      </button>
+      </button>}
     </div>
   );
 }

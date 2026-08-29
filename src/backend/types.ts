@@ -32,10 +32,38 @@ export type BackendEvent = {
   rsvp_deadline: string | null;
   venue_name: string | null;
   city: string | null;
+  request_companion_names: boolean;
+  allow_custom_messages: boolean;
+  allow_rsvp_changes: boolean;
+  general_invite_allowed_companions: number;
   archived_at: string | null;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type EventGuest = {
+  id: string;
+  event_id: string;
+  name: string;
+  phone: string | null;
+  source: 'client' | 'general_invite';
+  allowed_companions: number;
+  invitation_variant_override: 'women' | 'men' | 'both' | 'family' | 'custom' | null;
+  rsvp_status: 'pending' | 'accepted' | 'declined';
+  confirmed_party_size: number;
+  companion_names: string[];
+  custom_message: string | null;
+  responded_at: string | null;
+  personal_invitations?: Array<{ id: string; open_count: number; first_opened_at: string | null; last_opened_at: string | null; revoked_at: string | null }>;
+};
+
+export type InvitationResolution = {
+  status: 'active' | 'archived_read_only' | 'invalid' | 'unavailable' | 'cancelled' | 'planning' | 'ended' | 'subscription_unavailable';
+  kind?: 'personal' | 'general';
+  event?: Pick<BackendEvent, 'product_id' | 'title' | 'invitation_locale' | 'starts_at' | 'ends_at' | 'rsvp_deadline' | 'venue_name' | 'city' | 'request_companion_names' | 'allow_custom_messages' | 'allow_rsvp_changes' | 'general_invite_allowed_companions'>;
+  configuration?: Record<string, unknown>;
+  guest?: { name: string; allowed_companions: number; invitation_variant_override: EventGuest['invitation_variant_override']; rsvp_status: EventGuest['rsvp_status']; confirmed_party_size: number; companion_names: string[]; custom_message: string | null };
 };
 
 export type CreateEventInput = {

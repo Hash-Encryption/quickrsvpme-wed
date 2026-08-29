@@ -36,11 +36,15 @@ import {
   clampGuestCount,
   getWhatsAppShareUrl,
   isValidGuestToken,
+  mergeWeddingEvent,
   type EventMode,
   type WeddingGuestData,
   type WeddingRsvp,
 } from '@/wedding/model';
 import { defaultPartyEvent, formatPartyDate, mergePartyEvent, partyTemplates, type PartyEventData } from '@/party/model';
+import { createGeneralInvitation, createGuest, listEventConfigs, listGuests, recordInvitationOpen, resolveInvitation, rotatePersonalInvitation, savePartyConfig, submitGeneralRsvp, submitPersonalRsvp, tagGuest, updateGuest } from '@/backend/phase2';
+import { createEvent, updateEvent } from '@/backend/events';
+import type { BackendEvent, EventGuest, InvitationResolution } from '@/backend/types';
 import {
   checkInOperationalGuest,
   emptyOperationalState,
@@ -112,16 +116,29 @@ type EngineContextValue = {
   updatePartyEvent: (patch: Partial<PartyEventData>) => void;
   submitWeddingRsvp: (response: WeddingRsvp) => void;
   checkInGuest: (key: string, guestId: string) => void;
+  activePartyEventId: string;
+  openPartyEvent: (id: string) => void;
+  loadPublicInvitation: (resolution: InvitationResolution, token: string, generalName?: string) => void;
+  publicReadOnly: boolean;
   storageAvailable: boolean;
 };
 const EngineContext = createContext<EngineContextValue | null>(null);
 
 function EngineProvider({ children }: { children: ReactNode }) {
+  const auth = useAuth();
   const { activeProject, preserveLegacyWedding } = useWeddingWorkspace();
   const initialWeddingId = useRef(activeProject.id).current;
   const [state, setState] = useState<EngineState>(defaultState);
   const [ready, setReady] = useState(false);
   const [storageAvailable, setStorageAvailable] = useState(true);
+  const [activePartyEventId, setActivePartyEventId] = useState('');
+  const partyVersionRef = useRef(0);
+  const partyTemplateRef = useRef<string | null>(null);
+  const partyTemplateKeyRef = useRef<string | null>(null);
+  const partyHydratedRef = useRef(false);
+  const partyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const partyQueueRef = useRef(Promise.resolve());
+  const [publicInvitation, setPublicInvitation] = useState<{ token: string; kind: 'personal' | 'general'; requestId: string; readOnly: boolean } | null>(null);
   useEffect(() => {
     let raw: string | null;
     try {
@@ -161,18 +178,64 @@ function EngineProvider({ children }: { children: ReactNode }) {
       catch { setStorageAvailable(false); }
     }
   }, [state, ready, preserveLegacyWedding, storageAvailable]);
+  useEffect(() => {
+    if (!auth.session || auth.loading) return;
+    const partyEvents = auth.events.filter((event) => event.product_id === 'party' && !event.deleted_at);
+    const eventId = partyEvents.some((event) => event.id === activePartyEventId) ? activePartyEventId : partyEvents[0]?.id;
+    if (!eventId) return;
+    setActivePartyEventId(eventId);
+    partyHydratedRef.current = false;
+    void listEventConfigs<Partial<PartyEventData> & { blocks?: StudioBlock[]; invitationLocale?: InvitationLocale }>('party').then((configs) => {
+      const config = configs.find((item) => item.event_id === eventId);
+      const event = partyEvents.find((item) => item.id === eventId)!;
+      partyVersionRef.current = config?.version ?? 0;
+      partyTemplateRef.current = config?.template_version_id ?? null;
+      partyTemplateKeyRef.current = typeof config?.template_snapshot.templateId === 'string' ? config.template_snapshot.templateId : null;
+      setState((current) => ({ ...current, partyEvent: mergePartyEvent(config?.configuration ?? { title: event.title, venue: event.venue_name ?? '', city: event.city ?? '' }), blocks: Array.isArray(config?.configuration.blocks) ? config.configuration.blocks : current.blocks, invitationLocale: config?.configuration.invitationLocale === 'en' ? 'en' : event.invitation_locale }));
+      partyHydratedRef.current = true;
+    }).catch(() => { partyHydratedRef.current = true; });
+  }, [activePartyEventId, auth.events, auth.loading, auth.session]);
+  useEffect(() => {
+    if (!partyHydratedRef.current || !activePartyEventId || !auth.session) return;
+    if (partyTimerRef.current) clearTimeout(partyTimerRef.current);
+    partyTimerRef.current = setTimeout(() => {
+      const configuration = { ...state.partyEvent, blocks: state.blocks, invitationLocale: state.invitationLocale };
+      const existingTemplate = partyTemplateKeyRef.current === state.partyEvent.templateId ? partyTemplateRef.current : null;
+      partyQueueRef.current = partyQueueRef.current.then(async () => {
+        const saved = await savePartyConfig(activePartyEventId, configuration, partyVersionRef.current, existingTemplate);
+        partyVersionRef.current = saved.version;
+        partyTemplateRef.current = saved.template_version_id;
+        partyTemplateKeyRef.current = state.partyEvent.templateId;
+        await updateEvent(activePartyEventId, { title: state.partyEvent.title, invitation_locale: state.invitationLocale, venue_name: state.partyEvent.venue || null, city: state.partyEvent.city || null });
+      }).catch(() => undefined);
+    }, 500);
+    return () => { if (partyTimerRef.current) clearTimeout(partyTimerRef.current); };
+  }, [activePartyEventId, auth.session, state.blocks, state.invitationLocale, state.partyEvent]);
+  const commitPublicRsvp = (rsvp: RSVPStatus, guestCount: number, message = '') => {
+    if (!publicInvitation || rsvp === 'pending') return Promise.resolve();
+    return publicInvitation.kind === 'personal'
+      ? submitPersonalRsvp(publicInvitation.token, rsvp, rsvp === 'accepted' ? guestCount : 0, message)
+      : submitGeneralRsvp(publicInvitation.token, publicInvitation.requestId, state.weddingGuest.name, rsvp, rsvp === 'accepted' ? guestCount : 0, message);
+  };
   const value = useMemo(() => ({
     state, ready,
-    setRsvp: (rsvp: RSVPStatus, guestCount?: number) => setState((s) => {
+    setRsvp: (rsvp: RSVPStatus, guestCount?: number) => {
+      const acceptedCount = clampGuestCount(guestCount ?? state.plusOnes + 1, state.weddingGuest.allowedCompanions);
+      if (publicInvitation && rsvp !== 'pending') {
+        void commitPublicRsvp(rsvp, acceptedCount).then(() => setState((s) => ({ ...s, rsvp, plusOnes: rsvp === 'accepted' ? acceptedCount - 1 : 0 })));
+        return;
+      }
+      setState((s) => {
       const key = projectKey(s.mode === 'wedding' ? 'wedding' : 'party', s.mode === 'wedding' ? activeProject.id : partyProject.id);
-      const acceptedCount = clampGuestCount(guestCount ?? s.plusOnes + 1, s.weddingGuest.allowedCompanions);
+      const localAcceptedCount = clampGuestCount(guestCount ?? s.plusOnes + 1, s.weddingGuest.allowedCompanions);
       return {
         ...s,
         rsvp,
-        plusOnes: guestCount === undefined ? s.plusOnes : acceptedCount - 1,
-        operations: updateOperationalGuestByToken(s.operations, key, s.weddingGuest.token, { rsvp, guestCount: rsvp === 'accepted' ? acceptedCount : 0 }),
+        plusOnes: guestCount === undefined ? s.plusOnes : localAcceptedCount - 1,
+        operations: updateOperationalGuestByToken(s.operations, key, s.weddingGuest.token, { rsvp, guestCount: rsvp === 'accepted' ? localAcceptedCount : 0 }),
       };
-    }),
+      });
+    },
     setSong: (song: string) => setState((s) => ({ ...s, song })),
     setMeal: (meal: string) => setState((s) => ({ ...s, meal })),
     toggleBlock: (key: BlockKey) => setState((s) => ({ ...s, blocks: s.blocks.map((b) => b.key === key ? { ...b, enabled: !b.enabled } : b) })),
@@ -181,16 +244,24 @@ function EngineProvider({ children }: { children: ReactNode }) {
     setMode: (mode: EventMode) => setState((s) => ({ ...s, mode })),
     setInvitationLocale: (invitationLocale: InvitationLocale) => setState((s) => ({ ...s, invitationLocale })),
     updatePartyEvent: (patch: Partial<PartyEventData>) => setState((s) => ({ ...s, partyEvent: mergePartyEvent({ ...s.partyEvent, ...patch }) })),
-    submitWeddingRsvp: (response: WeddingRsvp) => setState((s) => ({
-      ...s,
-      rsvp: response.status,
-      plusOnes: Math.max(0, response.guestCount - 1),
-      weddingResponse: { guestCount: response.guestCount, message: response.message },
-      operations: updateOperationalGuestByToken(s.operations, projectKey('wedding', activeProject.id), s.weddingGuest.token, { rsvp: response.status, guestCount: response.guestCount, message: response.message }),
-    })),
+    submitWeddingRsvp: async (response: WeddingRsvp) => {
+      if (publicInvitation) await commitPublicRsvp(response.status, response.guestCount, response.message);
+      setState((s) => ({ ...s, rsvp: response.status, plusOnes: Math.max(0, response.guestCount - 1), weddingResponse: { guestCount: response.guestCount, message: response.message }, operations: publicInvitation ? s.operations : updateOperationalGuestByToken(s.operations, projectKey('wedding', activeProject.id), s.weddingGuest.token, { rsvp: response.status, guestCount: response.guestCount, message: response.message }) }));
+    },
     checkInGuest: (key: string, guestId: string) => setState((s) => ({ ...s, operations: checkInOperationalGuest(s.operations, key, guestId) })),
+    activePartyEventId,
+    openPartyEvent: setActivePartyEventId,
+    loadPublicInvitation: (resolution: InvitationResolution, token: string, generalName = '') => {
+      if (!resolution.event || !resolution.kind) return;
+      const configuration = resolution.configuration ?? {};
+      const guest = resolution.guest;
+      const allowedCompanions = guest?.allowed_companions ?? resolution.event.general_invite_allowed_companions;
+      setPublicInvitation({ token, kind: resolution.kind, requestId: crypto.randomUUID(), readOnly: resolution.status === 'archived_read_only' });
+      setState((current) => ({ ...current, mode: resolution.event!.product_id === 'wedding' ? 'wedding' : 'standard', invitationLocale: resolution.event!.invitation_locale, partyEvent: resolution.event!.product_id === 'party' ? mergePartyEvent(configuration as Partial<PartyEventData>) : current.partyEvent, blocks: Array.isArray(configuration.blocks) ? configuration.blocks as StudioBlock[] : current.blocks, weddingGuest: { ...defaultWeddingGuest, name: guest?.name ?? generalName, token, allowedCompanions, invitationVariantOverride: guest?.invitation_variant_override ?? undefined }, rsvp: guest?.rsvp_status ?? 'pending', plusOnes: Math.max(0, (guest?.confirmed_party_size ?? 1) - 1), weddingResponse: { guestCount: guest?.confirmed_party_size || 1, message: guest?.custom_message ?? '' } }));
+    },
+    publicReadOnly: publicInvitation?.readOnly ?? false,
     storageAvailable,
-  }), [activeProject.id, state, ready, storageAvailable]);
+  }), [activePartyEventId, activeProject.id, publicInvitation, state, ready, storageAvailable]);
   return <EngineContext.Provider value={value}>{children}</EngineContext.Provider>;
 }
 
@@ -250,23 +321,52 @@ function QRMark({ label }: { label: string }) {
 const blockIcons: Record<BlockKey, IconType> = { catering: Utensils, dress: Shirt, schedule: CalendarDays, registry: Heart, song: Music2, faq: HelpCircle };
 
 function GuestPage({ preview = false }: { preview?: boolean } = {}) {
-  const { state, ready, setRsvp, setSong, setMeal, submitWeddingRsvp } = useEngine();
+  const { state, ready, setRsvp, setSong, setMeal, submitWeddingRsvp, loadPublicInvitation, publicReadOnly } = useEngine();
   const { activeProject } = useWeddingWorkspace();
   const { token } = useParams<{ token: string }>();
+  const [resolution, setResolution] = useState<InvitationResolution | null>(null);
+  const [resolutionError, setResolutionError] = useState(false);
+  const [generalName, setGeneralName] = useState('');
+  const [identified, setIdentified] = useState(false);
+  const openedRef = useRef('');
+  const loadedRef = useRef('');
   const [openFaq, setOpenFaq] = useState<number | null>(0);
-  const validToken = preview || isValidGuestToken(token, state.weddingGuest.token);
+  const backendToken = !preview && token !== 'demo' ? token : undefined;
+  useEffect(() => {
+    if (!backendToken) return;
+    let live = true;
+    loadedRef.current = '';
+    setResolution(null); setResolutionError(false); setIdentified(false);
+    void resolveInvitation(backendToken).then((result) => { if (live) setResolution(result); }).catch(() => { if (live) setResolutionError(true); });
+    return () => { live = false; };
+  }, [backendToken]);
+  useEffect(() => {
+    if (!backendToken || !resolution?.kind || !resolution.event || (resolution.kind === 'general' && !identified)) return;
+    if (loadedRef.current === backendToken) return;
+    loadedRef.current = backendToken;
+    loadPublicInvitation(resolution, backendToken, generalName);
+    if (openedRef.current !== backendToken) {
+      openedRef.current = backendToken;
+      requestAnimationFrame(() => void recordInvitationOpen(backendToken).catch(() => undefined));
+    }
+  }, [backendToken, generalName, identified, loadPublicInvitation, resolution]);
+  if (backendToken && (!resolution || resolutionError)) return resolutionError ? <TokenError /> : <LoadingPage />;
+  if (resolution && !['active', 'archived_read_only'].includes(resolution.status)) return <TokenError />;
+  if (resolution?.kind === 'general' && !identified) return <div className="grain flex min-h-[100dvh] items-center justify-center bg-[#FAF7F2] p-5"><form onSubmit={(event) => { event.preventDefault(); if (generalName.trim()) setIdentified(true); }} className="suite-card w-full max-w-md p-7"><Eyebrow>{invitationT(resolution.event!.invitation_locale, 'invitation')}</Eyebrow><h1 className="mt-3 font-display text-4xl text-[#0A2E23]">{resolution.event!.title}</h1><input autoFocus required value={generalName} onChange={(event) => setGeneralName(event.target.value)} placeholder={invitationT(resolution.event!.invitation_locale, 'guestName')} className="mt-6 min-h-12 w-full rounded-xl border border-[#D4AF37]/55 px-4" /><Button type="submit" className="mt-4 w-full">{invitationT(resolution.event!.invitation_locale, 'continue')}</Button></form></div>;
+  const validToken = Boolean(resolution) || preview || isValidGuestToken(token, state.weddingGuest.token);
   const visibleBlocks = state.blocks.filter((block) => block.enabled);
   const displayedRsvp = preview ? 'accepted' : state.rsvp;
   const partyEvent = state.partyEvent;
   const partyGuestCount = clampGuestCount(state.plusOnes + 1, state.weddingGuest.allowedCompanions);
   if (!ready) return <LoadingPage />;
   if (!validToken) return <TokenError />;
-  if (state.mode === 'wedding') return <WeddingInvitationRenderer
-    event={activeProject.event}
+  if ((resolution?.event?.product_id ?? (state.mode === 'wedding' ? 'wedding' : 'party')) === 'wedding') return <WeddingInvitationRenderer
+    event={resolution ? mergeWeddingEvent(resolution.configuration as Partial<ReturnType<typeof mergeWeddingEvent>>) : activeProject.event}
     guest={{ ...state.weddingGuest, token: token ?? state.weddingGuest.token }}
     rsvpStatus={state.rsvp}
     rsvpResponse={state.weddingResponse}
     onSubmit={submitWeddingRsvp}
+    readOnly={publicReadOnly}
   />;
   return <div className={`party-invitation party-template--${partyEvent.templateId} grain min-h-[100dvh] overflow-hidden text-[#2D2421] ${preview ? 'party-invitation--preview' : ''}`} lang={state.invitationLocale} dir={localeDirection(state.invitationLocale)}>
     <div className="gold-thread" />
@@ -281,7 +381,7 @@ function GuestPage({ preview = false }: { preview?: boolean } = {}) {
       </FadeIn>
 
       <AnimatePresence mode="wait">
-        {displayedRsvp === 'pending' && <motion.div key="rsvp" initial={{ opacity: 0, scale: .98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="suite-card mx-auto max-w-xl p-7 text-center sm:p-12">
+        {displayedRsvp === 'pending' && !publicReadOnly && <motion.div key="rsvp" initial={{ opacity: 0, scale: .98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="suite-card mx-auto max-w-xl p-7 text-center sm:p-12">
           <Eyebrow>{partyInvitationT(state.invitationLocale, 'privateFor')} {state.weddingGuest.name}</Eyebrow>
           <h2 className="mt-3 font-display text-4xl text-[#0A2E23]">{invitationT(state.invitationLocale, 'rsvpTitle')}</h2>
           <p className="mx-auto mt-3 max-w-sm text-sm leading-7 text-[#2D2421]/70">{partyInvitationT(state.invitationLocale, 'replyBy')} <time dateTime={partyEvent.rsvpDeadline}>{formatPartyDate(partyEvent.rsvpDeadline, state.invitationLocale)}</time>.</p>
@@ -293,13 +393,13 @@ function GuestPage({ preview = false }: { preview?: boolean } = {}) {
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-[#D4AF37] text-[#D4AF37]"><Heart size={22} strokeWidth={1.4} /></div>
           <h2 className="mt-5 font-display text-4xl text-[#0A2E23]">{partyInvitationT(state.invitationLocale, 'missedTitle')}</h2>
           <p className="mx-auto mt-3 max-w-sm text-sm leading-7 text-[#2D2421]/70">{partyInvitationT(state.invitationLocale, 'missedBody')}</p>
-          <button onClick={() => setRsvp('pending')} data-testid="button-change-rsvp" className="focus-ring mt-7 min-h-11 text-[10px] font-bold uppercase tracking-[.18em] text-[#A98219] underline underline-offset-4">{partyInvitationT(state.invitationLocale, 'changeResponse')}</button>
+          {!publicReadOnly && <button onClick={() => setRsvp('pending')} data-testid="button-change-rsvp" className="focus-ring mt-7 min-h-11 text-[10px] font-bold uppercase tracking-[.18em] text-[#A98219] underline underline-offset-4">{partyInvitationT(state.invitationLocale, 'changeResponse')}</button>}
         </motion.div>}
         {displayedRsvp === 'accepted' && <motion.div key="accepted" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mx-auto max-w-2xl">
           <SuiteCard className="p-7 sm:p-10">
             <div className="flex items-start justify-between gap-5"><div><Eyebrow>{partyInvitationT(state.invitationLocale, 'onList')}</Eyebrow><h2 className="mt-2 font-display text-4xl text-[#0A2E23]">{partyInvitationT(state.invitationLocale, 'acceptedTitle')}</h2><p className="mt-1 text-sm text-[#2D2421]/65">{partyInvitationT(state.invitationLocale, 'acceptedBody')}</p></div><CheckCircle2 className="shrink-0 text-[#0A2E23]" size={28} strokeWidth={1.4} /></div>
             <div className="mt-7 flex items-center gap-3 border-t border-[#D4AF37]/35 pt-5"><InitialsAvatar /><div className="min-w-0"><p className="break-words font-semibold text-[#0A2E23]" data-testid="text-guest-name">{state.weddingGuest.name}</p><p className="break-all text-[11px] uppercase tracking-[.12em] text-[#2D2421]/55">{partyGuestCount} {partyInvitationT(state.invitationLocale, 'guest')} · {partyInvitationT(state.invitationLocale, 'token')} {token ?? 'demo'}</p></div><span className="ms-auto shrink-0 rounded-full bg-[#0A2E23]/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23]">{partyInvitationT(state.invitationLocale, 'confirmed')}</span></div>
-            <button onClick={() => setRsvp('pending')} data-testid="button-change-rsvp" className="focus-ring mt-7 min-h-11 text-[10px] font-bold uppercase tracking-[.18em] text-[#A98219] underline underline-offset-4">{partyInvitationT(state.invitationLocale, 'changeResponse')}</button>
+            {!publicReadOnly && <button onClick={() => setRsvp('pending')} data-testid="button-change-rsvp" className="focus-ring mt-7 min-h-11 text-[10px] font-bold uppercase tracking-[.18em] text-[#A98219] underline underline-offset-4">{partyInvitationT(state.invitationLocale, 'changeResponse')}</button>}
           </SuiteCard>
           <div className="my-16 text-center"><Eyebrow>{partyInvitationT(state.invitationLocale, 'details')}</Eyebrow><p className="mt-3 font-display text-3xl text-[#0A2E23]">{partyInvitationT(state.invitationLocale, 'detailsTitle')}</p></div>
           {visibleBlocks.map((block, index) => <GuestBlock key={block.key} block={block} index={index} openFaq={openFaq} setOpenFaq={setOpenFaq} song={state.song} setSong={preview ? () => undefined : setSong} meal={state.meal} setMeal={preview ? () => undefined : setMeal} />)}
@@ -668,7 +768,7 @@ function WeddingWorkspaceControls() {
 
 function WeddingStudioPage({ embedded = false }: { embedded?: boolean }) {
   const { state, ready, setMode } = useEngine();
-  const { activeProject, updateActiveEvent } = useWeddingWorkspace();
+  const { activeProject, updateActiveEvent, saveStatus, storageError } = useWeddingWorkspace();
   const { t } = useAppLocale();
 
   useEffect(() => {
@@ -709,7 +809,8 @@ function WeddingStudioPage({ embedded = false }: { embedded?: boolean }) {
           </div>
         </FadeIn>
 
-        <WeddingWorkspaceControls />
+        <div className="my-5 text-xs text-[#2D2421]/60" role="status">{t(saveStatus === 'saving' ? 'saving' : saveStatus === 'error' ? 'saveError' : 'saved')}</div>
+        {storageError && <p className="mb-5 rounded-xl bg-[#b4534b]/10 px-3 py-2 text-xs text-[#8c302b]" role="alert">{storageError}</p>}
         <WeddingStudio
           event={activeProject.event}
           guest={state.weddingGuest}
@@ -738,17 +839,28 @@ function EditorPanel({ block, close, updateBlock }: { block: StudioBlock; close:
 function GuestManager({ project }: { project?: ProjectSummary } = {}) {
   const { t } = useAppLocale();
   const { state, storageAvailable } = useEngine();
+  const auth = useAuth();
   const { activeProject } = useWeddingWorkspace();
   const context = project ?? (state.mode === 'wedding' ? weddingProjectSummary(activeProject) : partyProjectSummary(state.partyEvent));
-  const guests = guestsForProject(state.operations, projectKey(context.type, context.id));
+  const [backendGuests, setBackendGuests] = useState<EventGuest[]>([]);
+  const [tokens, setTokens] = useState<Record<string, string>>({});
+  const [guestName, setGuestName] = useState('');
+  const [guestPhone, setGuestPhone] = useState('');
+  const [companions, setCompanions] = useState(0);
+  const [tagNames, setTagNames] = useState<Record<string, string>>({});
+  const refreshGuests = () => auth.session ? listGuests(context.id).then(setBackendGuests) : Promise.resolve();
+  useEffect(() => { void refreshGuests(); }, [auth.session, context.id]);
+  const guests = auth.session ? backendGuests.map((guest) => ({ id: guest.id, name: guest.name, phone: guest.phone ?? '', token: tokens[guest.id] ?? '', allowedCompanions: guest.allowed_companions, invitationVariantOverride: guest.invitation_variant_override ?? undefined, rsvp: guest.rsvp_status, guestCount: guest.confirmed_party_size, message: guest.custom_message ?? '', checkedIn: false, openCount: guest.personal_invitations?.[0]?.open_count ?? 0 })) : guestsForProject(state.operations, projectKey(context.type, context.id)).map((guest) => ({ ...guest, openCount: 0 }));
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<RSVPStatus | 'all'>('all');
+  const [filter, setFilter] = useState<RSVPStatus | 'all' | 'not-opened' | 'opened-no-rsvp'>('all');
   const [copied, setCopied] = useState('');
-  const visibleGuests = guests.filter((guest) => (filter === 'all' || guest.rsvp === filter) && `${guest.name} ${guest.phone} ${guest.token}`.toLowerCase().includes(query.trim().toLowerCase()));
+  const visibleGuests = guests.filter((guest) => (filter === 'all' || guest.rsvp === filter || (filter === 'not-opened' && guest.openCount === 0) || (filter === 'opened-no-rsvp' && guest.openCount > 0 && guest.rsvp === 'pending')) && `${guest.name} ${guest.phone} ${guest.token}`.toLowerCase().includes(query.trim().toLowerCase()));
   const guestUrl = (token: string) => invitationUrl(window.location.origin, import.meta.env.BASE_URL, token);
   const sendWhatsApp = (guest: (typeof guests)[number]) => window.open(getWhatsAppShareUrl(context.type === 'wedding' ? 'wedding' : 'standard', context.name, guest.phone, guestUrl(guest.token)), '_blank', 'noopener,noreferrer');
   const copyInvitation = async (guest: (typeof guests)[number]) => {
-    await navigator.clipboard.writeText(guestUrl(guest.token));
+    const token = guest.token || await rotatePersonalInvitation(guest.id);
+    setTokens((current) => ({ ...current, [guest.id]: token }));
+    await navigator.clipboard.writeText(guestUrl(token));
     setCopied(guest.id);
   };
   const exportGuests = () => {
@@ -761,26 +873,32 @@ function GuestManager({ project }: { project?: ProjectSummary } = {}) {
   };
   return <div className="suite-card overflow-hidden p-6 sm:p-8">
     <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><Eyebrow>{t('guestList')} / {String(guests.length).padStart(2, '0')}</Eyebrow><h2 className="mt-2 break-words font-display text-4xl text-[#0A2E23]">{t('guestListTitle')}</h2><p className="mt-2 text-xs text-[#2D2421]/55">{storageAvailable ? t('localGuestData') : t('sessionOnlyData')}</p></div><Button variant="ivory" icon={ArrowDownToLine} onClick={exportGuests}>{t('catererExport')}</Button></div>
-    <div className="mt-6 grid gap-2 sm:grid-cols-[minmax(0,1fr)_180px]"><label className="sr-only" htmlFor="guest-search">{t('searchGuests')}</label><input id="guest-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('searchGuests')} className="focus-ring min-h-11 rounded-xl border border-[#D4AF37]/45 bg-[#FFFDF9] px-4 text-sm" /><label className="sr-only" htmlFor="guest-response-filter">{t('response')}</label><select id="guest-response-filter" value={filter} onChange={(event) => setFilter(event.target.value as RSVPStatus | 'all')} className="focus-ring min-h-11 rounded-xl border border-[#D4AF37]/45 bg-[#FFFDF9] px-4 text-sm"><option value="all">{t('allResponses')}</option><option value="pending">{t('pending')}</option><option value="accepted">{t('accepted')}</option><option value="declined">{t('declined')}</option></select></div>
+    {auth.session && <div className="mt-6 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_100px_auto]"><input value={guestName} onChange={(event) => setGuestName(event.target.value)} placeholder={t('guest')} className="min-h-11 rounded-xl border px-3" /><input value={guestPhone} onChange={(event) => setGuestPhone(event.target.value)} placeholder={t('missingPhone')} className="min-h-11 rounded-xl border px-3" /><input type="number" min="0" max="50" value={companions} onChange={(event) => setCompanions(Number(event.target.value))} className="min-h-11 rounded-xl border px-3" /><Button disabled={!guestName.trim()} onClick={() => void createGuest(context.id, guestName, guestPhone, companions).then((result) => { setTokens((current) => ({ ...current, [result.guest.id]: result.token })); setGuestName(''); setGuestPhone(''); setCompanions(0); return refreshGuests(); })}>{t('createEvent')}</Button></div>}
+    <div className="mt-6 grid gap-2 sm:grid-cols-[minmax(0,1fr)_180px]"><label className="sr-only" htmlFor="guest-search">{t('searchGuests')}</label><input id="guest-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('searchGuests')} className="focus-ring min-h-11 rounded-xl border border-[#D4AF37]/45 bg-[#FFFDF9] px-4 text-sm" /><label className="sr-only" htmlFor="guest-response-filter">{t('response')}</label><select id="guest-response-filter" value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)} className="focus-ring min-h-11 rounded-xl border border-[#D4AF37]/45 bg-[#FFFDF9] px-4 text-sm"><option value="all">{t('allResponses')}</option><option value="not-opened">Not opened</option><option value="opened-no-rsvp">Opened — No RSVP</option><option value="pending">{t('pending')}</option><option value="accepted">{t('accepted')}</option><option value="declined">{t('declined')}</option></select></div>
     {visibleGuests.length === 0 ? <div className="mt-6 rounded-2xl border border-dashed border-[#D4AF37]/45 p-8 text-center text-sm text-[#2D2421]/55">{t('noGuests')}</div> : <div className="mt-6 grid gap-3">{visibleGuests.map((guest) => {
       const responseClass = guest.rsvp === 'accepted' ? 'bg-[#0A2E23]/10 text-[#0A2E23]' : 'bg-[#D4AF37]/15 text-[#8A6712]';
-      return <article key={guest.id} className="rounded-2xl border border-[#D4AF37]/35 bg-[#FFFDF9]/45 p-4"><div className="flex flex-wrap items-center gap-3"><InitialsAvatar /><div className="min-w-0 flex-1"><p className="break-words text-sm font-semibold text-[#0A2E23]">{guest.name}</p><p className="break-all text-[10px] text-[#2D2421]/50"><bdi>{guest.phone || t('missingPhone')} · {guest.token}</bdi></p></div><span className={`rounded-full px-2 py-1 text-[9px] font-bold uppercase ${responseClass}`}>{t(guest.rsvp)}</span>{guest.checkedIn && <span className="rounded-full bg-[#0A2E23] px-2 py-1 text-[9px] font-bold text-white">{t('checkedIn')}</span>}</div><div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[#D4AF37]/25 pt-4"><p className="me-auto text-xs text-[#2D2421]/65">{guest.guestCount || 1} {t('guest')} · +{guest.allowedCompanions}</p><button onClick={() => void copyInvitation(guest)} className="focus-ring min-h-11 rounded-full border border-[#D4AF37]/60 px-3 text-[10px] font-bold uppercase text-[#0A2E23]">{copied === guest.id ? t('linkCopied') : t('copyLink')}</button><Link href={`/i/${encodeURIComponent(guest.token)}`} target="_blank" className="focus-ring inline-flex min-h-11 items-center rounded-full border border-[#D4AF37]/60 px-3 text-[10px] font-bold uppercase text-[#0A2E23]">{t('openInvitation')}</Link><button onClick={() => sendWhatsApp(guest)} className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-full border border-[#D4AF37]/60 px-3 text-[10px] font-bold uppercase text-[#0A2E23]"><MessageCircle size={14} /> WhatsApp</button></div></article>;
+      return <article key={guest.id} className="rounded-2xl border border-[#D4AF37]/35 bg-[#FFFDF9]/45 p-4"><div className="flex flex-wrap items-center gap-3"><InitialsAvatar /><div className="min-w-0 flex-1">{auth.session ? <input defaultValue={guest.name} onBlur={(event) => { if (event.target.value.trim() && event.target.value !== guest.name) void updateGuest(guest.id, { name: event.target.value.trim() }).then(refreshGuests); }} className="min-h-9 w-full rounded-lg border px-2 text-sm font-semibold text-[#0A2E23]" /> : <p className="break-words text-sm font-semibold text-[#0A2E23]">{guest.name}</p>}<p className="break-all text-[10px] text-[#2D2421]/50"><bdi>{guest.phone || t('missingPhone')} · {guest.openCount > 0 && guest.rsvp === 'pending' ? 'Opened — No RSVP' : guest.openCount > 0 ? `Opened ${guest.openCount}` : 'Not opened'}</bdi></p></div><span className={`rounded-full px-2 py-1 text-[9px] font-bold uppercase ${responseClass}`}>{t(guest.rsvp)}</span></div><div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[#D4AF37]/25 pt-4"><p className="me-auto text-xs text-[#2D2421]/65">{guest.guestCount || 1} {t('guest')} · +{guest.allowedCompanions}</p>{auth.session && <input type="number" min="0" max="50" defaultValue={guest.allowedCompanions} onBlur={(event) => { const value = Number(event.target.value); if (value !== guest.allowedCompanions) void updateGuest(guest.id, { allowed_companions: value }).then(refreshGuests); }} className="min-h-10 w-16 rounded-xl border px-2 text-xs" />}<button onClick={() => void copyInvitation(guest)} className="focus-ring min-h-11 rounded-full border border-[#D4AF37]/60 px-3 text-[10px] font-bold uppercase text-[#0A2E23]">{copied === guest.id ? t('linkCopied') : t('copyLink')}</button>{auth.session && <><input value={tagNames[guest.id] ?? ''} onChange={(event) => setTagNames({ ...tagNames, [guest.id]: event.target.value })} placeholder="Tag" className="min-h-10 w-24 rounded-xl border px-2 text-xs" /><button disabled={!tagNames[guest.id]?.trim()} onClick={() => void tagGuest(context.id, guest.id, tagNames[guest.id]).then(() => setTagNames({ ...tagNames, [guest.id]: '' }))} className="min-h-10 rounded-full border px-3 text-xs">Tag</button></>}{guest.message && <span className="text-xs text-[#2D2421]/65">{guest.message}</span>}</div></article>;
     })}</div>}
   </div>;
 }
 
 function SendPage({ project }: { project: ProjectSummary }) {
   const { state } = useEngine();
+  const auth = useAuth();
   const { t } = useAppLocale();
-  const guests = guestsForProject(state.operations, projectKey(project.type, project.id));
+  const [backendGuests, setBackendGuests] = useState<EventGuest[]>([]);
+  const [tokens, setTokens] = useState<Record<string, string>>({});
+  useEffect(() => { if (auth.session) void listGuests(project.id).then(setBackendGuests); }, [auth.session, project.id]);
+  const guests = auth.session ? backendGuests.map((guest) => ({ id: guest.id, name: guest.name, phone: guest.phone ?? '', token: tokens[guest.id] ?? '', allowedCompanions: guest.allowed_companions, invitationVariantOverride: guest.invitation_variant_override ?? undefined, rsvp: guest.rsvp_status, guestCount: guest.confirmed_party_size, message: guest.custom_message ?? '', checkedIn: false })) : guestsForProject(state.operations, projectKey(project.type, project.id));
   const [selectedId, setSelectedId] = useState(guests[0]?.id ?? '');
   const [status, setStatus] = useState('');
   const guest = guests.find((item) => item.id === selectedId) ?? guests[0];
-  const url = guest ? invitationUrl(window.location.origin, import.meta.env.BASE_URL, guest.token) : '';
-  const copy = async () => { if (!url) return; await navigator.clipboard.writeText(url); setStatus(t('linkCopied')); };
-  const openInvitation = () => { if (!url) return; window.open(url, '_blank', 'noopener,noreferrer'); setStatus(t('invitationOpened')); };
-  const openWhatsApp = () => { if (!guest) return; window.open(getWhatsAppShareUrl(project.type === 'wedding' ? 'wedding' : 'standard', project.name, guest.phone, url), '_blank', 'noopener,noreferrer'); setStatus(t('whatsappOpened')); };
-  return <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]"><section className="rounded-3xl border border-[#D9D2C5] bg-white p-6 sm:p-8"><Eyebrow>{t('send')}</Eyebrow><h1 className="mt-2 text-3xl font-semibold tracking-[-.04em]">{t('sendTitle')}</h1><p className="mt-3 max-w-xl text-sm leading-6 text-[#756F66]">{t('sendLocalHelp')}</p>{guests.length ? <div className="mt-7"><label className="text-xs font-semibold" htmlFor="send-recipient">{t('recipient')}</label><select id="send-recipient" value={guest?.id} onChange={(event) => { setSelectedId(event.target.value); setStatus(''); }} className="focus-ring mt-2 min-h-12 w-full rounded-xl border border-[#D9D2C5] px-4">{guests.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.phone || t('missingPhone')}</option>)}</select><div className="mt-4 rounded-2xl bg-[#F5F2EC] p-4"><p className="text-xs text-[#756F66]">{t('personalLink')}</p><p className="mt-2 break-all font-mono text-xs" dir="ltr">{url}</p></div><div className="mt-5 flex flex-wrap gap-2"><Button onClick={() => void copy()}>{t('copyLink')}</Button><Button variant="ivory" icon={ExternalLink} onClick={openInvitation}>{t('openInvitation')}</Button><Button variant="ivory" icon={MessageCircle} onClick={openWhatsApp}>{t('prepareWhatsApp')}</Button></div>{status && <p className="mt-4 text-xs font-semibold text-[#0A2E23]" role="status">{status}</p>}</div> : <p className="mt-7 rounded-2xl border border-dashed border-[#D9D2C5] p-6 text-sm text-[#756F66]">{t('noGuests')}</p>}</section><aside className="rounded-3xl border border-[#D9D2C5] bg-[#0C2D24] p-6 text-white"><QrCode className="text-[#D4B363]" /><h2 className="mt-5 text-xl font-semibold">{t('preparedNotDelivered')}</h2><p className="mt-3 text-sm leading-6 text-white/60">{t('sendBoundary')}</p><Link href={buildProjectRoute(project.type, project.id, 'invitation')} className="focus-ring mt-6 inline-flex min-h-11 items-center rounded-full border border-white/20 px-4 text-xs font-semibold">{t('preview')}</Link></aside></div>;
+  const ensureUrl = async () => { if (!guest) return ''; const token = guest.token || await rotatePersonalInvitation(guest.id); setTokens((current) => ({ ...current, [guest.id]: token })); return invitationUrl(window.location.origin, import.meta.env.BASE_URL, token); };
+  const copy = async () => { const url = await ensureUrl(); if (!url) return; await navigator.clipboard.writeText(url); setStatus(t('linkCopied')); };
+  const openInvitation = async () => { const url = await ensureUrl(); if (!url) return; window.open(url, '_blank', 'noopener,noreferrer'); setStatus(t('invitationOpened')); };
+  const openWhatsApp = async () => { const url = await ensureUrl(); if (!guest || !url) return; window.open(getWhatsAppShareUrl(project.type === 'wedding' ? 'wedding' : 'standard', project.name, guest.phone, url), '_blank', 'noopener,noreferrer'); setStatus(t('whatsappOpened')); };
+  const copyGeneral = async () => { const token = await createGeneralInvitation(project.id); await navigator.clipboard.writeText(invitationUrl(window.location.origin, import.meta.env.BASE_URL, token)); setStatus(t('linkCopied')); };
+  return <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]"><section className="rounded-3xl border border-[#D9D2C5] bg-white p-6 sm:p-8"><Eyebrow>{t('send')}</Eyebrow><h1 className="mt-2 text-3xl font-semibold tracking-[-.04em]">{t('sendTitle')}</h1><p className="mt-3 max-w-xl text-sm leading-6 text-[#756F66]">{t('sendLocalHelp')}</p>{guests.length ? <div className="mt-7"><label className="text-xs font-semibold" htmlFor="send-recipient">{t('recipient')}</label><select id="send-recipient" value={guest?.id} onChange={(event) => { setSelectedId(event.target.value); setStatus(''); }} className="focus-ring mt-2 min-h-12 w-full rounded-xl border border-[#D9D2C5] px-4">{guests.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.phone || t('missingPhone')}</option>)}</select><div className="mt-5 flex flex-wrap gap-2"><Button onClick={() => void copy()}>{t('copyLink')}</Button><Button variant="ivory" icon={ExternalLink} onClick={() => void openInvitation()}>{t('openInvitation')}</Button><Button variant="ivory" icon={MessageCircle} onClick={() => void openWhatsApp()}>{t('prepareWhatsApp')}</Button><Button variant="ivory" icon={Link2} onClick={() => void copyGeneral()}>General link</Button></div>{status && <p className="mt-4 text-xs font-semibold text-[#0A2E23]" role="status">{status}</p>}</div> : <div className="mt-7"><p className="rounded-2xl border border-dashed border-[#D9D2C5] p-6 text-sm text-[#756F66]">{t('noGuests')}</p><Button className="mt-3" variant="ivory" icon={Link2} onClick={() => void copyGeneral()}>General link</Button></div>}</section><aside className="rounded-3xl border border-[#D9D2C5] bg-[#0C2D24] p-6 text-white"><QrCode className="text-[#D4B363]" /><h2 className="mt-5 text-xl font-semibold">{t('preparedNotDelivered')}</h2><p className="mt-3 text-sm leading-6 text-white/60">{t('sendBoundary')}</p><Link href={buildProjectRoute(project.type, project.id, 'invitation')} className="focus-ring mt-6 inline-flex min-h-11 items-center rounded-full border border-white/20 px-4 text-xs font-semibold">{t('preview')}</Link></aside></div>;
 }
 
 function ScannerPage({ project }: { project?: ProjectSummary }) {
@@ -824,12 +942,14 @@ function partyProjectSummary(event: PartyEventData): ProjectSummary {
   return { id: partyProject.id, type: 'party', name: event.title, date: formatPartyDate(event.date, 'en'), venue: [event.venue, event.city].filter(Boolean).join(', ') };
 }
 
+function backendProjectSummary(event: BackendEvent): ProjectSummary & { lifecycleStatus: string } {
+  return { id: event.id, type: event.product_id, name: event.title, date: event.starts_at ?? '', venue: [event.venue_name, event.city].filter(Boolean).join(', '), lifecycleStatus: event.lifecycle_status };
+}
+
 function DashboardRoute() {
-  const { projects } = useWeddingWorkspace();
-  const { state } = useEngine();
   const auth = useAuth();
   return <DashboardPage
-    projects={[...projects.map(weddingProjectSummary), partyProjectSummary(state.partyEvent)]}
+    projects={auth.events.filter((event) => !event.deleted_at).map(backendProjectSummary)}
     account={{
       name: auth.client?.display_name ?? '',
       email: auth.session?.user.email ?? '',
@@ -838,18 +958,25 @@ function DashboardRoute() {
       access: Object.fromEntries(auth.entitlements.map((item) => [item.product_id, item.status])),
     }}
     onSignOut={() => void auth.signOut()}
+    onCreate={async (type, title) => { await createEvent({ productId: type, title }); await auth.refresh(); }}
+    onRename={async (id, title) => { await updateEvent(id, { title }); await auth.refresh(); }}
+    onArchive={async (id) => { await updateEvent(id, { lifecycle_status: 'archived' }); await auth.refresh(); }}
+    onDelete={async (id) => { await updateEvent(id, { deleted_at: new Date().toISOString() }); await auth.refresh(); }}
   />;
 }
 
 function ProjectRoutePage({ type }: { type: ProjectType }) {
   const { eventId, section: rawSection } = useParams<{ eventId: string; section: string }>();
-  const { state, ready, setMode, storageAvailable } = useEngine();
+  const { state, ready, setMode, storageAvailable, activePartyEventId, openPartyEvent } = useEngine();
+  const auth = useAuth();
   const workspace = useWeddingWorkspace();
   const { t } = useAppLocale();
   const weddingProject = type === 'wedding' ? workspace.projects.find((item) => item.id === eventId) : undefined;
   const project = type === 'wedding'
     ? weddingProject && weddingProjectSummary(weddingProject)
-    : eventId === partyProject.id ? partyProjectSummary(state.partyEvent) : undefined;
+    : auth.events.find((event) => event.id === eventId && event.product_id === 'party' && !event.deleted_at)
+      ? { ...backendProjectSummary(auth.events.find((event) => event.id === eventId)!), name: activePartyEventId === eventId ? state.partyEvent.title : auth.events.find((event) => event.id === eventId)!.title }
+      : undefined;
   const section = resolveProjectSection(type, rawSection);
 
   useEffect(() => {
@@ -857,11 +984,12 @@ function ProjectRoutePage({ type }: { type: ProjectType }) {
     const mode = type === 'wedding' ? 'wedding' : 'standard';
     if (state.mode !== mode) setMode(mode);
     if (weddingProject && workspace.activeProject.id !== weddingProject.id) void workspace.openProject(weddingProject.id).catch(() => undefined);
-  }, [project, ready, setMode, state.mode, type, weddingProject, workspace]);
+    if (type === 'party' && eventId !== activePartyEventId) openPartyEvent(eventId);
+  }, [activePartyEventId, eventId, openPartyEvent, project, ready, setMode, state.mode, type, weddingProject, workspace]);
 
   if (!ready) return <LoadingPage />;
   if (!project) return <NotFoundPage />;
-  if (weddingProject && workspace.activeProject.id !== weddingProject.id) return <LoadingPage />;
+  if ((weddingProject && workspace.activeProject.id !== weddingProject.id) || (type === 'party' && activePartyEventId !== eventId)) return <LoadingPage />;
 
   let content: ReactNode;
   const guests = guestsForProject(state.operations, projectKey(project.type, project.id));
