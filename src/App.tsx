@@ -47,7 +47,7 @@ import { defaultPartyEvent, formatPartyDate, mergePartyEvent, partyTemplates, ty
 import { createGeneralInvitation, createGuest, listEventConfigs, listGuests, recordInvitationOpen, resolveInvitation, rotatePersonalInvitation, savePartyConfig, submitGeneralRsvp, submitPersonalRsvp, tagGuest, updateGuest } from '@/backend/phase2';
 import { createEvent, updateEvent } from '@/backend/events';
 import { loadAdminSnapshot, setAdminEntitlement, setTemplateActive, type AdminSnapshot } from '@/backend/phase3';
-import type { BackendEvent, EntitlementStatus, EventGuest, InvitationResolution, ProductId } from '@/backend/types';
+import type { BackendEvent, EntitlementStatus, EventGuest, EventLifecycle, InvitationResolution, ProductId } from '@/backend/types';
 import {
   emptyOperationalState,
   guestsCsv,
@@ -894,10 +894,11 @@ function SendPage({ project }: { project: ProjectSummary }) {
   const guest = guests.find((item) => item.id === selectedId) ?? guests[0];
   const ensureUrl = async () => { if (!guest) return ''; const token = guest.token || await rotatePersonalInvitation(guest.id); setTokens((current) => ({ ...current, [guest.id]: token })); return invitationUrl(window.location.origin, import.meta.env.BASE_URL, token); };
   const copy = async () => { const url = await ensureUrl(); if (!url) return; await navigator.clipboard.writeText(url); setStatus(t('linkCopied')); };
-  const openInvitation = async () => { const url = await ensureUrl(); if (!url) return; window.open(url, '_blank', 'noopener,noreferrer'); setStatus(t('invitationOpened')); };
+  const openInvitation = async () => { const url = await ensureUrl(); if (!url) return; if (!window.open(url, '_blank', 'noopener,noreferrer')) window.location.assign(url); setStatus(t('invitationOpened')); };
   const openWhatsApp = async () => { const url = await ensureUrl(); if (!guest || !url) return; window.open(getWhatsAppShareUrl(project.type === 'wedding' ? 'wedding' : 'standard', project.name, guest.phone, url), '_blank', 'noopener,noreferrer'); setStatus(t('whatsappOpened')); };
   const copyGeneral = async () => { const token = await createGeneralInvitation(project.id); await navigator.clipboard.writeText(invitationUrl(window.location.origin, import.meta.env.BASE_URL, token)); setStatus(t('linkCopied')); };
-  return <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]"><section className="rounded-3xl border border-[#D9D2C5] bg-white p-6 sm:p-8"><Eyebrow>{t('send')}</Eyebrow><h1 className="mt-2 text-3xl font-semibold tracking-[-.04em]">{t('sendTitle')}</h1><p className="mt-3 max-w-xl text-sm leading-6 text-[#756F66]">{t('sendLocalHelp')}</p>{guests.length ? <div className="mt-7"><label className="text-xs font-semibold" htmlFor="send-recipient">{t('recipient')}</label><select id="send-recipient" value={guest?.id} onChange={(event) => { setSelectedId(event.target.value); setStatus(''); }} className="focus-ring mt-2 min-h-12 w-full rounded-xl border border-[#D9D2C5] px-4">{guests.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.phone || t('missingPhone')}</option>)}</select><div className="mt-5 flex flex-wrap gap-2"><Button onClick={() => void copy()}>{t('copyLink')}</Button><Button variant="ivory" icon={ExternalLink} onClick={() => void openInvitation()}>{t('openInvitation')}</Button><Button variant="ivory" icon={MessageCircle} onClick={() => void openWhatsApp()}>{t('prepareWhatsApp')}</Button><Button variant="ivory" icon={Link2} onClick={() => void copyGeneral()}>General link</Button></div>{status && <p className="mt-4 text-xs font-semibold text-[#0A2E23]" role="status">{status}</p>}</div> : <div className="mt-7"><p className="rounded-2xl border border-dashed border-[#D9D2C5] p-6 text-sm text-[#756F66]">{t('noGuests')}</p><Button className="mt-3" variant="ivory" icon={Link2} onClick={() => void copyGeneral()}>General link</Button></div>}</section><aside className="rounded-3xl border border-[#D9D2C5] bg-[#0C2D24] p-6 text-white"><QrCode className="text-[#D4B363]" /><h2 className="mt-5 text-xl font-semibold">{t('preparedNotDelivered')}</h2><p className="mt-3 text-sm leading-6 text-white/60">{t('sendBoundary')}</p><Link href={buildProjectRoute(project.type, project.id, 'invitation')} className="focus-ring mt-6 inline-flex min-h-11 items-center rounded-full border border-white/20 px-4 text-xs font-semibold">{t('preview')}</Link></aside></div>;
+  const openGeneral = async () => { const token = await createGeneralInvitation(project.id); const url = invitationUrl(window.location.origin, import.meta.env.BASE_URL, token); if (!window.open(url, '_blank', 'noopener,noreferrer')) window.location.assign(url); };
+  return <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]"><section className="rounded-3xl border border-[#D9D2C5] bg-white p-6 sm:p-8"><Eyebrow>{t('send')}</Eyebrow><h1 className="mt-2 text-3xl font-semibold tracking-[-.04em]">{t('sendTitle')}</h1><p className="mt-3 max-w-xl text-sm leading-6 text-[#756F66]">{t('sendLocalHelp')}</p>{guests.length ? <div className="mt-7"><label className="text-xs font-semibold" htmlFor="send-recipient">{t('recipient')}</label><select id="send-recipient" value={guest?.id} onChange={(event) => { setSelectedId(event.target.value); setStatus(''); }} className="focus-ring mt-2 min-h-12 w-full rounded-xl border border-[#D9D2C5] px-4">{guests.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.phone || t('missingPhone')}</option>)}</select><div className="mt-5 flex flex-wrap gap-2"><Button onClick={() => void copy()}>{t('copyLink')}</Button><Button variant="ivory" icon={ExternalLink} onClick={() => void openInvitation()}>{t('openInvitation')}</Button><Button variant="ivory" icon={MessageCircle} onClick={() => void openWhatsApp()}>{t('prepareWhatsApp')}</Button><Button variant="ivory" icon={Link2} onClick={() => void copyGeneral()}>General link</Button><Button variant="ivory" icon={ExternalLink} onClick={() => void openGeneral()}>{t('openGeneralInvitation')}</Button></div>{status && <p className="mt-4 text-xs font-semibold text-[#0A2E23]" role="status">{status}</p>}</div> : <div className="mt-7"><p className="rounded-2xl border border-dashed border-[#D9D2C5] p-6 text-sm text-[#756F66]">{t('noGuests')}</p><div className="mt-3 flex flex-wrap gap-2"><Button variant="ivory" icon={Link2} onClick={() => void copyGeneral()}>General link</Button><Button variant="ivory" icon={ExternalLink} onClick={() => void openGeneral()}>{t('openGeneralInvitation')}</Button></div></div>}</section><aside className="rounded-3xl border border-[#D9D2C5] bg-[#0C2D24] p-6 text-white"><QrCode className="text-[#D4B363]" /><h2 className="mt-5 text-xl font-semibold">{t('preparedNotDelivered')}</h2><p className="mt-3 text-sm leading-6 text-white/60">{t('sendBoundary')}</p><Link href={buildProjectRoute(project.type, project.id, 'invitation')} className="focus-ring mt-6 inline-flex min-h-11 items-center rounded-full border border-white/20 px-4 text-xs font-semibold">{t('preview')}</Link></aside></div>;
 }
 
 function weddingProjectSummary(project: WeddingProject): ProjectSummary {
@@ -943,11 +944,12 @@ function ProjectRoutePage({ type }: { type: ProjectType }) {
   const auth = useAuth();
   const workspace = useWeddingWorkspace();
   const { t } = useAppLocale();
+  const backendEvent = auth.events.find((event) => event.id === eventId && event.product_id === type && !event.deleted_at);
   const weddingProject = type === 'wedding' ? workspace.projects.find((item) => item.id === eventId) : undefined;
   const project = type === 'wedding'
     ? weddingProject && weddingProjectSummary(weddingProject)
-    : auth.events.find((event) => event.id === eventId && event.product_id === 'party' && !event.deleted_at)
-      ? { ...backendProjectSummary(auth.events.find((event) => event.id === eventId)!), name: activePartyEventId === eventId ? state.partyEvent.title : auth.events.find((event) => event.id === eventId)!.title }
+    : backendEvent
+      ? { ...backendProjectSummary(backendEvent), name: activePartyEventId === eventId ? state.partyEvent.title : backendEvent.title }
       : undefined;
   const section = resolveProjectSection(type, rawSection);
 
@@ -970,9 +972,18 @@ function ProjectRoutePage({ type }: { type: ProjectType }) {
   else if (section === 'guests') content = <BackendGuestManager project={project} />;
   else if (section === 'scanner') content = <BackendScanner project={project} />;
   else if (section === 'send') content = <SendPage project={project} />;
-  else content = <div className="space-y-4"><EmptyProjectSection title={t('settingsTitle')}>{t('settingsHelp')}</EmptyProjectSection><section className="mx-auto max-w-2xl rounded-3xl border border-[#D9D2C5] bg-white p-7"><h2 className="font-semibold">{t('appLanguage')}</h2><p className="mt-2 text-sm text-[#756F66]">{t('appLanguageHelp')}</p><div className="mt-4"><AppLanguageControl /></div></section></div>;
+  else content = <div className="space-y-4"><EmptyProjectSection title={t('settingsTitle')}>{t('settingsHelp')}</EmptyProjectSection>{backendEvent && <EventLifecycleControl event={backendEvent} onSave={async (lifecycle_status) => { await updateEvent(backendEvent.id, { lifecycle_status }); await auth.refresh(); }} />}<section className="mx-auto max-w-2xl rounded-3xl border border-[#D9D2C5] bg-white p-7"><h2 className="font-semibold">{t('appLanguage')}</h2><p className="mt-2 text-sm text-[#756F66]">{t('appLanguageHelp')}</p><div className="mt-4"><AppLanguageControl /></div></section></div>;
 
   return <ProjectShell project={project} section={section}>{!storageAvailable && <p className="mb-4 rounded-2xl border border-[#A98219]/35 bg-[#FFF8E5] p-4 text-sm text-[#6B5518]" role="status">{t('sessionOnlyData')}</p>}{content}</ProjectShell>;
+}
+
+function EventLifecycleControl({ event, onSave }: { event: BackendEvent; onSave: (status: EventLifecycle) => Promise<void> }) {
+  const { t } = useAppLocale();
+  const [status, setStatus] = useState(event.lifecycle_status);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(false);
+  const labels = { planning: 'lifecyclePlanning', active: 'lifecycleActive', ended: 'lifecycleEnded', archived: 'lifecycleArchived', cancelled: 'lifecycleCancelled' } as const;
+  return <section className="mx-auto max-w-2xl rounded-3xl border border-[#D9D2C5] bg-white p-7"><h2 className="font-semibold">{t('eventStatus')}</h2><div className="mt-4 flex flex-col gap-3 sm:flex-row"><select aria-label={t('eventStatus')} value={status} onChange={(change) => setStatus(change.target.value as EventLifecycle)} className="min-h-11 flex-1 rounded-xl border border-[#D9D2C5] px-3">{Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</select><button disabled={busy || status === event.lifecycle_status} onClick={() => { setBusy(true); setError(false); void onSave(status).catch(() => setError(true)).finally(() => setBusy(false)); }} className="min-h-11 rounded-xl bg-[#0C2D24] px-5 text-xs font-bold text-white disabled:opacity-40">{t('saveChanges')}</button></div>{error && <p className="mt-3 text-sm text-[#8c302b]" role="alert">{t('operationFailed')}</p>}</section>;
 }
 
 function WeddingProjectRoute() { return <ProjectRoutePage type="wedding" />; }

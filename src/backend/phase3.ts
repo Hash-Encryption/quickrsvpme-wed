@@ -1,9 +1,9 @@
 import { toBackendError } from './errors';
 import { getSupabase } from './supabase';
-import { checkinStatus, extractScanToken, type CheckinStatus } from './phase3-model';
+import { checkinStatus, extractScanToken, scannerCameraFailure, type CheckinStatus } from './phase3-model';
 import type { BackendEvent, ClientAccount, ClientEntitlement, EntitlementStatus, EventGuest, ProductId } from './types';
 
-export { checkinStatus, extractScanToken, type CheckinStatus };
+export { checkinStatus, extractScanToken, scannerCameraFailure, type CheckinStatus };
 export type CheckinFailureStatus = 'invalid' | 'not_authorized' | 'wrong_event' | 'planning' | 'ended' | 'archived' | 'cancelled' | 'soft_deleted' | 'subscription_unavailable';
 export type CheckinResolution = {
   status: CheckinStatus | CheckinFailureStatus;

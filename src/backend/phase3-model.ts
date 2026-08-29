@@ -16,3 +16,8 @@ export function extractScanToken(value: string): string {
     return clean;
   }
 }
+
+export function scannerCameraFailure(error: unknown): 'permission' | 'unavailable' {
+  const name = error instanceof DOMException ? error.name : '';
+  return name === 'NotAllowedError' || name === 'SecurityError' ? 'permission' : 'unavailable';
+}
