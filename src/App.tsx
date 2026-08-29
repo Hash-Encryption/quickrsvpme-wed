@@ -19,9 +19,10 @@ import { WeddingInvitationRenderer, WeddingStudio } from '@/wedding/WeddingMode'
 import { WeddingWorkspaceProvider, useWeddingWorkspace } from '@/wedding/WeddingWorkspaceProvider';
 import { requestAnonymousWeddingTransfer } from '@/wedding/anonymous-transfer';
 import type { WeddingProject } from '@/wedding/workspace';
-import { AdminPage, type AdminEventRecord } from '@/admin/AdminPage';
+import { AdminPage } from '@/admin/AdminPage';
 import { DashboardPage } from '@/app/DashboardPage';
-import { EmptyProjectSection, ProjectOverview, ProjectShell } from '@/app/ProjectShell';
+import { EmptyProjectSection, ProjectShell } from '@/app/ProjectShell';
+import { BackendGuestManager, BackendScanner, EventOperationsOverview } from '@/app/Phase3Operations';
 import {
   buildProjectRoute,
   legacyProjectRoute,
@@ -45,9 +46,9 @@ import {
 import { defaultPartyEvent, formatPartyDate, mergePartyEvent, partyTemplates, type PartyEventData } from '@/party/model';
 import { createGeneralInvitation, createGuest, listEventConfigs, listGuests, recordInvitationOpen, resolveInvitation, rotatePersonalInvitation, savePartyConfig, submitGeneralRsvp, submitPersonalRsvp, tagGuest, updateGuest } from '@/backend/phase2';
 import { createEvent, updateEvent } from '@/backend/events';
-import type { BackendEvent, EventGuest, InvitationResolution } from '@/backend/types';
+import { loadAdminSnapshot, setAdminEntitlement, setTemplateActive, type AdminSnapshot } from '@/backend/phase3';
+import type { BackendEvent, EntitlementStatus, EventGuest, InvitationResolution, ProductId } from '@/backend/types';
 import {
-  checkInOperationalGuest,
   emptyOperationalState,
   guestsCsv,
   guestsForProject,
@@ -55,10 +56,8 @@ import {
   normalizeOperationalState,
   operationalStats,
   projectKey,
-  scanProjectGuest,
   updateOperationalGuestByToken,
   type OperationalState,
-  type ScannerState,
 } from '@/app/operations';
 
 type RSVPStatus = 'pending' | 'accepted' | 'declined';
@@ -116,7 +115,6 @@ type EngineContextValue = {
   setInvitationLocale: (locale: InvitationLocale) => void;
   updatePartyEvent: (patch: Partial<PartyEventData>) => void;
   submitWeddingRsvp: (response: WeddingRsvp) => void;
-  checkInGuest: (key: string, guestId: string) => void;
   activePartyEventId: string;
   openPartyEvent: (id: string) => void;
   loadPublicInvitation: (resolution: InvitationResolution, token: string, generalName?: string) => void;
@@ -249,7 +247,6 @@ function EngineProvider({ children }: { children: ReactNode }) {
       if (publicInvitation) await commitPublicRsvp(response.status, response.guestCount, response.message);
       setState((s) => ({ ...s, rsvp: response.status, plusOnes: Math.max(0, response.guestCount - 1), weddingResponse: { guestCount: response.guestCount, message: response.message }, operations: publicInvitation ? s.operations : updateOperationalGuestByToken(s.operations, projectKey('wedding', activeProject.id), s.weddingGuest.token, { rsvp: response.status, guestCount: response.guestCount, message: response.message }) }));
     },
-    checkInGuest: (key: string, guestId: string) => setState((s) => ({ ...s, operations: checkInOperationalGuest(s.operations, key, guestId) })),
     activePartyEventId,
     openPartyEvent: setActivePartyEventId,
     loadPublicInvitation: (resolution: InvitationResolution, token: string, generalName = '') => {
@@ -903,33 +900,6 @@ function SendPage({ project }: { project: ProjectSummary }) {
   return <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]"><section className="rounded-3xl border border-[#D9D2C5] bg-white p-6 sm:p-8"><Eyebrow>{t('send')}</Eyebrow><h1 className="mt-2 text-3xl font-semibold tracking-[-.04em]">{t('sendTitle')}</h1><p className="mt-3 max-w-xl text-sm leading-6 text-[#756F66]">{t('sendLocalHelp')}</p>{guests.length ? <div className="mt-7"><label className="text-xs font-semibold" htmlFor="send-recipient">{t('recipient')}</label><select id="send-recipient" value={guest?.id} onChange={(event) => { setSelectedId(event.target.value); setStatus(''); }} className="focus-ring mt-2 min-h-12 w-full rounded-xl border border-[#D9D2C5] px-4">{guests.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.phone || t('missingPhone')}</option>)}</select><div className="mt-5 flex flex-wrap gap-2"><Button onClick={() => void copy()}>{t('copyLink')}</Button><Button variant="ivory" icon={ExternalLink} onClick={() => void openInvitation()}>{t('openInvitation')}</Button><Button variant="ivory" icon={MessageCircle} onClick={() => void openWhatsApp()}>{t('prepareWhatsApp')}</Button><Button variant="ivory" icon={Link2} onClick={() => void copyGeneral()}>General link</Button></div>{status && <p className="mt-4 text-xs font-semibold text-[#0A2E23]" role="status">{status}</p>}</div> : <div className="mt-7"><p className="rounded-2xl border border-dashed border-[#D9D2C5] p-6 text-sm text-[#756F66]">{t('noGuests')}</p><Button className="mt-3" variant="ivory" icon={Link2} onClick={() => void copyGeneral()}>General link</Button></div>}</section><aside className="rounded-3xl border border-[#D9D2C5] bg-[#0C2D24] p-6 text-white"><QrCode className="text-[#D4B363]" /><h2 className="mt-5 text-xl font-semibold">{t('preparedNotDelivered')}</h2><p className="mt-3 text-sm leading-6 text-white/60">{t('sendBoundary')}</p><Link href={buildProjectRoute(project.type, project.id, 'invitation')} className="focus-ring mt-6 inline-flex min-h-11 items-center rounded-full border border-white/20 px-4 text-xs font-semibold">{t('preview')}</Link></aside></div>;
 }
 
-function ScannerPage({ project }: { project?: ProjectSummary }) {
-  const { state, ready, checkInGuest } = useEngine();
-  const { activeProject } = useWeddingWorkspace();
-  const { t, dir } = useAppLocale();
-  const [token, setToken] = useState('');
-  const [scan, setScan] = useState<ScannerState>({ status: 'ready' });
-  const inputRef = useRef<HTMLInputElement>(null);
-  if (!ready) return <LoadingPage />;
-  const context = project ?? weddingProjectSummary(activeProject);
-  const key = projectKey(context.type, context.id);
-  const guests = guestsForProject(state.operations, key);
-  const verify = () => setScan(scanProjectGuest(state.operations, key, token));
-  const guest = scan.status === 'valid' || scan.status === 'already-checked-in' ? guests.find((item) => item.id === scan.guestId) : undefined;
-  const reset = () => { setToken(''); setScan({ status: 'ready' }); requestAnimationFrame(() => inputRef.current?.focus()); };
-  const checkIn = () => { if (!guest) return; checkInGuest(key, guest.id); setScan({ status: 'already-checked-in', guestId: guest.id }); };
-  const backRoute = buildProjectRoute(context.type, context.id, 'overview');
-  return <div className="grain min-h-[100dvh] bg-[#0A2E23] text-[#FFFDF9]">
-    <div className="gold-thread opacity-45" />
-    <header className="relative z-10 flex items-center justify-between px-5 py-6 sm:px-10"><Link href={backRoute} data-testid="link-scanner-back" className="focus-ring flex items-center gap-2 text-xs font-semibold text-white/70"><ArrowLeft className={dir === 'rtl' ? 'rotate-180' : ''} size={15} />{t('project')}</Link><div className="min-w-0 text-end"><p className="truncate text-sm font-semibold text-[#D4AF37]">{context.name}</p><p className="text-[9px] text-white/45"><bdi>{context.type} · {context.id}</bdi></p></div></header>
-    <main className="relative z-10 mx-auto max-w-2xl px-5 pb-16 pt-3 sm:pt-16"><FadeIn><div className="text-center"><Eyebrow>{t('scanner')}</Eyebrow><h1 className="mt-3 font-display text-5xl leading-[.9] text-white sm:mt-4 sm:text-7xl">{t('scannerTitle')}</h1><p className="mx-auto mt-3 max-w-sm text-xs text-white/60 sm:mt-5 sm:text-sm">{t('scannerHelp')} <bdi>{context.date} · {context.venue}</bdi></p></div></FadeIn>
-      <div className="relative mx-auto mt-6 aspect-[2.2] max-w-lg overflow-hidden rounded-[24px] border border-[#D4AF37]/70 bg-[#071f18] sm:mt-12 sm:aspect-[1.2] sm:rounded-[30px]"><div className="absolute inset-4 rounded-2xl border border-[#D4AF37]/80 sm:inset-5" /><QrCode size={54} strokeWidth={.55} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-white/20 sm:h-[72px] sm:w-[72px]" /></div>
-      <div className="mx-auto mt-5 max-w-lg sm:mt-8"><div className="flex flex-col gap-2 sm:flex-row"><label className="sr-only" htmlFor="scanner-token">{t('scannerPlaceholder')}</label><input id="scanner-token" ref={inputRef} value={token} onChange={(event) => { setToken(event.target.value); setScan({ status: 'ready' }); }} onKeyDown={(event) => event.key === 'Enter' && verify()} data-testid="input-scanner-token" placeholder={t('scannerPlaceholder')} dir="ltr" className="focus-ring min-h-14 min-w-0 flex-1 rounded-full border border-[#D4AF37]/50 bg-white/10 px-5 py-3 text-base text-white outline-none placeholder:text-white/35" /><Button className="min-h-14" variant="gold" icon={Search} onClick={verify}>{t('verify')}</Button></div><p className="mt-3 text-center text-[10px] leading-5 text-white/45">{t('scannerBoundary')}</p></div>
-      <div className="mx-auto mt-8 max-w-lg" aria-live="polite"><AnimatePresence mode="wait">{scan.status !== 'ready' && <motion.div key={scan.status} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className={`rounded-[28px] border p-6 ${guest ? 'border-[#D4AF37] bg-[#D4AF37]/10' : 'border-[#d58c78] bg-[#d58c78]/10'}`}>{guest ? <div><div className="flex items-start gap-4"><Check className="mt-1 shrink-0 text-[#D4AF37]" /><div className="min-w-0 flex-1"><Eyebrow>{scan.status === 'already-checked-in' ? t('alreadyCheckedIn') : t('verified')}</Eyebrow><h2 className="mt-2 break-words text-xl font-semibold">{guest.name}</h2><p className="mt-1 text-sm text-white/70">{t(guest.rsvp)} · {t('invitationFor')} {guest.guestCount || 1}</p></div></div><div className="mt-5 flex flex-col gap-2 sm:flex-row">{scan.status === 'valid' && <Button className="flex-1" variant="gold" icon={Check} onClick={checkIn}>{t('checkIn')}</Button>}<Button className="flex-1" variant="ivory" onClick={reset}>{t('scanNextGuest')}</Button></div></div> : <div><div className="flex items-center gap-4"><XCircle className="text-[#d58c78]" /><div><Eyebrow className="text-[#d58c78]">{t('notRecognized')}</Eyebrow><p className="mt-1 text-sm text-white/70">{t('tryAgain')}</p></div></div><Button className="mt-5 w-full" variant="ivory" onClick={reset}>{t('scanNextGuest')}</Button></div>}</motion.div>}</AnimatePresence></div>
-    </main>
-  </div>;
-}
-
 function weddingProjectSummary(project: WeddingProject): ProjectSummary {
   return {
     id: project.id,
@@ -994,13 +964,11 @@ function ProjectRoutePage({ type }: { type: ProjectType }) {
   if ((weddingProject && workspace.activeProject.id !== weddingProject.id) || (type === 'party' && activePartyEventId !== eventId)) return <LoadingPage />;
 
   let content: ReactNode;
-  const guests = guestsForProject(state.operations, projectKey(project.type, project.id));
-  const stats = operationalStats(guests);
   const deadline = type === 'wedding' ? weddingProject?.event.rsvpDeadline ?? '' : state.partyEvent.rsvpDeadline;
-  if (section === 'overview') content = <ProjectOverview project={project} stats={stats} rsvpDeadline={deadline} />;
+  if (section === 'overview') content = <EventOperationsOverview project={project} rsvpDeadline={deadline} />;
   else if (section === 'invitation') content = type === 'wedding' ? <WeddingStudioPage embedded /> : <PartyStudioPage embedded />;
-  else if (section === 'guests') content = <GuestManager project={project} />;
-  else if (section === 'scanner') content = <ScannerPage project={project} />;
+  else if (section === 'guests') content = <BackendGuestManager project={project} />;
+  else if (section === 'scanner') content = <BackendScanner project={project} />;
   else if (section === 'send') content = <SendPage project={project} />;
   else content = <div className="space-y-4"><EmptyProjectSection title={t('settingsTitle')}>{t('settingsHelp')}</EmptyProjectSection><section className="mx-auto max-w-2xl rounded-3xl border border-[#D9D2C5] bg-white p-7"><h2 className="font-semibold">{t('appLanguage')}</h2><p className="mt-2 text-sm text-[#756F66]">{t('appLanguageHelp')}</p><div className="mt-4"><AppLanguageControl /></div></section></div>;
 
@@ -1011,17 +979,19 @@ function WeddingProjectRoute() { return <ProjectRoutePage type="wedding" />; }
 function PartyProjectRoute() { return <ProjectRoutePage type="party" />; }
 function GuestRoute() { return <GuestPage />; }
 
+const emptyAdminSnapshot: AdminSnapshot = { clients: [], entitlements: [], events: [], guests: [], templates: [], assets: [], activity: [] };
+
 function AdminRoute() {
   const { section } = useParams<{ section?: string }>();
-  const workspace = useWeddingWorkspace();
-  const { state, storageAvailable } = useEngine();
-  const projects = [...workspace.projects.map(weddingProjectSummary), partyProjectSummary(state.partyEvent)];
-  const events: AdminEventRecord[] = projects.map((project) => {
-    const stats = operationalStats(guestsForProject(state.operations, projectKey(project.type, project.id)));
-    return { ...project, guests: stats.guests, checkedIn: stats.checkedIn };
-  });
-  const totalGuests = projects.flatMap((project) => guestsForProject(state.operations, projectKey(project.type, project.id)));
-  return <AdminPage section={resolveAdminSection(section)} events={events} summary={{ projects: projects.length, ...operationalStats(totalGuests) }} saveStatus={workspace.saveStatus} storageError={workspace.storageError} engineStorageAvailable={storageAvailable} />;
+  const { t } = useAppLocale();
+  const [snapshot, setSnapshot] = useState<AdminSnapshot>(emptyAdminSnapshot);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const refresh = async () => { setLoading(true); setError(''); try { setSnapshot(await loadAdminSnapshot()); } catch { setError(t('operationFailed')); } finally { setLoading(false); } };
+  useEffect(() => { void refresh(); }, []);
+  const entitlement = async (clientId: string, productId: ProductId, status: EntitlementStatus, endsAt: string | null) => { await setAdminEntitlement(clientId, productId, status, endsAt); await refresh(); };
+  const template = async (id: string, active: boolean) => { await setTemplateActive(id, active); await refresh(); };
+  return <AdminPage section={resolveAdminSection(section)} snapshot={snapshot} loading={loading} error={error} onRefresh={refresh} onEntitlement={entitlement} onTemplate={template} />;
 }
 
 function LegacyRedirect({ path }: { path: '/studio/wedding' | '/studio/party' | '/scanner' }) {

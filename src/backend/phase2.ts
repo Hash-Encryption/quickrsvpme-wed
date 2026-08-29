@@ -84,9 +84,9 @@ export async function savePartyConfig(eventId: string, configuration: Record<str
 }
 
 export async function listGuests(eventId: string): Promise<EventGuest[]> {
-  const { data, error } = await getSupabase().from('event_guests').select('id, event_id, source, name, phone, allowed_companions, invitation_variant_override, rsvp_status, confirmed_party_size, companion_names, custom_message, responded_at, personal_invitations(id, open_count, first_opened_at, last_opened_at, revoked_at)').eq('event_id', eventId).order('created_at');
+  const { data, error } = await getSupabase().from('event_guests').select('id, event_id, source, name, phone, allowed_companions, invitation_variant_override, rsvp_status, confirmed_party_size, companion_names, custom_message, responded_at, checked_in_count, first_checked_in_at, last_checkin_activity_at, personal_invitations(id, open_count, first_opened_at, last_opened_at, revoked_at), event_guest_tag_assignments(event_guest_tags(name))').eq('event_id', eventId).order('created_at');
   if (error) fail(error);
-  return (data ?? []) as EventGuest[];
+  return (data ?? []) as unknown as EventGuest[];
 }
 
 export async function createGuest(eventId: string, name: string, phone: string, allowedCompanions: number): Promise<{ guest: EventGuest; token: string }> {

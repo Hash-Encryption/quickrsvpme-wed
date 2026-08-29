@@ -1,5 +1,5 @@
 import {
-  CalendarDays, Home, LayoutTemplate, ListChecks, MessageCircle, QrCode,
+  Home, LayoutTemplate, MessageCircle, QrCode,
   Send, Settings, Shield, Users,
   type LucideIcon,
 } from 'lucide-react';
@@ -7,7 +7,6 @@ import { Link } from 'wouter';
 
 import { buildProjectRoute, projectSections, type ProjectSection, type ProjectSummary } from './projects';
 import { AppLanguageControl, useAppLocale } from '@/i18n/app-locale';
-import type { OperationalStats } from './operations';
 
 const icons: Record<ProjectSection, LucideIcon> = {
   overview: Home, invitation: LayoutTemplate, guests: Users, send: Send, scanner: QrCode, settings: Settings,
@@ -45,19 +44,6 @@ export function ProjectShell({ project, section, children }: { project: ProjectS
       return <Link key={item} href={buildProjectRoute(project.type, project.id, item)} aria-current={section === item ? 'page' : undefined} className={`focus-ring flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 px-1 text-[9px] font-semibold ${section === item ? 'text-[#0C2D24]' : 'text-[#756F66]'}`}><Icon size={19} /><span className="max-w-full truncate">{labels[item]}</span></Link>;
     })}</nav>
   </div>;
-}
-
-export function ProjectOverview({ project, stats, rsvpDeadline }: { project: ProjectSummary; stats: OperationalStats; rsvpDeadline: string }) {
-  const { t } = useAppLocale();
-  const items: [string, string, LucideIcon][] = [
-    [t('invitation'), t('localInvitationReady'), LayoutTemplate],
-    [t('guests'), String(stats.guests), Users],
-    [t('invitedSeats'), String(stats.invitedSeats), ListChecks],
-    [t('localCheckIns'), String(stats.checkedIn), QrCode],
-  ];
-  const responses = [[t('accepted'), stats.accepted], [t('declined'), stats.declined], [t('pending'), stats.pending]] as const;
-  const actions: [ProjectSection, string, LucideIcon][] = [['invitation', t('invitation'), LayoutTemplate], ['guests', t('guests'), Users], ['send', t('send'), Send], ['scanner', t('scanner'), QrCode]];
-  return <div><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs font-bold uppercase tracking-[.16em] text-[#8B7040]">{t('eventOverview')}</p><h1 className="mt-2 text-3xl font-semibold tracking-[-.04em] sm:text-5xl">{project.name}</h1></div><span className="w-fit rounded-full border border-[#D9D2C5] bg-white px-3 py-2 text-[10px] font-semibold text-[#756F66]">{t('localBrowserData')}</span></div><div className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{items.map(([label, value, Icon]) => <div key={label} className="rounded-2xl border border-[#D9D2C5] bg-white p-5"><Icon size={18} className="text-[#A4813C]" /><p className="mt-5 text-xs text-[#756F66]">{label}</p><p className="mt-1 font-semibold">{value}</p></div>)}</div><div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,.7fr)]"><section className="rounded-2xl border border-[#D9D2C5] bg-white p-5"><div className="flex items-start justify-between gap-4"><div><p className="text-xs text-[#756F66]">{t('eventOverview')}</p><p className="mt-1 font-semibold"><bdi>{project.date}</bdi></p><p className="text-sm text-[#756F66]"><bdi>{project.venue}</bdi></p>{rsvpDeadline && <p className="mt-3 text-xs text-[#756F66]">{t('rsvpDeadline')}: <bdi>{rsvpDeadline}</bdi></p>}</div><CalendarDays className="text-[#A4813C]" /></div><div className="mt-5 grid grid-cols-3 gap-2 border-t border-[#E8E2D8] pt-4">{responses.map(([label, value]) => <div key={label}><p className="text-[10px] text-[#756F66]">{label}</p><p className="mt-1 text-lg font-semibold">{value}</p></div>)}</div></section><section className="rounded-2xl border border-[#D9D2C5] bg-white p-5"><p className="text-xs font-semibold">{t('quickActions')}</p><div className="mt-4 grid grid-cols-2 gap-2">{actions.map(([section, label, Icon]) => <Link key={section} href={buildProjectRoute(project.type, project.id, section)} className="focus-ring flex min-h-12 items-center gap-2 rounded-xl border border-[#D9D2C5] px-3 text-xs font-semibold hover:border-[#A4813C]"><Icon size={15} className="text-[#A4813C]" />{label}</Link>)}</div></section></div></div>;
 }
 
 export function EmptyProjectSection({ title, children }: { title: string; children: React.ReactNode }) {
