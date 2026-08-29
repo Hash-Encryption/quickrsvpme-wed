@@ -5,6 +5,7 @@ import { signIn, signUp } from '@/backend/auth';
 import { toBackendError } from '@/backend/errors';
 import { AppLanguageControl, useAppLocale } from '@/i18n/app-locale';
 import { useAuth } from './AuthProvider';
+import { anonymousWeddingTransferKey, anonymousWeddingTransferResultKey, anonymousWeddingTransferredEvent } from '@/wedding/anonymous-transfer';
 
 export function AuthPage() {
   const auth = useAuth();
@@ -17,7 +18,19 @@ export function AuthPage() {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState('');
 
-  useEffect(() => { if (!auth.loading && auth.session) navigate('/', { replace: true }); }, [auth.loading, auth.session, navigate]);
+  useEffect(() => {
+    const finish = () => {
+      if (sessionStorage.getItem(anonymousWeddingTransferKey) === '1') return;
+      const eventId = sessionStorage.getItem(anonymousWeddingTransferResultKey);
+      if (eventId) {
+        sessionStorage.removeItem(anonymousWeddingTransferResultKey);
+        navigate(`/weddings/${eventId}/invitation`, { replace: true });
+      } else navigate('/', { replace: true });
+    };
+    if (!auth.loading && auth.session) finish();
+    window.addEventListener(anonymousWeddingTransferredEvent, finish);
+    return () => window.removeEventListener(anonymousWeddingTransferredEvent, finish);
+  }, [auth.loading, auth.session, navigate]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setSubmitting(true); setMessage('');

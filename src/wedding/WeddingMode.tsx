@@ -35,8 +35,12 @@ import {
   WeddingMotionPresets,
   canonicalWeddingSceneTimings,
   resolveWeddingPresentation,
+  resetWeddingLayoutTransforms,
+  defaultWeddingTransform,
+  selectWeddingLayoutPreset,
   type WeddingLayoutPreset,
   type WeddingMotionPreset,
+  type WeddingTransformBlockId,
 } from "./presentation";
 import { WeddingMotionLayer } from "./WeddingMotionLayer";
 import { WeddingSceneEngine } from "./WeddingSceneEngine";
@@ -70,6 +74,10 @@ type WeddingRendererProps = {
   preview?: boolean;
   readOnly?: boolean;
   onSubmit: (response: WeddingRsvp) => void | Promise<void>;
+  selectedBlock?: WeddingTransformBlockId;
+  onSelectBlock?: (id: WeddingTransformBlockId) => void;
+  onMoveBlock?: (id: WeddingTransformBlockId, x: number, y: number) => void;
+  onMoveGlobal?: (x: number, y: number) => void;
 };
 
 type WeddingStyleProperties = CSSProperties & {
@@ -93,6 +101,10 @@ export function WeddingInvitationRenderer({
   preview = false,
   readOnly = false,
   onSubmit,
+  selectedBlock,
+  onSelectBlock,
+  onMoveBlock,
+  onMoveGlobal,
 }: WeddingRendererProps) {
   const template =
     WeddingTemplateRegistry[event.templateId as WeddingVisualTemplateId] ??
@@ -153,6 +165,11 @@ export function WeddingInvitationRenderer({
           onOpenRsvp={() => setDrawerOpen(true)}
           readOnly={readOnly}
           locale={event.invitationLocale}
+          transforms={presentation.transforms}
+          selectedBlock={selectedBlock}
+          onSelectBlock={onSelectBlock}
+          onMoveBlock={onMoveBlock}
+          onMoveGlobal={onMoveGlobal}
         />
       )}
       overlay={
@@ -187,6 +204,11 @@ function WeddingInvitationSceneRenderer({
   onOpenRsvp,
   readOnly,
   locale,
+  transforms,
+  selectedBlock,
+  onSelectBlock,
+  onMoveBlock,
+  onMoveGlobal,
 }: {
   blocks: ReadonlyArray<WeddingSemanticBlock>;
   playback: {
@@ -204,6 +226,11 @@ function WeddingInvitationSceneRenderer({
   onOpenRsvp: () => void;
   readOnly: boolean;
   locale: InvitationLocale;
+  transforms: WeddingEventData["presentation"]["transforms"];
+  selectedBlock?: WeddingTransformBlockId;
+  onSelectBlock?: (id: WeddingTransformBlockId) => void;
+  onMoveBlock?: (id: WeddingTransformBlockId, x: number, y: number) => void;
+  onMoveGlobal?: (x: number, y: number) => void;
 }) {
   const direction = localeDirection(locale);
   const artworkMode = visual.source === "uploaded-background" ? visual.fitMode : "template";
@@ -238,6 +265,11 @@ function WeddingInvitationSceneRenderer({
           motionPreset={motionPreset}
           safeZone={safeZone}
           focalY={visual.source === "uploaded-background" ? visual.focalPoint.y : undefined}
+          transforms={transforms}
+          selectedBlock={selectedBlock}
+          onSelectBlock={onSelectBlock}
+          onMoveBlock={onMoveBlock}
+          onMoveGlobal={onMoveGlobal}
           renderBlock={(block) => (
             <WeddingSemanticBlockContent
               block={block}
@@ -568,6 +600,7 @@ export function WeddingStudio({
   const w = (key: Parameters<typeof weddingBuilderT>[1]) => weddingBuilderT(locale, key);
   const builderSteps = builderStepIds.map((id) => ({ id, label: w(id) }));
   const [stepIndex, setStepIndex] = useState(0);
+  const [selectedBlock, setSelectedBlock] = useState<WeddingTransformBlockId>("principals");
   const [transientVisual, setTransientVisual] = useState<WeddingEventData["visual"] | null>(null);
   const dragRef = useRef<{
     pointerId: number;
@@ -584,6 +617,8 @@ export function WeddingStudio({
   const updatePresentation = (
     patch: Partial<WeddingEventData["presentation"]>,
   ) => update({ presentation: { ...event.presentation, ...patch } });
+  const moveContent = (x: number, y: number) => updatePresentation({ transforms: { ...event.presentation.transforms, global: { ...event.presentation.transforms.global, x, y } } });
+  const moveBlock = (id: WeddingTransformBlockId, x: number, y: number) => updatePresentation({ transforms: { ...event.presentation.transforms, blocks: { ...event.presentation.transforms.blocks, [id]: { ...(event.presentation.transforms.blocks[id] ?? defaultWeddingTransform), x, y } } } });
   const positioning = step.id === "artwork" && event.visual.source === "uploaded-background" && event.visual.fitMode === "fill";
   const previewEvent = transientVisual ? { ...event, visual: transientVisual } : event;
   const startPosition = (pointerEvent: ReactPointerEvent<HTMLDivElement>) => {
@@ -663,6 +698,8 @@ export function WeddingStudio({
               event={event}
               updatePresentation={updatePresentation}
               kind={step.id}
+              selectedBlock={selectedBlock}
+              onSelectBlock={setSelectedBlock}
             />
           )}
           {step.id === "preview" && (
@@ -708,6 +745,10 @@ export function WeddingStudio({
               rsvpResponse={rsvpResponse}
               preview
               onSubmit={() => undefined}
+              selectedBlock={step.id === "layout" ? selectedBlock : undefined}
+              onSelectBlock={step.id === "layout" ? setSelectedBlock : undefined}
+              onMoveBlock={step.id === "layout" ? moveBlock : undefined}
+              onMoveGlobal={step.id === "layout" ? moveContent : undefined}
             />
             {positioning && <div
               className="wedding-position-surface"
@@ -1146,18 +1187,35 @@ function PresentationStep({
   event,
   updatePresentation,
   kind,
+  selectedBlock,
+  onSelectBlock,
 }: {
   event: WeddingEventData;
   updatePresentation: (
     patch: Partial<WeddingEventData["presentation"]>,
   ) => void;
   kind: "layout" | "motion";
+  selectedBlock: WeddingTransformBlockId;
+  onSelectBlock: (id: WeddingTransformBlockId) => void;
 }) {
   const { locale } = useAppLocale();
   const w = (key: Parameters<typeof weddingBuilderT>[1]) => weddingBuilderT(locale, key);
   const template =
     WeddingTemplateRegistry[event.templateId as WeddingVisualTemplateId] ??
     WeddingTemplateRegistry["soft-floral-garden"];
+  const transforms = event.presentation.transforms;
+  const updateTransforms = (next: WeddingEventData["presentation"]["transforms"]) => updatePresentation({ transforms: next });
+  const updateGlobal = (patch: Partial<typeof transforms.global>) => updateTransforms({ ...transforms, global: { ...transforms.global, ...patch } });
+  const blockTransform = transforms.blocks[selectedBlock] ?? defaultWeddingTransform;
+  const updateBlock = (patch: Partial<typeof blockTransform>) => updateTransforms({
+    ...transforms,
+    blocks: { ...transforms.blocks, [selectedBlock]: { ...blockTransform, ...patch } },
+  });
+  const resetBlock = () => {
+    const blocks = { ...transforms.blocks };
+    delete blocks[selectedBlock];
+    updateTransforms({ ...transforms, blocks });
+  };
   return (
     <div>
       <StepHeading
@@ -1175,7 +1233,7 @@ function PresentationStep({
               <button
                 key={id}
                 className={selected ? "is-selected" : ""}
-                onClick={() => updatePresentation({ layoutPresetId: id })}
+                onClick={() => updatePresentation(selectWeddingLayoutPreset(event.presentation, id))}
                 aria-pressed={selected}
               >
                 <span className={`wedding-layout-diagram wedding-layout-diagram--${id}`} aria-hidden="true">
@@ -1193,6 +1251,24 @@ function PresentationStep({
             );
           })}
         </div>
+        <div className="wedding-transform-panel">
+          <div className="wedding-control-heading"><h3>{w("overallContent")}</h3><p>{w("overallContentHelp")}</p></div>
+          <TransformSlider id="wedding-global-size" label={w("contentSize")} min={0.8} max={1.25} step={0.01} value={transforms.global.scale} output={`${Math.round(transforms.global.scale * 100)}%`} onChange={(scale) => updateGlobal({ scale })} />
+          <TransformSlider id="wedding-global-x" label={w("horizontalPosition")} min={-0.18} max={0.18} step={0.01} value={transforms.global.x} output={`${Math.round(transforms.global.x * 100)}`} onChange={(x) => updateGlobal({ x })} />
+          <TransformSlider id="wedding-global-y" label={w("verticalPosition")} min={-0.22} max={0.22} step={0.01} value={transforms.global.y} output={`${Math.round(transforms.global.y * 100)}`} onChange={(y) => updateGlobal({ y })} />
+          <div className="wedding-transform-actions"><button onClick={() => updateGlobal({ ...defaultWeddingTransform })}>{w("resetContent")}</button><button onClick={() => updateTransforms(resetWeddingLayoutTransforms())}>{w("resetEntireLayout")}</button></div>
+        </div>
+        <details className="wedding-block-editor">
+          <summary>{w("advancedBlockEditing")}</summary>
+          <p>{w("selectBlockHelp")}</p>
+          <div className="wedding-block-list" role="group" aria-label={w("advancedBlockEditing")}>
+            {(["opening", "occasion", "hosts", "principals", "date-time", "venue", "rsvp"] as WeddingTransformBlockId[]).map((id) => <button key={id} className={selectedBlock === id ? "is-selected" : ""} aria-pressed={selectedBlock === id} onClick={() => onSelectBlock(id)}>{w(id === "principals" ? "namesBlock" : id === "date-time" ? "detailsBlock" : id === "rsvp" ? "rsvpBlock" : id)}</button>)}
+          </div>
+          <TransformSlider id="wedding-block-size" label={w("blockSize")} min={0.75} max={1.35} step={0.01} value={blockTransform.scale} output={`${Math.round(blockTransform.scale * 100)}%`} onChange={(scale) => updateBlock({ scale })} />
+          <TransformSlider id="wedding-block-x" label={w("horizontalPosition")} min={-0.25} max={0.25} step={0.01} value={blockTransform.x} output={`${Math.round(blockTransform.x * 100)}`} onChange={(x) => updateBlock({ x })} />
+          <TransformSlider id="wedding-block-y" label={w("verticalPosition")} min={-0.25} max={0.25} step={0.01} value={blockTransform.y} output={`${Math.round(blockTransform.y * 100)}`} onChange={(y) => updateBlock({ y })} />
+          <div className="wedding-nudge-controls" aria-label={w("nudgeBlock")}><button aria-label={w("moveUp")} onClick={() => updateBlock({ y: Math.max(-0.25, blockTransform.y - 0.02) })}><ArrowUp aria-hidden="true" /></button><button aria-label={w("moveLeft")} onClick={() => updateBlock({ x: Math.max(-0.25, blockTransform.x - 0.02) })}><ArrowLeft aria-hidden="true" /></button><button className="is-center" onClick={resetBlock}>{w("resetBlock")}</button><button aria-label={w("moveRight")} onClick={() => updateBlock({ x: Math.min(0.25, blockTransform.x + 0.02) })}><ArrowRight aria-hidden="true" /></button><button aria-label={w("moveDown")} onClick={() => updateBlock({ y: Math.min(0.25, blockTransform.y + 0.02) })}><ArrowDown aria-hidden="true" /></button></div>
+        </details>
       </div>}
       {kind === "motion" && <div className="wedding-presentation-section">
         <b>{w("motion")}</b>
@@ -1221,6 +1297,10 @@ function PresentationStep({
       </div>}
     </div>
   );
+}
+
+function TransformSlider({ id, label, min, max, step, value, output, onChange }: { id: string; label: string; min: number; max: number; step: number; value: number; output: string; onChange: (value: number) => void }) {
+  return <label className="wedding-transform-slider" htmlFor={id}><span>{label}</span><input id={id} type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} /><output htmlFor={id}>{output}</output></label>;
 }
 
 function StepHeading({

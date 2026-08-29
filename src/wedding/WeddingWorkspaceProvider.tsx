@@ -11,7 +11,8 @@ import {
 import { defaultWeddingEvent, mergeWeddingEvent, type WeddingEventData } from "./model.ts";
 import { useAuth } from "../auth/AuthProvider.tsx";
 import { createDesignDraft, deleteDesignDraft, listDesignDrafts, listEventConfigs, publishArtwork, saveWeddingConfig, updateDesignDraft, type DesignDraft } from "../backend/phase2.ts";
-import { updateEvent } from "../backend/events.ts";
+import { createEvent, updateEvent } from "../backend/events.ts";
+import { anonymousWeddingTransferKey, anonymousWeddingTransferResultKey, anonymousWeddingTransferredEvent } from "./anonymous-transfer.ts";
 import { IndexedDbWeddingWorkspaceStorage } from "./workspace-storage.ts";
 import {
   applySavedDesignToEvent,
@@ -100,7 +101,7 @@ export function WeddingWorkspaceProvider({
   const backendTemplatesRef = useRef(new Map<string, string | null>());
   const backendTemplateKeysRef = useRef(new Map<string, string | null>());
   const backendArtworkRef = useRef(new Map<string, string | null>());
-  const uploadedArtworkRef = useRef(new Map<string, string>());
+  const uploadedArtworkRef = useRef(new Map<string, { id: string; publicUrl: string }>());
   const backendDraftsRef = useRef(new Map<string, DesignDraft<Record<string, unknown>>>());
 
   const setWorkspace = useCallback((next: WeddingWorkspaceState) => {
@@ -159,9 +160,33 @@ export function WeddingWorkspaceProvider({
   useEffect(() => {
     if (!auth.session || auth.loading) return;
     const events = auth.events.filter((event) => event.product_id === "wedding" && !event.deleted_at);
-    if (!events.length) return;
     let live = true;
-    void Promise.all([listEventConfigs<Partial<WeddingEventData>>("wedding"), listDesignDrafts<Partial<WeddingEventData>>("wedding")]).then(([configs, drafts]) => {
+    const transfer = async () => {
+      if (sessionStorage.getItem(anonymousWeddingTransferKey) !== "1") return false;
+      const current = workspaceRef.current;
+      const source = current?.projects.find((project) => project.id === current.activeProjectId);
+      if (!source) return false;
+      const pendingEventId = sessionStorage.getItem(anonymousWeddingTransferResultKey);
+      const targetId = pendingEventId ?? (await createEvent({ productId: "wedding", title: source.name, invitationLocale: source.event.invitationLocale, venueName: source.event.venue || undefined, city: source.event.city || undefined })).id;
+      sessionStorage.setItem(anonymousWeddingTransferResultKey, targetId);
+      let configuration = structuredClone(source.event) as WeddingEventData & Record<string, unknown>;
+      const existingConfig = (await listEventConfigs<Partial<WeddingEventData>>("wedding")).find((config) => config.event_id === targetId);
+      if (!existingConfig) {
+        let artworkId: string | null = null;
+        if (configuration.visual.source === "uploaded-background" && configuration.visual.uploadedBackground.dataUrl.startsWith("data:")) {
+          const artwork = await publishArtwork(targetId, configuration.visual.uploadedBackground.dataUrl, configuration.visual.uploadedBackground.mimeType);
+          artworkId = artwork.id;
+          configuration.visual.uploadedBackground.dataUrl = artwork.publicUrl;
+        }
+        await saveWeddingConfig(targetId, configuration, 0, artworkId);
+      } else configuration = mergeWeddingEvent(existingConfig.configuration) as WeddingEventData & Record<string, unknown>;
+      await createDesignDraft("wedding", source.name, structuredClone(configuration));
+      sessionStorage.removeItem(anonymousWeddingTransferKey);
+      await auth.refresh();
+      window.dispatchEvent(new Event(anonymousWeddingTransferredEvent));
+      return true;
+    };
+    void transfer().then((transferred) => transferred || !events.length ? undefined : Promise.all([listEventConfigs<Partial<WeddingEventData>>("wedding"), listDesignDrafts<Partial<WeddingEventData>>("wedding")]).then(([configs, drafts]) => {
       if (!live) return;
       const byEvent = new Map(configs.map((config) => [config.event_id, config]));
       const projects = events.map((event) => {
@@ -179,13 +204,13 @@ export function WeddingWorkspaceProvider({
       const current = workspaceRef.current;
       const activeProjectId = projects.some((project) => project.id === current?.activeProjectId) ? current!.activeProjectId : projects[0].id;
       setWorkspace({ projects, designs, activeProjectId, metadata: { schemaVersion: 1, activeProjectId, legacyMigrationVersion: 1 } });
-    }).catch((error) => {
+    })).catch((error) => {
       if (!live) return;
       setSaveStatus("error");
       setStorageError(errorMessage(error));
     });
     return () => { live = false; };
-  }, [auth.events, auth.loading, auth.session, setWorkspace]);
+  }, [auth.events, auth.loading, auth.refresh, auth.session, setWorkspace]);
 
   const saveBackendProject = useCallback(async (project: WeddingProject) => {
     if (!auth.session || !auth.events.some((event) => event.id === project.id)) return;
@@ -193,9 +218,10 @@ export function WeddingWorkspaceProvider({
     let artworkId = backendArtworkRef.current.get(project.id) ?? null;
     if (configuration.visual.source === "uploaded-background" && configuration.visual.uploadedBackground.dataUrl.startsWith("data:")) {
       const dataUrl = configuration.visual.uploadedBackground.dataUrl;
-      artworkId = uploadedArtworkRef.current.get(dataUrl) ?? await publishArtwork(project.id, dataUrl, configuration.visual.uploadedBackground.mimeType);
-      uploadedArtworkRef.current.set(dataUrl, artworkId);
-      delete (configuration.visual.uploadedBackground as { dataUrl?: string }).dataUrl;
+      const artwork = uploadedArtworkRef.current.get(dataUrl) ?? await publishArtwork(project.id, dataUrl, configuration.visual.uploadedBackground.mimeType);
+      artworkId = artwork.id;
+      uploadedArtworkRef.current.set(dataUrl, artwork);
+      configuration.visual.uploadedBackground.dataUrl = artwork.publicUrl;
     }
     const existingTemplateId = backendTemplateKeysRef.current.get(project.id) === project.event.templateId ? backendTemplatesRef.current.get(project.id) : null;
     const saved = await saveWeddingConfig(project.id, configuration, backendVersionsRef.current.get(project.id) ?? 0, artworkId, existingTemplateId);

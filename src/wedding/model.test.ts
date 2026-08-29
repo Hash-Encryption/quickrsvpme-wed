@@ -29,6 +29,10 @@ import {
   WeddingMotionPresets,
   resolveWeddingMotionTarget,
   resolveWeddingSafeZone,
+  normalizeWeddingLayoutTransforms,
+  resetWeddingLayoutTransforms,
+  selectWeddingLayoutPreset,
+  weddingTransformCss,
 } from "./presentation.ts";
 import {
   defaultWeddingArtworkSettings,
@@ -97,6 +101,54 @@ test("template presentation defaults and supported IDs reference real presets", 
   }
 });
 
+test("advanced layout transforms normalize safely for every registered layout", () => {
+  for (const layoutPresetId of Object.keys(WeddingLayoutPresets)) {
+    const event = mergeWeddingEvent({
+      presentation: {
+        ...defaultWeddingEvent.presentation,
+        layoutPresetId: layoutPresetId as keyof typeof WeddingLayoutPresets,
+        transforms: {
+          global: { scale: 1.1, x: -0.08, y: 0.12 },
+          blocks: {
+            principals: { scale: 1.2, x: 0.04, y: 0.08 },
+            "date-time": { scale: 0.9, x: -0.05, y: -0.06 },
+            venue: { scale: 1.15, x: 0.02, y: 0.03 },
+          },
+        },
+      },
+    });
+    assert.equal(event.presentation.transforms.global.scale, 1.1);
+    assert.equal(event.presentation.transforms.blocks.principals?.y, 0.08);
+    assert.equal(weddingTransformCss(event.presentation.transforms.blocks.venue!), "translate(2%, 3%) scale(1.15)");
+  }
+});
+
+test("layout transforms clamp unusable values and resets stay scoped", () => {
+  const transforms = normalizeWeddingLayoutTransforms({
+    global: { scale: 9, x: -9, y: 9 },
+    blocks: { principals: { scale: 0, x: 9, y: -9 }, unknown: { scale: 2 } },
+  });
+  assert.deepEqual(transforms.global, { scale: 1.25, x: -0.18, y: 0.22 });
+  assert.deepEqual(transforms.blocks.principals, { scale: 0.75, x: 0.25, y: -0.25 });
+  assert.equal("unknown" in transforms.blocks, false);
+  const customized = { ...defaultWeddingEvent.presentation, transforms };
+  const switched = selectWeddingLayoutPreset(customized, "editorial-offset");
+  assert.equal(switched.motionPresetId, customized.motionPresetId);
+  assert.equal(switched.safeZone, customized.safeZone);
+  assert.deepEqual(switched.transforms, resetWeddingLayoutTransforms());
+});
+
+test("every motion keeps the same customized final geometry", () => {
+  const transforms = normalizeWeddingLayoutTransforms({
+    global: { scale: 1.1, x: 0.05, y: -0.07 },
+    blocks: { principals: { scale: 1.2, x: 0, y: 0.08 } },
+  });
+  for (const motionPresetId of Object.keys(WeddingMotionPresets)) {
+    const event = mergeWeddingEvent({ presentation: { ...defaultWeddingEvent.presentation, motionPresetId: motionPresetId as keyof typeof WeddingMotionPresets, transforms } });
+    assert.deepEqual(event.presentation.transforms, transforms);
+  }
+});
+
 test("every ready visual resolves the one canonical five-scene timeline", () => {
   assert.deepEqual(
     canonicalWeddingSceneTimings.map(({ id, startsAt }) => ({ id, startsAt })),
@@ -119,6 +171,7 @@ test("Phase 2 events without presentation data migrate to template defaults", ()
     layoutPresetId: "centered-elegance",
     motionPresetId: "soft-dissolve",
     safeZone: "auto",
+    transforms: resetWeddingLayoutTransforms(),
   });
 });
 
@@ -171,6 +224,7 @@ test("an invalid persisted layout ID resolves safely", () => {
     layoutPresetId: "centered-elegance",
     motionPresetId: "editorial-glide",
     safeZone: "auto",
+    transforms: resetWeddingLayoutTransforms(),
   });
 });
 
@@ -185,6 +239,7 @@ test("an invalid persisted motion ID resolves safely", () => {
     layoutPresetId: "cinematic-focus",
     motionPresetId: "soft-dissolve",
     safeZone: "auto",
+    transforms: resetWeddingLayoutTransforms(),
   });
 });
 
@@ -231,6 +286,7 @@ test("valid layout and motion choices survive every visual change", () => {
     layoutPresetId: "cinematic-focus" as const,
     motionPresetId: "editorial-glide" as const,
     safeZone: "auto" as const,
+    transforms: resetWeddingLayoutTransforms(),
   };
   for (const templateId of Object.keys(WeddingTemplateRegistry)) {
     assert.deepEqual(

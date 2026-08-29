@@ -69,7 +69,7 @@ test("legacy Phase 4 Wedding migrates to exactly one project and migration is id
   assert.equal(first.projects.length, 1);
   assert.equal(first.projects[0].event.brideName, "ليان");
   assert.equal(first.projects[0].event.templateId, "midnight-gold");
-  assert.deepEqual(first.projects[0].event.presentation, { ...legacy.presentation, safeZone: "auto" });
+  assert.deepEqual(first.projects[0].event.presentation, { ...legacy.presentation, safeZone: "auto", transforms: defaultWeddingEvent.presentation.transforms });
   assert.deepEqual(first.projects[0].event.visual, { ...visual, ...defaultWeddingArtworkSettings });
   assert.equal(second.projects.length, 1);
   assert.equal(second.projects[0].id, "migrated");
@@ -185,11 +185,28 @@ test("applying a Saved Design preserves all dynamic Wedding content", () => {
 });
 
 test("built-in template Saved Design roundtrips layout and motion", () => {
-  const event = { ...defaultWeddingEvent, templateId: "pearl-arch", presentation: { layoutPresetId: "editorial-offset" as const, motionPresetId: "editorial-glide" as const, safeZone: "bottom" as const } };
+  const event = { ...defaultWeddingEvent, templateId: "pearl-arch", presentation: { ...defaultWeddingEvent.presentation, layoutPresetId: "editorial-offset" as const, motionPresetId: "editorial-glide" as const, safeZone: "bottom" as const } };
   const design = createSavedDesignFromEvent(event, "Pearl", { id: "pearl" });
   const applied = applySavedDesignToEvent(defaultWeddingEvent, design);
   assert.equal(applied.templateId, "pearl-arch");
   assert.deepEqual(applied.presentation, event.presentation);
+});
+
+test("custom layout geometry roundtrips through project and Saved Design persistence", () => {
+  const transforms = {
+    global: { scale: 1.12, x: -0.04, y: 0.09 },
+    blocks: {
+      principals: { scale: 1.2, x: 0.03, y: 0.08 },
+      "date-time": { scale: 0.9, x: -0.02, y: -0.05 },
+      venue: { scale: 1.15, x: 0.01, y: 0.04 },
+    },
+  };
+  const project = createWeddingProject({ presentation: { ...defaultWeddingEvent.presentation, transforms } }, "Custom", { id: "custom" });
+  const design = createSavedDesignFromEvent(project.event, "Custom geometry", { id: "geometry" });
+  const reloaded = normalizeWeddingWorkspace({ projects: [project], designs: [design], metadata: { schemaVersion: 1, activeProjectId: project.id, legacyMigrationVersion: 1 } });
+  assert.deepEqual(reloaded.projects[0].event.presentation.transforms, transforms);
+  assert.deepEqual(reloaded.designs[0].presentation.transforms, transforms);
+  assert.deepEqual(applySavedDesignToEvent(defaultWeddingEvent, reloaded.designs[0]).presentation.transforms, transforms);
 });
 
 test("uploaded-background Saved Design roundtrips safely", () => {
@@ -214,7 +231,7 @@ test("old Saved Designs without Phase 3 placement fields remain readable", () =>
   };
   const normalized = normalizeWeddingWorkspace({ projects: [], designs: [legacy as never], metadata: null });
   assert.deepEqual(normalized.designs[0].visual, { ...legacy.visual, ...defaultWeddingArtworkSettings });
-  assert.deepEqual(normalized.designs[0].presentation, { ...legacy.presentation, safeZone: "auto" });
+  assert.deepEqual(normalized.designs[0].presentation, { ...legacy.presentation, safeZone: "auto", transforms: defaultWeddingEvent.presentation.transforms });
 });
 
 test("invalid persisted template, visual, and presentation resolve safely", () => {

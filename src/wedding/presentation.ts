@@ -29,10 +29,27 @@ export type WeddingMotionPresetId =
   | "editorial-glide";
 export type WeddingSafeZone = "auto" | "top" | "center" | "bottom";
 
+export const weddingTransformBlockIds = [
+  "opening", "occasion", "hosts", "principals", "date-time", "venue", "rsvp",
+] as const;
+export type WeddingTransformBlockId = (typeof weddingTransformBlockIds)[number];
+export type WeddingTransform = { scale: number; x: number; y: number };
+export type WeddingLayoutTransforms = {
+  global: WeddingTransform;
+  blocks: Partial<Record<WeddingTransformBlockId, WeddingTransform>>;
+};
+
+export const defaultWeddingTransform: WeddingTransform = { scale: 1, x: 0, y: 0 };
+export const defaultWeddingLayoutTransforms: WeddingLayoutTransforms = {
+  global: defaultWeddingTransform,
+  blocks: {},
+};
+
 export type WeddingPresentation = {
   layoutPresetId: WeddingLayoutPresetId;
   motionPresetId: WeddingMotionPresetId;
   safeZone: WeddingSafeZone;
+  transforms: WeddingLayoutTransforms;
 };
 
 export type WeddingLayoutRule = {
@@ -200,7 +217,48 @@ export function resolveWeddingPresentation(
   const safeZone = ["top", "center", "bottom"].includes(value?.safeZone as string)
     ? value?.safeZone as Exclude<WeddingSafeZone, "auto">
     : "auto";
-  return { layoutPresetId, motionPresetId, safeZone };
+  return {
+    layoutPresetId,
+    motionPresetId,
+    safeZone,
+    transforms: normalizeWeddingLayoutTransforms(value?.transforms),
+  };
+}
+
+const clamp = (value: unknown, min: number, max: number, fallback: number) =>
+  typeof value === "number" && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
+
+export function normalizeWeddingTransform(value: unknown, block = false): WeddingTransform {
+  const transform = value && typeof value === "object" ? value as Partial<WeddingTransform> : {};
+  return {
+    scale: clamp(transform.scale, block ? 0.75 : 0.8, block ? 1.35 : 1.25, 1),
+    x: clamp(transform.x, block ? -0.25 : -0.18, block ? 0.25 : 0.18, 0),
+    y: clamp(transform.y, block ? -0.25 : -0.22, block ? 0.25 : 0.22, 0),
+  };
+}
+
+export function normalizeWeddingLayoutTransforms(value: unknown): WeddingLayoutTransforms {
+  const transforms = value && typeof value === "object" ? value as Partial<WeddingLayoutTransforms> : {};
+  const source = transforms.blocks && typeof transforms.blocks === "object" ? transforms.blocks : {};
+  const blocks = Object.fromEntries(weddingTransformBlockIds.flatMap((id) =>
+    id in source ? [[id, normalizeWeddingTransform(source[id], true)]] : [],
+  )) as WeddingLayoutTransforms["blocks"];
+  return { global: normalizeWeddingTransform(transforms.global), blocks };
+}
+
+export function resetWeddingLayoutTransforms(): WeddingLayoutTransforms {
+  return { global: { ...defaultWeddingTransform }, blocks: {} };
+}
+
+export function selectWeddingLayoutPreset(
+  presentation: WeddingPresentation,
+  layoutPresetId: WeddingLayoutPresetId,
+): WeddingPresentation {
+  return { ...presentation, layoutPresetId, transforms: resetWeddingLayoutTransforms() };
+}
+
+export function weddingTransformCss(transform: WeddingTransform): string {
+  return `translate(${transform.x * 100}%, ${transform.y * 100}%) scale(${transform.scale})`;
 }
 
 export function resolveWeddingSafeZone(

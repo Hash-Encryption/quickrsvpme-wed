@@ -294,6 +294,7 @@
 }
 
 .wedding-motion-layer {
+  position: relative;
   width: 100%;
   transform-origin: center;
 }
@@ -313,6 +314,48 @@
   width: 100%;
   animation-fill-mode: both;
 }
+.wedding-custom-block {
+  width: 100%;
+  transform-origin: center;
+}
+.wedding-custom-block.is-selected {
+  border-radius: 8px;
+  outline: 1px dashed color-mix(in srgb, var(--wedding-accent) 66%, transparent);
+  outline-offset: 3px;
+  cursor: pointer;
+  touch-action: none;
+}
+.wedding-choreography.is-layout-editable { cursor: grab; touch-action: none; }
+.wedding-choreography.is-layout-editable:active { cursor: grabbing; }
+.wedding-global-drag-handle {
+  position: absolute;
+  z-index: 8;
+  top: -48px;
+  inset-inline-end: -4px;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--wedding-accent) 45%, transparent);
+  border-radius: 999px;
+  background: rgb(255 253 248 / 0.84);
+  cursor: grab;
+  touch-action: none;
+}
+.wedding-global-drag-handle:active { cursor: grabbing; }
+.wedding-global-drag-handle span,
+.wedding-global-drag-handle span::before,
+.wedding-global-drag-handle span::after {
+  display: block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--wedding-accent);
+  box-shadow: 7px 0 var(--wedding-accent);
+  content: "";
+}
+.wedding-global-drag-handle span::before { transform: translateY(-7px); }
+.wedding-global-drag-handle span::after { transform: translateY(4px); }
 .wedding-choreography-block.is-pending {
   visibility: hidden;
   opacity: 0;
@@ -1613,6 +1656,80 @@
   border-radius: 3px;
   transform: translateX(-4px);
   box-shadow: 6px 0 0 rgb(113 128 141 / 0.14);
+}
+.wedding-transform-panel,
+.wedding-block-editor {
+  margin-top: 18px;
+  border: 1px solid #e3d8cb;
+  border-radius: 18px;
+  background: rgb(255 253 248 / 0.72);
+  padding: 16px;
+}
+.wedding-block-editor > summary {
+  min-height: 44px;
+  cursor: pointer;
+  color: #53616b;
+  font-weight: 700;
+  line-height: 44px;
+}
+.wedding-block-editor > p {
+  margin: 2px 0 14px;
+  color: #817970;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.wedding-transform-slider {
+  display: grid;
+  grid-template-columns: minmax(96px, auto) minmax(120px, 1fr) 42px;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  color: #53616b;
+  font-size: 11px;
+  font-weight: 600;
+}
+.wedding-transform-slider input {
+  width: 100%;
+  min-height: 44px;
+  accent-color: #71808d;
+  cursor: pointer;
+}
+.wedding-transform-slider output {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+.wedding-transform-actions,
+.wedding-block-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.wedding-transform-actions button,
+.wedding-block-list button {
+  min-height: 44px;
+  border: 1px solid #ded4c8;
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: #fffdf8;
+  color: #53616b;
+  cursor: pointer;
+}
+.wedding-block-list button.is-selected {
+  border-color: #71808d;
+  background: #e9eef0;
+  box-shadow: 0 0 0 3px rgb(113 128 141 / 0.11);
+}
+.wedding-block-editor .wedding-nudge-controls {
+  margin-top: 10px;
+}
+
+@media (max-width: 560px) {
+  .wedding-transform-panel,
+  .wedding-block-editor { padding: 13px; }
+  .wedding-transform-slider { grid-template-columns: 1fr 42px; gap: 4px 8px; }
+  .wedding-transform-slider > span { grid-column: 1 / -1; }
+  .wedding-transform-actions button,
+  .wedding-block-list button { flex: 1 1 calc(50% - 4px); }
 }
 @keyframes wedding-draw-arch {
   to {

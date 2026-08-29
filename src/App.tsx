@@ -17,6 +17,7 @@ import { AuthProvider, useAuth } from '@/auth/AuthProvider';
 import { RequireAuth } from '@/auth/RequireAuth';
 import { WeddingInvitationRenderer, WeddingStudio } from '@/wedding/WeddingMode';
 import { WeddingWorkspaceProvider, useWeddingWorkspace } from '@/wedding/WeddingWorkspaceProvider';
+import { requestAnonymousWeddingTransfer } from '@/wedding/anonymous-transfer';
 import type { WeddingProject } from '@/wedding/workspace';
 import { AdminPage, type AdminEventRecord } from '@/admin/AdminPage';
 import { DashboardPage } from '@/app/DashboardPage';
@@ -293,14 +294,14 @@ function Monogram({ compact = false }: { compact?: boolean }) {
   return <div className={`flex items-center ${compact ? 'gap-2' : 'gap-3'}`}><div className={`font-display leading-none text-[#0A2E23] ${compact ? 'text-2xl' : 'text-4xl'}`}>M<span className="mx-0.5 text-[#D4AF37]">&amp;</span>L</div>{!compact && <div className="hidden border-l border-[#D4AF37]/70 pl-3 text-[9px] font-semibold uppercase leading-relaxed tracking-[.18em] text-[#2D2421]/60 sm:block">The private<br />wedding suite</div>}</div>;
 }
 
-function QuietHeader({ studio = false }: { studio?: boolean }) {
+function QuietHeader({ studio = false, anonymous = false }: { studio?: boolean; anonymous?: boolean }) {
   const { t } = useAppLocale();
   return <header className="relative z-20 flex items-center justify-between px-5 py-6 sm:px-10 lg:px-16">
-    <Link href={studio ? '/studio' : '/studio'} data-testid={`link-${studio ? 'studio-hub' : 'studio'}`} className="focus-ring"><Monogram compact={studio} /></Link>
+    <Link href={anonymous ? '/design/wedding' : '/studio'} data-testid={`link-${studio ? 'studio-hub' : 'studio'}`} className="focus-ring"><Monogram compact={studio} /></Link>
     <div className="flex items-center gap-3">
       <AppLanguageControl compact />
       <Eyebrow className="hidden sm:block">{studio ? 'HOST STUDIO / 01' : 'A PERSONAL INVITATION'}</Eyebrow>
-      {studio ? <Link href="/scanner" aria-label={t('scanner')} data-testid="link-scanner" className="focus-ring rounded-full border border-[#D4AF37]/60 bg-[#FFFDF9]/40 p-2.5 text-[#0A2E23] transition hover:bg-[#FFFDF9]"><QrCode size={17} /></Link> : <Link href="/studio" data-testid="link-open-studio" className="focus-ring rounded-full border border-[#D4AF37]/60 bg-[#FFFDF9]/40 px-3 py-2 text-[10px] font-semibold uppercase tracking-[.15em] text-[#0A2E23] transition hover:bg-[#FFFDF9]">{t('partyStudio')}</Link>}
+      {!anonymous && (studio ? <Link href="/scanner" aria-label={t('scanner')} data-testid="link-scanner" className="focus-ring rounded-full border border-[#D4AF37]/60 bg-[#FFFDF9]/40 p-2.5 text-[#0A2E23] transition hover:bg-[#FFFDF9]"><QrCode size={17} /></Link> : <Link href="/studio" data-testid="link-open-studio" className="focus-ring rounded-full border border-[#D4AF37]/60 bg-[#FFFDF9]/40 px-3 py-2 text-[10px] font-semibold uppercase tracking-[.15em] text-[#0A2E23] transition hover:bg-[#FFFDF9]">{t('partyStudio')}</Link>)}
     </div>
   </header>;
 }
@@ -769,6 +770,7 @@ function WeddingWorkspaceControls() {
 function WeddingStudioPage({ embedded = false }: { embedded?: boolean }) {
   const { state, ready, setMode } = useEngine();
   const { activeProject, updateActiveEvent, saveStatus, storageError } = useWeddingWorkspace();
+  const auth = useAuth();
   const { t } = useAppLocale();
 
   useEffect(() => {
@@ -782,7 +784,7 @@ function WeddingStudioPage({ embedded = false }: { embedded?: boolean }) {
   return (
     <div className={`grain bg-[#FAF7F2] text-[#2D2421] ${embedded ? 'rounded-3xl py-6' : 'min-h-[100dvh]'}`}>
       <div className="gold-thread" />
-      {!embedded && <QuietHeader studio />}
+      {!embedded && <QuietHeader studio anonymous={!auth.session} />}
       <main className={`relative z-10 mx-auto max-w-7xl px-5 sm:px-8 ${embedded ? 'pb-6' : 'pb-20 lg:px-14'}`}>
         <FadeIn>
           <div className="flex flex-col justify-between gap-7 border-b border-[#D4AF37]/35 pb-8 md:flex-row md:items-end">
@@ -796,15 +798,15 @@ function WeddingStudioPage({ embedded = false }: { embedded?: boolean }) {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Link href="/studio" data-testid="link-switch-studio" className="focus-ring inline-flex items-center gap-1.5 rounded-full border border-[#D4AF37]/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23] hover:bg-[#D4AF37]/10">
+              {auth.session && <Link href="/studio" data-testid="link-switch-studio" className="focus-ring inline-flex items-center gap-1.5 rounded-full border border-[#D4AF37]/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23] hover:bg-[#D4AF37]/10">
                 <ArrowLeft size={13} /> {t('switchType')}
-              </Link>
-              <Link href="/i/demo" data-testid="link-preview-invitation" className="focus-ring inline-flex items-center gap-2 rounded-full border border-[#D4AF37]/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23]">
+              </Link>}
+              <Link href={auth.session ? "/i/demo" : "/auth"} onClick={() => { if (!auth.session) requestAnonymousWeddingTransfer(); }} data-testid="link-preview-invitation" className="focus-ring inline-flex items-center gap-2 rounded-full border border-[#D4AF37]/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23]">
                 <ExternalLink size={14} /> {t('preview')}
               </Link>
-              <Link href="/scanner" data-testid="link-open-scanner" className="focus-ring inline-flex items-center gap-2 rounded-full bg-[#0A2E23] px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#FFFDF9]">
+              {auth.session && <Link href="/scanner" data-testid="link-open-scanner" className="focus-ring inline-flex items-center gap-2 rounded-full bg-[#0A2E23] px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#FFFDF9]">
                 <QrCode size={14} /> {t('doorScanner')}
-              </Link>
+              </Link>}
             </div>
           </div>
         </FadeIn>
@@ -818,7 +820,7 @@ function WeddingStudioPage({ embedded = false }: { embedded?: boolean }) {
           rsvpResponse={state.weddingResponse}
           onChange={updateActiveEvent}
         />
-        {!embedded && <div className="mt-8"><GuestManager /></div>}
+        {!embedded && auth.session && <div className="mt-8"><GuestManager /></div>}
       </main>
     </div>
   );
@@ -1045,6 +1047,7 @@ function Router() {
       <ScrollToTop />
       <Switch>
         <Route path="/auth" component={AuthPage} />
+        <Route path="/design/wedding">{() => <WeddingStudioPage />}</Route>
         <Route path="/i/:token" component={GuestRoute} />
         <Route path="/">{() => <RequireAuth><DashboardRoute /></RequireAuth>}</Route>
         <Route path="/weddings/:eventId/:section">{() => <RequireAuth><WeddingProjectRoute /></RequireAuth>}</Route>

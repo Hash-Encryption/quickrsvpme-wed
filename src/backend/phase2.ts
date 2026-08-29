@@ -154,7 +154,7 @@ export async function submitGeneralRsvp(token: string, requestId: string, name: 
   if (error) fail(error);
 }
 
-export async function publishArtwork(eventId: string, dataUrl: string, mimeType: string): Promise<string> {
+export async function publishArtwork(eventId: string, dataUrl: string, mimeType: string): Promise<{ id: string; publicUrl: string }> {
   const blob = await fetch(dataUrl).then((response) => response.blob());
   const reserve = async (purpose: 'private_source' | 'published_delivery', sourceId: string | null) => {
     const { data, error } = await getSupabase().rpc('reserve_invitation_asset', { p_owner_kind: 'event', p_owner_id: eventId, p_purpose: purpose, p_content_type: mimeType, p_byte_size: blob.size, p_source_asset_id: sourceId });
@@ -169,5 +169,5 @@ export async function publishArtwork(eventId: string, dataUrl: string, mimeType:
   };
   const source = await reserve('private_source', null); await upload(source);
   const delivery = await reserve('published_delivery', source.id); await upload(delivery);
-  return delivery.id;
+  return { id: delivery.id, publicUrl: getSupabase().storage.from(delivery.bucket_id).getPublicUrl(delivery.object_path).data.publicUrl };
 }

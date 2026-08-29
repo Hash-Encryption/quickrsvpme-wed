@@ -198,7 +198,7 @@ export function createSavedDesignFromEvent(
     templateId: resolved.templateId as WeddingVisualTemplateId,
     visual: structuredClone(resolved.visual),
     style: { ...resolved.style },
-    presentation: { ...resolved.presentation },
+    presentation: structuredClone(resolved.presentation),
     createdAt: now,
     updatedAt: now,
   };
@@ -213,7 +213,7 @@ export function applySavedDesignToEvent(
     templateId: design.templateId,
     visual: structuredClone(design.visual),
     style: { ...design.style },
-    presentation: { ...design.presentation },
+    presentation: structuredClone(design.presentation),
   });
 }
 

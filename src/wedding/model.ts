@@ -267,6 +267,7 @@ export const defaultWeddingEvent: WeddingEventData = {
     layoutPresetId: "centered-elegance",
     motionPresetId: "soft-dissolve",
     safeZone: "auto",
+    transforms: { global: { scale: 1, x: 0, y: 0 }, blocks: {} },
   },
 };
 
