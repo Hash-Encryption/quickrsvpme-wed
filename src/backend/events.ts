@@ -4,8 +4,9 @@ import type { BackendEvent, CreateEventInput } from './types';
 
 const eventFields = 'id, client_id, product_id, title, lifecycle_status, invitation_locale, starts_at, ends_at, rsvp_deadline, venue_name, city, request_companion_names, allow_custom_messages, allow_rsvp_changes, general_invite_allowed_companions, archived_at, deleted_at, created_at, updated_at';
 
-export async function listEvents(): Promise<BackendEvent[]> {
-  const { data, error } = await getSupabase().from('events').select(eventFields).is('deleted_at', null).order('created_at', { ascending: false });
+export async function listEvents(signal?: AbortSignal): Promise<BackendEvent[]> {
+  const request = getSupabase().from('events').select(eventFields).is('deleted_at', null).order('created_at', { ascending: false });
+  const { data, error } = await (signal ? request.abortSignal(signal) : request);
   if (error) throw toBackendError(error);
   return (data ?? []) as BackendEvent[];
 }

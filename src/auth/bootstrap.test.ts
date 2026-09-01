@@ -32,19 +32,20 @@ test('Admin plus Client and normal Client bootstraps preserve both authorities',
   }
 });
 
-test('a failed or timed-out essential profile request produces account-data failure', async () => {
+test('essential profile failures distinguish unavailable data from a server timeout', async () => {
   const loaders = {
     entitlements: async () => [], events: async () => [], admin: async () => false,
   };
   await assert.rejects(startAccountBootstrap({ ...loaders, client: async () => { throw new Error('profile missing'); } }), (error: unknown) => accountBootstrapError(error).code === 'account_data_unavailable');
-  await assert.rejects(startAccountBootstrap({ ...loaders, client: () => new Promise(() => undefined) }, 5), (error: unknown) => error instanceof BackendError && error.code === 'account_data_unavailable');
+  await assert.rejects(startAccountBootstrap({ ...loaders, client: () => new Promise(() => undefined) }, 5), (error: unknown) => error instanceof BackendError && error.code === 'server');
 });
 
 test('slow or failed optional requests never hold the authenticated shell open', async () => {
+  let eventsAborted = false;
   const result = await startAccountBootstrap({
     client: async () => client,
     entitlements: async () => { throw new Error('optional entitlement failure'); },
-    events: () => new Promise(() => undefined),
+    events: (signal) => new Promise(() => signal?.addEventListener('abort', () => { eventsAborted = true; })),
     admin: async () => true,
   }, 5);
   assert.equal(result.client, client);
@@ -53,6 +54,7 @@ test('slow or failed optional requests never hold the authenticated shell open',
   assert.equal(optional.admin, true);
   assert.equal(optional.entitlements, undefined);
   assert.equal(optional.errors.length, 2);
+  assert.equal(eventsAborted, true);
 });
 
 test('retry starts a clean bootstrap after an essential failure', async () => {

@@ -5,10 +5,10 @@ import { BackendError, toBackendError } from '../backend/errors.ts';
 export const accountBootstrapTimeoutMs = 8_000;
 
 type BootstrapLoaders<Client, Entitlements, Events> = {
-  client: () => Promise<Client>;
-  entitlements: () => Promise<Entitlements>;
-  events: () => Promise<Events>;
-  admin: () => Promise<boolean>;
+  client: (signal?: AbortSignal) => Promise<Client>;
+  entitlements: (signal?: AbortSignal) => Promise<Entitlements>;
+  events: (signal?: AbortSignal) => Promise<Events>;
+  admin: (signal?: AbortSignal) => Promise<boolean>;
 };
 
 export type OptionalAccountData<Entitlements, Events> = {
@@ -18,9 +18,14 @@ export type OptionalAccountData<Entitlements, Events> = {
   errors: ReturnType<typeof toBackendError>[];
 };
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+function withTimeout<T>(load: (signal: AbortSignal) => Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new BackendError('account_data_unavailable', 'Account data request timed out.')), timeoutMs);
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      controller.abort();
+      reject(new BackendError('server', 'Account service request timed out.'));
+    }, timeoutMs);
+    const promise = Promise.resolve().then(() => load(controller.signal));
     promise.then(
       (value) => { clearTimeout(timer); resolve(value); },
       (error) => { clearTimeout(timer); reject(error); },
@@ -33,16 +38,16 @@ export async function startAccountBootstrap<Client, Entitlements, Events>(
   timeoutMs = accountBootstrapTimeoutMs,
 ) {
   const optional = Promise.allSettled([
-    withTimeout(loaders.entitlements(), timeoutMs),
-    withTimeout(loaders.events(), timeoutMs),
-    withTimeout(loaders.admin(), timeoutMs),
+    withTimeout(loaders.entitlements, timeoutMs),
+    withTimeout(loaders.events, timeoutMs),
+    withTimeout(loaders.admin, timeoutMs),
   ]).then(([entitlements, events, admin]): OptionalAccountData<Entitlements, Events> => ({
     entitlements: entitlements.status === 'fulfilled' ? entitlements.value as Entitlements : undefined,
     events: events.status === 'fulfilled' ? events.value as Events : undefined,
     admin: admin.status === 'fulfilled' ? admin.value as boolean : undefined,
     errors: [entitlements, events, admin].flatMap((result) => result.status === 'rejected' ? [toBackendError(result.reason)] : []),
   }));
-  return { client: await withTimeout(loaders.client(), timeoutMs), optional };
+  return { client: await withTimeout(loaders.client, timeoutMs), optional };
 }
 
 export function accountBootstrapError(error: unknown): BackendError {
