@@ -25,6 +25,8 @@ import { EmptyProjectSection, ProjectShell } from '@/app/ProjectShell';
 import { BackendGuestManager, BackendScanner, EventOperationsOverview } from '@/app/Phase3Operations';
 import {
   buildProjectRoute,
+  findAuthenticatedProjectEvent,
+  isPublicInvitationRoute,
   legacyProjectRoute,
   partyProject,
   resolveAdminSection,
@@ -442,7 +444,7 @@ function NotFoundPage() {
 
 function AppErrorFallback({ resetError }: ErrorFallbackProps) {
   const { t } = useAppLocale();
-  return <div className="flex min-h-[100dvh] items-center justify-center bg-[#F5F2EC] p-6 text-center"><div className="max-w-md"><XCircle className="mx-auto text-[#A4813C]" /><h1 className="mt-5 text-4xl font-semibold">{t('appErrorTitle')}</h1><p className="mt-3 text-sm leading-6 text-[#756F66]">{t('appErrorHelp')}</p><button type="button" onClick={resetError} className="focus-ring mt-6 min-h-11 rounded-full bg-[#0C2D24] px-5 text-xs font-semibold text-white">{t('tryAgain')}</button></div></div>;
+  return <div className="flex min-h-[100dvh] items-center justify-center bg-[#F5F2EC] p-6 text-center"><div className="max-w-md"><XCircle className="mx-auto text-[#A4813C]" /><h1 className="mt-5 text-4xl font-semibold">{t('appErrorTitle')}</h1><p className="mt-3 text-sm leading-6 text-[#756F66]">{t('appErrorHelp')}</p><button type="button" onClick={resetError} className="focus-ring mt-6 min-h-11 rounded-full bg-[#0C2D24] px-5 text-xs font-semibold text-white">{t(isPublicInvitationRoute(window.location.pathname) ? 'tryAgain' : 'retry')}</button></div></div>;
 }
 
 function StudioHubPage() {
@@ -944,7 +946,7 @@ function ProjectRoutePage({ type }: { type: ProjectType }) {
   const auth = useAuth();
   const workspace = useWeddingWorkspace();
   const { t } = useAppLocale();
-  const backendEvent = auth.events.find((event) => event.id === eventId && event.product_id === type && !event.deleted_at);
+  const backendEvent = findAuthenticatedProjectEvent(auth.events, type, eventId);
   const weddingProject = type === 'wedding' ? workspace.projects.find((item) => item.id === eventId) : undefined;
   const project = type === 'wedding'
     ? weddingProject && weddingProjectSummary(weddingProject)

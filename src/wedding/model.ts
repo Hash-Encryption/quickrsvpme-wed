@@ -283,22 +283,25 @@ export const defaultWeddingGuest: WeddingGuestData = {
 export function mergeWeddingEvent(
   value?: Partial<WeddingEventData>,
 ): WeddingEventData {
+  const persisted = Object.fromEntries(
+    Object.entries(value ?? {}).filter(([, item]) => item != null),
+  ) as Partial<WeddingEventData>;
   const template =
     WeddingTemplateRegistry[
-      (value?.templateId ?? defaultWeddingEvent.templateId) as WeddingVisualTemplateId
+      (persisted.templateId ?? defaultWeddingEvent.templateId) as WeddingVisualTemplateId
     ] ??
     WeddingTemplateRegistry[
       defaultWeddingEvent.templateId as WeddingVisualTemplateId
     ];
   return {
     ...defaultWeddingEvent,
-    ...value,
-    invitationLocale: normalizeLocale(value?.invitationLocale),
+    ...persisted,
+    invitationLocale: normalizeLocale(persisted.invitationLocale),
     templateId: template.id,
-    visual: resolveWeddingVisualSelection(value?.visual),
-    style: { ...template.defaults, ...value?.style },
+    visual: resolveWeddingVisualSelection(persisted.visual),
+    style: { ...template.defaults, ...persisted.style },
     presentation: resolveWeddingPresentation(
-      value?.presentation,
+      persisted.presentation,
       template.presentation,
     ),
   };

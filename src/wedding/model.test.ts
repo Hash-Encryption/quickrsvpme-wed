@@ -188,6 +188,26 @@ test("legacy Wedding data defaults invitation locale to Arabic and preserves Eng
   assert.equal(mergeWeddingEvent({ invitationLocale: "invalid" as "ar" }).invitationLocale, "ar");
 });
 
+test("authenticated Wedding configs with missing nullable Event fields load without destructive migration", () => {
+  const persisted = {
+    ...defaultWeddingEvent,
+    venue: undefined,
+    city: null,
+    presentation: {
+      ...defaultWeddingEvent.presentation,
+      transforms: {
+        global: { scale: 1.1, x: 0.05, y: -0.04 },
+        blocks: { principals: { scale: 1.2, x: 0.03, y: 0.08 } },
+      },
+    },
+  } as unknown as Partial<typeof defaultWeddingEvent>;
+  const event = mergeWeddingEvent(persisted);
+  assert.equal(event.venue, defaultWeddingEvent.venue);
+  assert.equal(event.city, defaultWeddingEvent.city);
+  assert.deepEqual(event.presentation.transforms, persisted.presentation?.transforms);
+  assert.deepEqual(resolveWeddingScenes(event, defaultWeddingGuest).map((scene) => scene.id), weddingSceneIds);
+});
+
 test("invalid persisted visual data falls back safely", () => {
   for (const visual of [
     { source: "missing" },

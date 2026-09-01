@@ -1,11 +1,28 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildAdminRoute, buildProjectRoute, legacyProjectRoute, projectSections, resolveAdminSection, resolveProjectSection } from './projects.ts';
+import { buildAdminRoute, buildProjectRoute, findAuthenticatedProjectEvent, isPublicInvitationRoute, legacyProjectRoute, projectSections, resolveAdminSection, resolveProjectSection } from './projects.ts';
 
 test('project routes encode IDs and keep Wedding and Party separate', () => {
   assert.equal(buildProjectRoute('wedding', 'arabic wedding', 'invitation'), '/weddings/arabic%20wedding/invitation');
-  assert.equal(buildProjectRoute('party', 'party-demo', 'guests'), '/parties/party-demo/guests');
+  assert.equal(buildProjectRoute('party', 'party-demo', 'invitation'), '/parties/party-demo/invitation');
+  assert.equal(isPublicInvitationRoute('/weddings/event-1/invitation'), false);
+  assert.equal(isPublicInvitationRoute('/parties/event-2/invitation'), false);
+  assert.equal(isPublicInvitationRoute('/i/private-token'), true);
+});
+
+test('an Admin plus Client account resolves its owned Wedding and Party Events without public tokens', () => {
+  const account = {
+    admin: true,
+    events: [
+      { id: 'wed-1', product_id: 'wedding' as const, deleted_at: null },
+      { id: 'party-1', product_id: 'party' as const, deleted_at: null },
+    ],
+  };
+  assert.equal(account.admin, true);
+  assert.equal(findAuthenticatedProjectEvent(account.events, 'wedding', 'wed-1')?.product_id, 'wedding');
+  assert.equal(findAuthenticatedProjectEvent(account.events, 'party', 'party-1')?.product_id, 'party');
+  assert.equal(findAuthenticatedProjectEvent(account.events, 'party', 'wed-1'), undefined);
 });
 
 test('invalid project sections fall back without entering another product area', () => {

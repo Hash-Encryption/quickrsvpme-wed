@@ -30,6 +30,12 @@ export function buildProjectRoute(type: ProjectType, id: string, section: Projec
   return `/${type === 'wedding' ? 'weddings' : 'parties'}/${encodeURIComponent(id)}/${section}`;
 }
 
+export const isPublicInvitationRoute = (path: string): boolean => /^\/i\/[^/]+\/?$/.test(path);
+
+export function findAuthenticatedProjectEvent<T extends { id: string; product_id: ProjectType; deleted_at: string | null }>(events: readonly T[], type: ProjectType, id: string): T | undefined {
+  return events.find((event) => event.id === id && event.product_id === type && !event.deleted_at);
+}
+
 export function resolveProjectSection(type: ProjectType, value: string | undefined): ProjectSection {
   return projectSections[type].includes(value as ProjectSection) ? value as ProjectSection : 'overview';
 }
