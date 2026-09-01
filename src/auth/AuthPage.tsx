@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useLocation } from 'wouter';
 
 import { signIn, signUp } from '@/backend/auth';
-import { toBackendError } from '@/backend/errors';
+import { authErrorMessageKey, toBackendError } from '@/backend/errors';
 import { AppLanguageControl, useAppLocale } from '@/i18n/app-locale';
 import { useAuth } from './AuthProvider';
 import { anonymousWeddingTransferKey, anonymousWeddingTransferResultKey, anonymousWeddingTransferredEvent } from '@/wedding/anonymous-transfer';
@@ -39,7 +39,7 @@ export function AuthPage() {
       else if (await signUp(email.trim(), password, displayName)) setMessage(t('checkEmail'));
     } catch (caught) {
       const error = toBackendError(caught);
-      setMessage(t(error.code === 'network' ? 'networkError' : 'authError'));
+      setMessage(t(authErrorMessageKey(error.code)));
     } finally { setSubmitting(false); }
   };
 

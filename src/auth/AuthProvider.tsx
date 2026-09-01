@@ -7,6 +7,7 @@ import { listEntitlements } from '@/backend/entitlements';
 import { toBackendError, type BackendError } from '@/backend/errors';
 import { listEvents } from '@/backend/events';
 import type { BackendEvent, ClientAccount, ClientEntitlement } from '@/backend/types';
+import { accountBootstrapError, createAuthBootstrapScheduler, startAccountBootstrap } from './bootstrap';
 
 type AuthContextValue = {
   session: Session | null;
@@ -15,6 +16,7 @@ type AuthContextValue = {
   events: BackendEvent[];
   admin: boolean;
   loading: boolean;
+  dataLoading: boolean;
   error: BackendError | null;
   refresh: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -29,28 +31,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [events, setEvents] = useState<BackendEvent[]>([]);
   const [admin, setAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [dataLoading, setDataLoading] = useState(true);
   const [error, setError] = useState<BackendError | null>(null);
   const requestRef = useRef(0);
+  const activeUserRef = useRef<string | null>(null);
 
   const hydrate = useCallback(async (nextSession: Session | null) => {
     const request = ++requestRef.current;
     setSession(nextSession);
     setLoading(true);
+    setDataLoading(Boolean(nextSession));
     setError(null);
     if (!nextSession) {
-      setClient(null); setEntitlements([]); setEvents([]); setAdmin(false); setLoading(false);
+      activeUserRef.current = null;
+      setClient(null); setEntitlements([]); setEvents([]); setAdmin(false); setLoading(false); setDataLoading(false);
       return;
     }
+    activeUserRef.current = nextSession.user.id;
     try {
-      const [nextClient, nextEntitlements, nextEvents, nextAdmin] = await Promise.all([
-        getCurrentClient(), listEntitlements(), listEvents(), isPlatformAdmin(),
-      ]);
+      const bootstrap = await startAccountBootstrap({ client: getCurrentClient, entitlements: listEntitlements, events: listEvents, admin: isPlatformAdmin });
       if (request !== requestRef.current) return;
-      setClient(nextClient); setEntitlements(nextEntitlements); setEvents(nextEvents); setAdmin(nextAdmin);
+      setClient(bootstrap.client);
+      setLoading(false);
+      const optional = await bootstrap.optional;
+      if (request !== requestRef.current) return;
+      if (optional.entitlements) setEntitlements(optional.entitlements);
+      if (optional.events) setEvents(optional.events);
+      if (optional.admin !== undefined) setAdmin(optional.admin);
+      setDataLoading(false);
     } catch (caught) {
       if (request !== requestRef.current) return;
+      activeUserRef.current = null;
       if (import.meta.env.DEV) console.error('QuickRSVP account bootstrap failed.', caught);
-      setError(toBackendError(caught));
+      setError(accountBootstrapError(caught));
     } finally {
       if (request === requestRef.current) setLoading(false);
     }
@@ -58,17 +71,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
-    void getSession().then((value) => { if (active) return hydrate(value); }).catch((caught) => {
-      if (!active) return;
-      setError(toBackendError(caught)); setLoading(false);
-    });
+    const scheduler = createAuthBootstrapScheduler((session) => { if (active) void hydrate(session); });
     let subscription: ReturnType<typeof onAuthStateChange> | undefined;
     try {
-      subscription = onAuthStateChange((_event, nextSession) => queueMicrotask(() => active && void hydrate(nextSession)));
+      subscription = onAuthStateChange((_event, nextSession) => {
+        if (nextSession && activeUserRef.current === nextSession.user.id) setSession(nextSession);
+        else scheduler.schedule(nextSession);
+      });
     } catch (caught) {
       setError(toBackendError(caught)); setLoading(false);
     }
-    return () => { active = false; subscription?.unsubscribe(); };
+    return () => { active = false; scheduler.cancel(); subscription?.unsubscribe(); };
   }, [hydrate]);
 
   const refresh = useCallback(async () => hydrate(await getSession()), [hydrate]);
@@ -76,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try { await endSession(); }
     catch (caught) { setError(toBackendError(caught)); }
   }, []);
-  const value = useMemo(() => ({ session, client, entitlements, events, admin, loading, error, refresh, signOut }), [session, client, entitlements, events, admin, loading, error, refresh, signOut]);
+  const value = useMemo(() => ({ session, client, entitlements, events, admin, loading, dataLoading, error, refresh, signOut }), [session, client, entitlements, events, admin, loading, dataLoading, error, refresh, signOut]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

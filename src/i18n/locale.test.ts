@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { invitationTranslations } from './invitation.ts';
 import { partyInvitationT, resolvePartyInvitationLocale } from './party.ts';
+import { authErrorTranslations } from './auth-errors.ts';
 import { APP_LOCALE_STORAGE_KEY, localeDirection, normalizeLocale, persistAppLocale, readPersistedAppLocale, type AppLocale, type InvitationLocale } from './locale.ts';
 
 test('AppLocale defaults to Arabic and normalizes persisted values', () => {
@@ -38,4 +39,13 @@ test('legacy Party state remains readable and invitation locale persists', () =>
 test('Party invitation system copy follows InvitationLocale independently', () => {
   assert.equal(partyInvitationT('en', 'noAccount'), 'No account required');
   assert.equal(partyInvitationT('ar', 'noAccount'), 'لا يلزم إنشاء حساب');
+});
+
+test('Arabic and English account errors distinguish credentials session authority service and data failures', () => {
+  for (const locale of ['ar', 'en'] as const) {
+    for (const key of ['invalidCredentials', 'sessionExpired', 'unauthorizedAccount', 'networkError', 'serverError', 'accountDataUnavailable'] as const) {
+      assert.ok(authErrorTranslations[locale][key]);
+      assert.notEqual(authErrorTranslations[locale][key], locale === 'en' ? 'Check your details or try again.' : 'تحقق من البيانات أو حاول مرة أخرى.');
+    }
+  }
 });

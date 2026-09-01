@@ -3,13 +3,15 @@ import { Link, Redirect } from 'wouter';
 
 import { useAuth } from './AuthProvider';
 import { useAppLocale } from '@/i18n/app-locale';
+import { authErrorMessageKey } from '@/backend/errors';
 
 export function RequireAuth({ children, admin = false }: { children: ReactNode; admin?: boolean }) {
   const auth = useAuth();
   const { t } = useAppLocale();
   if (auth.loading) return <AuthState title={t('loading')} />;
   if (!auth.session) return <Redirect to="/auth" />;
-  if (auth.error) return <AuthState title={t('authFailed')} detail={t(auth.error.code === 'network' ? 'networkError' : 'authError')} action={<div className="flex justify-center gap-2"><button className="focus-ring rounded-full bg-[#0C2D24] px-5 py-3 text-xs font-semibold text-white" onClick={() => void auth.refresh()}>{t('retry')}</button><button className="focus-ring rounded-full border border-[#D9D2C5] px-5 py-3 text-xs font-semibold" onClick={() => void auth.signOut()}>{t('signOut')}</button></div>} />;
+  if (auth.error) return <AuthState title={t('authFailed')} detail={t(authErrorMessageKey(auth.error.code))} action={<div className="flex justify-center gap-2"><button className="focus-ring rounded-full bg-[#0C2D24] px-5 py-3 text-xs font-semibold text-white" onClick={() => void auth.refresh()}>{t('retry')}</button><button className="focus-ring rounded-full border border-[#D9D2C5] px-5 py-3 text-xs font-semibold" onClick={() => void auth.signOut()}>{t('signOut')}</button></div>} />;
+  if (admin && auth.dataLoading) return <AuthState title={t('loading')} />;
   if (admin && !auth.admin) return <AuthState title={t('accessDeniedTitle')} detail={t('accessDeniedHelp')} action={<Link href="/" className="focus-ring rounded-full bg-[#0C2D24] px-5 py-3 text-xs font-semibold text-white">{t('backToProjects')}</Link>} />;
   return children;
 }

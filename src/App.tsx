@@ -963,7 +963,7 @@ function ProjectRoutePage({ type }: { type: ProjectType }) {
     if (type === 'party' && eventId !== activePartyEventId) openPartyEvent(eventId);
   }, [activePartyEventId, eventId, openPartyEvent, project, ready, setMode, state.mode, type, weddingProject, workspace]);
 
-  if (!ready) return <LoadingPage />;
+  if (!ready || (auth.dataLoading && !backendEvent)) return <LoadingPage />;
   if (!project) return <NotFoundPage />;
   if ((weddingProject && workspace.activeProject.id !== weddingProject.id) || (type === 'party' && activePartyEventId !== eventId)) return <LoadingPage />;
 
