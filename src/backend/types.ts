@@ -60,7 +60,7 @@ export type EventGuest = {
   first_checked_in_at: string | null;
   last_checkin_activity_at: string | null;
   personal_invitations?: Array<{ id: string; open_count: number; first_opened_at: string | null; last_opened_at: string | null; revoked_at: string | null }>;
-  event_guest_tag_assignments?: Array<{ event_guest_tags: Array<{ name: string }> }>;
+  event_guest_tag_assignments?: Array<{ event_guest_tags: { name: string } | Array<{ name: string }> | null }>;
 };
 
 export type InvitationResolution = {

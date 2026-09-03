@@ -436,7 +436,7 @@ function GuestPage({ preview = false, onSelectBlock }: { preview?: boolean; onSe
     loadPublicInvitation(resolution, backendToken, generalName);
     if (openedRef.current !== backendToken) {
       openedRef.current = backendToken;
-      requestAnimationFrame(() => void recordInvitationOpen(backendToken).catch(() => undefined));
+      void recordInvitationOpen(backendToken).catch(() => undefined);
     }
   }, [backendToken, generalName, identified, loadPublicInvitation, resolution]);
   if (backendToken && (!resolution || resolutionError)) return resolutionError ? <TokenError /> : <LoadingPage />;
@@ -1026,7 +1026,7 @@ function DashboardRoute({ product }: { product?: ProductId }) {
   const [drafts, setDrafts] = useState<DesignDraft<Record<string, unknown>>[]>([]);
   const [commercial, setCommercial] = useState<CommercialSource | null>(null);
   const loadDrafts = () => Promise.all([listDesignDrafts<Record<string, unknown>>('wedding'), listDesignDrafts<Record<string, unknown>>('party')]).then(([wedding, party]) => setDrafts([...wedding, ...party]));
-  useEffect(() => { void loadDrafts().catch(() => setDrafts([])); void loadCommercialSource().then(setCommercial).catch(() => setCommercial(null)); }, []);
+  useEffect(() => { if (auth.dataLoading) return; void loadDrafts().catch(() => setDrafts([])); void loadCommercialSource().then(setCommercial).catch(() => setCommercial(null)); }, [auth.dataLoading]);
   return <DashboardPage
     projects={auth.events.filter((event) => !event.deleted_at).map(backendProjectSummary)}
     drafts={drafts.map((draft) => ({ id: draft.id, type: draft.product_id, name: draft.title, updatedAt: draft.updated_at }))}
@@ -1102,6 +1102,8 @@ function DraftRoutePage() {
   if (error) return <main className="min-h-[100dvh] bg-[#F5F2EC] p-5"><div className="mx-auto max-w-xl rounded-3xl bg-white p-7 text-[#8c302b]" role="alert">{error}</div></main>;
   if (!draft) return <LoadingPage />;
   const allowed = access?.allowed ?? access?.can_publish;
+  const alreadyPublished = (typeof access?.event_id === 'string' && access.event_id.length > 0)
+    || auth.events.some((event) => event.source_draft_id === draft.id);
   const authorityMessage = String(access?.reason ?? access?.code ?? access?.status ?? (allowed === true ? t('publishAvailable') : t('publicationUnavailable')));
   const publish = async () => {
     setPublishing(true); setError('');
@@ -1115,7 +1117,7 @@ function DraftRoutePage() {
       setError(caught instanceof Error ? caught.message : t('operationFailed'));
     } finally { setPublishing(false); }
   };
-  return <div className="min-h-[100dvh] bg-[#F5F2EC] text-[#17251F]"><header className="sticky top-0 z-40 border-b border-[#D9D2C5] bg-[#FAF8F4]/95 px-5 py-4 backdrop-blur"><div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[.16em] text-[#8B7040]">{t(type)} · {t('draft')}</p><h1 className="text-lg font-semibold">{draft.title}</h1></div><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-3 py-2 text-xs ${allowed === false ? 'bg-[#8c302b]/10 text-[#8c302b]' : 'bg-[#0C2D24]/10 text-[#0C2D24]'}`}>{authorityMessage}</span><button disabled={publishing || !access || allowed === false} onClick={() => void publish()} className="min-h-11 rounded-full bg-[#0C2D24] px-5 text-xs font-semibold text-white disabled:opacity-40">{publishing ? t('publishing') : t('publish')}</button><Link href="/" className="min-h-11 rounded-full border border-[#D9D2C5] px-5 py-3 text-xs font-semibold">{t('projects')}</Link></div></div></header>{error && <p className="mx-auto mt-4 max-w-7xl rounded-2xl bg-[#8c302b]/10 p-4 text-sm text-[#8c302b]" role="alert">{error}</p>}<main className="mx-auto max-w-7xl p-4 sm:p-7">{type === 'wedding' ? <WeddingStudioPage embedded /> : <PartyStudioPage embedded />}</main></div>;
+  return <div className="min-h-[100dvh] bg-[#F5F2EC] text-[#17251F]"><header className="sticky top-0 z-40 border-b border-[#D9D2C5] bg-[#FAF8F4]/95 px-5 py-4 backdrop-blur"><div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[.16em] text-[#8B7040]">{t(type)} · {t('draft')}</p><h1 className="text-lg font-semibold">{draft.title}</h1></div><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-3 py-2 text-xs ${allowed === false ? 'bg-[#8c302b]/10 text-[#8c302b]' : 'bg-[#0C2D24]/10 text-[#0C2D24]'}`}>{authorityMessage}</span><button disabled={publishing || !access || (allowed === false && !alreadyPublished)} onClick={() => void publish()} className="min-h-11 rounded-full bg-[#0C2D24] px-5 text-xs font-semibold text-white disabled:opacity-40">{publishing ? t('publishing') : t('publish')}</button><Link href="/" className="min-h-11 rounded-full border border-[#D9D2C5] px-5 py-3 text-xs font-semibold">{t('projects')}</Link></div></div></header>{error && <p className="mx-auto mt-4 max-w-7xl rounded-2xl bg-[#8c302b]/10 p-4 text-sm text-[#8c302b]" role="alert">{error}</p>}<main className="mx-auto max-w-7xl p-4 sm:p-7">{type === 'wedding' ? <WeddingStudioPage embedded /> : <PartyStudioPage embedded />}</main></div>;
 }
 
 function ProjectRoutePage({ type }: { type: ProjectType }) {
