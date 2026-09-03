@@ -17,7 +17,7 @@ import { AuthProvider, useAuth } from '@/auth/AuthProvider';
 import { RequireAuth } from '@/auth/RequireAuth';
 import { WeddingInvitationRenderer, WeddingStudio } from '@/wedding/WeddingMode';
 import { WeddingWorkspaceProvider, useWeddingWorkspace } from '@/wedding/WeddingWorkspaceProvider';
-import { requestAnonymousWeddingTransfer } from '@/wedding/anonymous-transfer';
+import { anonymousDesignTransferFailedEvent, anonymousDesignTransferKey, anonymousDesignTransferResultKey, anonymousDesignTransferredEvent, hasDraftTransferMarker, requestAnonymousDesignTransfer, transferredDraftResult, withDraftTransferMarker } from '@/wedding/anonymous-transfer';
 import type { WeddingProject } from '@/wedding/workspace';
 import { AdminPage } from '@/admin/AdminPage';
 import { DashboardPage } from '@/app/DashboardPage';
@@ -42,12 +42,13 @@ import {
   isValidGuestToken,
   mergeWeddingEvent,
   type EventMode,
+  type WeddingEventData,
   type WeddingGuestData,
   type WeddingRsvp,
 } from '@/wedding/model';
 import { defaultPartyEvent, formatPartyDate, mergePartyEvent, partyTemplates, type PartyEventData } from '@/party/model';
-import { createGeneralInvitation, createGuest, listEventConfigs, listGuests, recordInvitationOpen, resolveInvitation, rotatePersonalInvitation, savePartyConfig, submitGeneralRsvp, submitPersonalRsvp, tagGuest, updateGuest } from '@/backend/phase2';
-import { createEvent, updateEvent } from '@/backend/events';
+import { createDesignDraft, createGeneralInvitation, createGuest, deleteDesignDraft, getDesignDraftPublishAccess, listDesignDrafts, listEventConfigs, listGuests, publishDesignDraft, recordInvitationOpen, resolveInvitation, rotatePersonalInvitation, savePartyConfig, submitGeneralRsvp, submitPersonalRsvp, tagGuest, updateDesignDraft, updateGuest, type DesignDraft, type DesignDraftPublishAccess } from '@/backend/phase2';
+import { updateEvent } from '@/backend/events';
 import { loadAdminSnapshot, setAdminEntitlement, setTemplateActive, type AdminSnapshot } from '@/backend/phase3';
 import type { BackendEvent, EntitlementStatus, EventGuest, EventLifecycle, InvitationResolution, ProductId } from '@/backend/types';
 import {
@@ -119,6 +120,8 @@ type EngineContextValue = {
   submitWeddingRsvp: (response: WeddingRsvp) => void;
   activePartyEventId: string;
   openPartyEvent: (id: string) => void;
+  openPartyDraft: (draft: DesignDraft<Record<string, unknown>>) => void;
+  savePartyDraft: () => Promise<void>;
   loadPublicInvitation: (resolution: InvitationResolution, token: string, generalName?: string) => void;
   publicReadOnly: boolean;
   storageAvailable: boolean;
@@ -139,6 +142,9 @@ function EngineProvider({ children }: { children: ReactNode }) {
   const partyHydratedRef = useRef(false);
   const partyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const partyQueueRef = useRef(Promise.resolve());
+  const partyDraftRef = useRef<DesignDraft<Record<string, unknown>> | null>(null);
+  const partyTransferRef = useRef<Promise<void> | null>(null);
+  const partyUserRef = useRef<string | null>(null);
   const [publicInvitation, setPublicInvitation] = useState<{ token: string; kind: 'personal' | 'general'; requestId: string; readOnly: boolean } | null>(null);
   useEffect(() => {
     let raw: string | null;
@@ -170,17 +176,37 @@ function EngineProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (ready && storageAvailable) {
       try {
-        const existing = JSON.parse(localStorage.getItem('luxury-rsvp-engine') ?? '{}') as { weddingEvent?: unknown };
+        const existing = JSON.parse(localStorage.getItem('luxury-rsvp-engine') ?? '{}') as Partial<EngineState> & { weddingEvent?: unknown };
+        const backendParty = Boolean(auth.session && (partyDraftRef.current || activePartyEventId));
+        const anonymousParty = backendParty ? {
+          partyEvent: existing.partyEvent,
+          blocks: (existing as Partial<EngineState>).blocks,
+          invitationLocale: (existing as Partial<EngineState>).invitationLocale,
+        } : {};
         const persisted = preserveLegacyWedding && existing.weddingEvent
           ? { ...state, weddingEvent: existing.weddingEvent }
           : state;
-        localStorage.setItem('luxury-rsvp-engine', JSON.stringify(persisted));
+        localStorage.setItem('luxury-rsvp-engine', JSON.stringify({ ...persisted, ...anonymousParty }));
       }
       catch { setStorageAvailable(false); }
     }
-  }, [state, ready, preserveLegacyWedding, storageAvailable]);
+  }, [activePartyEventId, auth.session, state, ready, preserveLegacyWedding, storageAvailable]);
+  useEffect(() => {
+    if (auth.session) { partyUserRef.current = auth.session.user.id; return; }
+    if (auth.loading || !partyUserRef.current) return;
+    partyUserRef.current = null;
+    partyDraftRef.current = null;
+    setActivePartyEventId('');
+    try {
+      const saved = JSON.parse(localStorage.getItem('luxury-rsvp-engine') ?? '{}') as Partial<EngineState>;
+      setState((current) => ({ ...current, partyEvent: mergePartyEvent(saved.partyEvent), blocks: Array.isArray(saved.blocks) ? saved.blocks : initialBlocks, invitationLocale: resolvePartyInvitationLocale(saved) }));
+    } catch {
+      setState((current) => ({ ...current, partyEvent: defaultPartyEvent, blocks: initialBlocks, invitationLocale: 'ar' }));
+    }
+  }, [auth.loading, auth.session]);
   useEffect(() => {
     if (!auth.session || auth.loading) return;
+    if (sessionStorage.getItem(anonymousDesignTransferKey) === 'party') return;
     const partyEvents = auth.events.filter((event) => event.product_id === 'party' && !event.deleted_at);
     const eventId = partyEvents.some((event) => event.id === activePartyEventId) ? activePartyEventId : partyEvents[0]?.id;
     if (!eventId) return;
@@ -197,12 +223,38 @@ function EngineProvider({ children }: { children: ReactNode }) {
     }).catch(() => { partyHydratedRef.current = true; });
   }, [activePartyEventId, auth.events, auth.loading, auth.session]);
   useEffect(() => {
-    if (!partyHydratedRef.current || !activePartyEventId || !auth.session) return;
+    if (!ready || !auth.session || auth.loading || sessionStorage.getItem(anonymousDesignTransferKey) !== 'party' || partyTransferRef.current) return;
+    partyTransferRef.current = (async () => {
+      const sourceId = 'party-local-workspace';
+      const drafts = await listDesignDrafts<Record<string, unknown>>('party');
+      let draft = drafts.find((item) => hasDraftTransferMarker(item.configuration, sourceId));
+      if (!draft) {
+        const configuration = withDraftTransferMarker({ ...structuredClone(state.partyEvent), blocks: structuredClone(state.blocks), invitationLocale: state.invitationLocale }, sourceId);
+        draft = await createDesignDraft('party', state.partyEvent.title, configuration);
+      }
+      try {
+        const saved = JSON.parse(localStorage.getItem('luxury-rsvp-engine') ?? '{}') as Record<string, unknown>;
+        delete saved.partyEvent; delete saved.blocks; delete saved.invitationLocale;
+        localStorage.setItem('luxury-rsvp-engine', JSON.stringify(saved));
+      } catch { /* Authenticated Draft remains authoritative. */ }
+      sessionStorage.setItem(anonymousDesignTransferResultKey, transferredDraftResult('party', draft.id));
+      sessionStorage.removeItem(anonymousDesignTransferKey);
+      window.dispatchEvent(new Event(anonymousDesignTransferredEvent));
+    })().catch((caught) => {
+      window.dispatchEvent(new CustomEvent(anonymousDesignTransferFailedEvent, { detail: caught instanceof Error ? caught.message : 'Design Draft transfer failed.' }));
+    }).finally(() => { partyTransferRef.current = null; });
+  }, [auth.loading, auth.session, ready, state.blocks, state.invitationLocale, state.partyEvent]);
+  useEffect(() => {
+    if (!partyHydratedRef.current || (!activePartyEventId && !partyDraftRef.current) || !auth.session) return;
     if (partyTimerRef.current) clearTimeout(partyTimerRef.current);
     partyTimerRef.current = setTimeout(() => {
       const configuration = { ...state.partyEvent, blocks: state.blocks, invitationLocale: state.invitationLocale };
       const existingTemplate = partyTemplateKeyRef.current === state.partyEvent.templateId ? partyTemplateRef.current : null;
       partyQueueRef.current = partyQueueRef.current.then(async () => {
+        if (partyDraftRef.current) {
+          partyDraftRef.current = await updateDesignDraft(partyDraftRef.current, state.partyEvent.title, configuration);
+          return;
+        }
         const saved = await savePartyConfig(activePartyEventId, configuration, partyVersionRef.current, existingTemplate);
         partyVersionRef.current = saved.version;
         partyTemplateRef.current = saved.template_version_id;
@@ -250,7 +302,23 @@ function EngineProvider({ children }: { children: ReactNode }) {
       setState((s) => ({ ...s, rsvp: response.status, plusOnes: Math.max(0, response.guestCount - 1), weddingResponse: { guestCount: response.guestCount, message: response.message }, operations: publicInvitation ? s.operations : updateOperationalGuestByToken(s.operations, projectKey('wedding', activeProject.id), s.weddingGuest.token, { rsvp: response.status, guestCount: response.guestCount, message: response.message }) }));
     },
     activePartyEventId,
-    openPartyEvent: setActivePartyEventId,
+    openPartyEvent: (id: string) => { partyDraftRef.current = null; setActivePartyEventId(id); },
+    openPartyDraft: (draft: DesignDraft<Record<string, unknown>>) => {
+      partyDraftRef.current = draft;
+      setActivePartyEventId('');
+      partyHydratedRef.current = false;
+      const configuration = draft.configuration as Partial<PartyEventData> & { blocks?: StudioBlock[]; invitationLocale?: InvitationLocale };
+      setState((current) => ({ ...current, mode: 'standard', partyEvent: mergePartyEvent(configuration), blocks: Array.isArray(configuration.blocks) ? configuration.blocks : current.blocks, invitationLocale: configuration.invitationLocale === 'en' ? 'en' : 'ar' }));
+      partyHydratedRef.current = true;
+    },
+    savePartyDraft: async () => {
+      if (!partyDraftRef.current) return;
+      const configuration = { ...state.partyEvent, blocks: state.blocks, invitationLocale: state.invitationLocale };
+      partyQueueRef.current = partyQueueRef.current.then(async () => {
+        partyDraftRef.current = await updateDesignDraft(partyDraftRef.current!, state.partyEvent.title, configuration);
+      });
+      await partyQueueRef.current;
+    },
     loadPublicInvitation: (resolution: InvitationResolution, token: string, generalName = '') => {
       if (!resolution.event || !resolution.kind) return;
       const configuration = resolution.configuration ?? {};
@@ -293,10 +361,10 @@ function Monogram({ compact = false }: { compact?: boolean }) {
   return <div className={`flex items-center ${compact ? 'gap-2' : 'gap-3'}`}><div className={`font-display leading-none text-[#0A2E23] ${compact ? 'text-2xl' : 'text-4xl'}`}>M<span className="mx-0.5 text-[#D4AF37]">&amp;</span>L</div>{!compact && <div className="hidden border-l border-[#D4AF37]/70 pl-3 text-[9px] font-semibold uppercase leading-relaxed tracking-[.18em] text-[#2D2421]/60 sm:block">The private<br />wedding suite</div>}</div>;
 }
 
-function QuietHeader({ studio = false, anonymous = false }: { studio?: boolean; anonymous?: boolean }) {
+function QuietHeader({ studio = false, anonymous = false }: { studio?: boolean; anonymous?: ProductId | false }) {
   const { t } = useAppLocale();
   return <header className="relative z-20 flex items-center justify-between px-5 py-6 sm:px-10 lg:px-16">
-    <Link href={anonymous ? '/design/wedding' : '/studio'} data-testid={`link-${studio ? 'studio-hub' : 'studio'}`} className="focus-ring"><Monogram compact={studio} /></Link>
+    <Link href={anonymous ? `/design/${anonymous}` : '/studio'} data-testid={`link-${studio ? 'studio-hub' : 'studio'}`} className="focus-ring"><Monogram compact={studio} /></Link>
     <div className="flex items-center gap-3">
       <AppLanguageControl compact />
       <Eyebrow className="hidden sm:block">{studio ? 'HOST STUDIO / 01' : 'A PERSONAL INVITATION'}</Eyebrow>
@@ -583,6 +651,7 @@ function StudioHubPage() {
 
 function PartyStudioPage({ embedded = false }: { embedded?: boolean }) {
   const { state, ready, toggleBlock, reorderBlocks, updateBlock, setMode, setInvitationLocale, updatePartyEvent } = useEngine();
+  const auth = useAuth();
   const { t, locale } = useAppLocale();
   const [activeEditor, setActiveEditor] = useState<BlockKey | null>(null);
   const [view, setView] = useState<'edit' | 'preview'>('edit');
@@ -606,7 +675,7 @@ function PartyStudioPage({ embedded = false }: { embedded?: boolean }) {
   return (
     <div className={`grain bg-[#FAF7F2] text-[#2D2421] ${embedded ? 'rounded-3xl py-6' : 'min-h-[100dvh]'}`}>
       <div className="gold-thread" />
-      {!embedded && <QuietHeader studio />}
+      {!embedded && <QuietHeader studio anonymous={!auth.session && 'party'} />}
       <main className={`relative z-10 mx-auto max-w-7xl px-5 sm:px-8 ${embedded ? 'pb-6' : 'pb-20 lg:px-14'}`}>
         <FadeIn>
           <div className="flex flex-col justify-between gap-7 border-b border-[#D4AF37]/35 pb-8 md:flex-row md:items-end">
@@ -620,15 +689,15 @@ function PartyStudioPage({ embedded = false }: { embedded?: boolean }) {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Link href="/studio" data-testid="link-switch-studio" className="focus-ring inline-flex items-center gap-1.5 rounded-full border border-[#D4AF37]/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23] hover:bg-[#D4AF37]/10">
+              <Link href={auth.session ? '/studio' : '/design/wedding'} data-testid="link-switch-studio" className="focus-ring inline-flex min-h-11 items-center gap-1.5 rounded-full border border-[#D4AF37]/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23] hover:bg-[#D4AF37]/10">
                 <ArrowLeft size={13} /> {t('switchType')}
               </Link>
-              <Link href="/i/demo" data-testid="link-preview-invitation" className="focus-ring inline-flex items-center gap-2 rounded-full border border-[#D4AF37]/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23]">
+              <Link href={auth.session ? '/' : '/auth'} onClick={() => { if (!auth.session) requestAnonymousDesignTransfer('party'); }} data-testid="link-preview-invitation" className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-full border border-[#D4AF37]/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23]">
                 <ExternalLink size={14} /> {t('preview')}
               </Link>
-              <Link href={buildProjectRoute('party', partyProject.id, 'scanner')} data-testid="link-open-scanner" className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-full bg-[#0A2E23] px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#FFFDF9]">
+              {auth.session && <Link href={buildProjectRoute('party', partyProject.id, 'scanner')} data-testid="link-open-scanner" className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-full bg-[#0A2E23] px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#FFFDF9]">
                 <QrCode size={14} /> {t('doorScanner')}
-              </Link>
+              </Link>}
             </div>
           </div>
         </FadeIn>
@@ -783,7 +852,7 @@ function WeddingStudioPage({ embedded = false }: { embedded?: boolean }) {
   return (
     <div className={`grain bg-[#FAF7F2] text-[#2D2421] ${embedded ? 'rounded-3xl py-6' : 'min-h-[100dvh]'}`}>
       <div className="gold-thread" />
-      {!embedded && <QuietHeader studio anonymous={!auth.session} />}
+      {!embedded && <QuietHeader studio anonymous={!auth.session && 'wedding'} />}
       <main className={`relative z-10 mx-auto max-w-7xl px-5 sm:px-8 ${embedded ? 'pb-6' : 'pb-20 lg:px-14'}`}>
         <FadeIn>
           <div className="flex flex-col justify-between gap-7 border-b border-[#D4AF37]/35 pb-8 md:flex-row md:items-end">
@@ -800,7 +869,7 @@ function WeddingStudioPage({ embedded = false }: { embedded?: boolean }) {
               {auth.session && <Link href="/studio" data-testid="link-switch-studio" className="focus-ring inline-flex items-center gap-1.5 rounded-full border border-[#D4AF37]/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23] hover:bg-[#D4AF37]/10">
                 <ArrowLeft size={13} /> {t('switchType')}
               </Link>}
-              <Link href={auth.session ? "/i/demo" : "/auth"} onClick={() => { if (!auth.session) requestAnonymousWeddingTransfer(); }} data-testid="link-preview-invitation" className="focus-ring inline-flex items-center gap-2 rounded-full border border-[#D4AF37]/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23]">
+              <Link href={auth.session ? "/" : "/auth"} onClick={() => { if (!auth.session) requestAnonymousDesignTransfer('wedding'); }} data-testid="link-preview-invitation" className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-full border border-[#D4AF37]/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23]">
                 <ExternalLink size={14} /> {t('preview')}
               </Link>
               {auth.session && <Link href="/scanner" data-testid="link-open-scanner" className="focus-ring inline-flex items-center gap-2 rounded-full bg-[#0A2E23] px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#FFFDF9]">
@@ -923,8 +992,13 @@ function backendProjectSummary(event: BackendEvent): ProjectSummary & { lifecycl
 
 function DashboardRoute() {
   const auth = useAuth();
+  const [, navigate] = useLocation();
+  const [drafts, setDrafts] = useState<DesignDraft<Record<string, unknown>>[]>([]);
+  const loadDrafts = () => Promise.all([listDesignDrafts<Record<string, unknown>>('wedding'), listDesignDrafts<Record<string, unknown>>('party')]).then(([wedding, party]) => setDrafts([...wedding, ...party]));
+  useEffect(() => { void loadDrafts().catch(() => setDrafts([])); }, []);
   return <DashboardPage
     projects={auth.events.filter((event) => !event.deleted_at).map(backendProjectSummary)}
+    drafts={drafts.map((draft) => ({ id: draft.id, type: draft.product_id, name: draft.title, updatedAt: draft.updated_at }))}
     account={{
       name: auth.client?.display_name ?? '',
       email: auth.session?.user.email ?? '',
@@ -933,11 +1007,67 @@ function DashboardRoute() {
       access: Object.fromEntries(auth.entitlements.map((item) => [item.product_id, item.status])),
     }}
     onSignOut={() => void auth.signOut()}
-    onCreate={async (type, title) => { await createEvent({ productId: type, title }); await auth.refresh(); }}
+    onCreate={async (type, title) => {
+      const configuration = type === 'wedding'
+        ? structuredClone(defaultWeddingEvent) as WeddingEventData & Record<string, unknown>
+        : { ...structuredClone(defaultPartyEvent), blocks: structuredClone(initialBlocks), invitationLocale: 'ar' };
+      const draft = await createDesignDraft(type, title, configuration);
+      navigate(`/drafts/${type}/${draft.id}`);
+    }}
     onRename={async (id, title) => { await updateEvent(id, { title }); await auth.refresh(); }}
     onArchive={async (id) => { await updateEvent(id, { lifecycle_status: 'archived' }); await auth.refresh(); }}
     onDelete={async (id) => { await updateEvent(id, { deleted_at: new Date().toISOString() }); await auth.refresh(); }}
+    onDeleteDraft={async (id) => { await deleteDesignDraft(id); await loadDrafts(); }}
   />;
+}
+
+function DraftRoutePage() {
+  const { type: rawType, draftId } = useParams<{ type: string; draftId: string }>();
+  const type = rawType === 'wedding' || rawType === 'party' ? rawType : null;
+  const auth = useAuth();
+  const workspace = useWeddingWorkspace();
+  const { openPartyDraft, savePartyDraft } = useEngine();
+  const { t } = useAppLocale();
+  const [, navigate] = useLocation();
+  const [draft, setDraft] = useState<DesignDraft<Record<string, unknown>> | null>(null);
+  const [access, setAccess] = useState<DesignDraftPublishAccess | null>(null);
+  const [error, setError] = useState('');
+  const [publishing, setPublishing] = useState(false);
+  const openedRef = useRef('');
+
+  useEffect(() => {
+    if (!type || !draftId) return;
+    let live = true;
+    Promise.all([listDesignDrafts<Record<string, unknown>>(type), getDesignDraftPublishAccess(draftId)])
+      .then(async ([items, authority]) => {
+        const found = items.find((item) => item.id === draftId);
+        if (!found) throw new Error('Design Draft not found.');
+        if (type === 'wedding') await workspace.openDraft(draftId);
+        else if (openedRef.current !== draftId) { openedRef.current = draftId; openPartyDraft(found); }
+        if (live) { setDraft(found); setAccess(authority); }
+      })
+      .catch((caught) => { if (live) setError(caught instanceof Error ? caught.message : t('operationFailed')); });
+    return () => { live = false; };
+  }, [draftId, type]);
+
+  if (!type) return <NotFoundPage />;
+  if (error) return <main className="min-h-[100dvh] bg-[#F5F2EC] p-5"><div className="mx-auto max-w-xl rounded-3xl bg-white p-7 text-[#8c302b]" role="alert">{error}</div></main>;
+  if (!draft) return <LoadingPage />;
+  const allowed = access?.allowed ?? access?.can_publish;
+  const authorityMessage = String(access?.reason ?? access?.code ?? access?.status ?? (allowed === true ? t('publishAvailable') : t('publicationUnavailable')));
+  const publish = async () => {
+    setPublishing(true); setError('');
+    try {
+      if (type === 'wedding') await workspace.saveNow();
+      else await savePartyDraft();
+      const event = await publishDesignDraft(draft.id);
+      await auth.refresh();
+      navigate(buildProjectRoute(type, event.id, 'overview'));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t('operationFailed'));
+    } finally { setPublishing(false); }
+  };
+  return <div className="min-h-[100dvh] bg-[#F5F2EC] text-[#17251F]"><header className="sticky top-0 z-40 border-b border-[#D9D2C5] bg-[#FAF8F4]/95 px-5 py-4 backdrop-blur"><div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[.16em] text-[#8B7040]">{t(type)} · {t('draft')}</p><h1 className="text-lg font-semibold">{draft.title}</h1></div><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-3 py-2 text-xs ${allowed === false ? 'bg-[#8c302b]/10 text-[#8c302b]' : 'bg-[#0C2D24]/10 text-[#0C2D24]'}`}>{authorityMessage}</span><button disabled={publishing || !access || allowed === false} onClick={() => void publish()} className="min-h-11 rounded-full bg-[#0C2D24] px-5 text-xs font-semibold text-white disabled:opacity-40">{publishing ? t('publishing') : t('publish')}</button><Link href="/" className="min-h-11 rounded-full border border-[#D9D2C5] px-5 py-3 text-xs font-semibold">{t('projects')}</Link></div></div></header>{error && <p className="mx-auto mt-4 max-w-7xl rounded-2xl bg-[#8c302b]/10 p-4 text-sm text-[#8c302b]" role="alert">{error}</p>}<main className="mx-auto max-w-7xl p-4 sm:p-7">{type === 'wedding' ? <WeddingStudioPage embedded /> : <PartyStudioPage embedded />}</main></div>;
 }
 
 function ProjectRoutePage({ type }: { type: ProjectType }) {
@@ -1031,8 +1161,10 @@ function Router() {
       <Switch>
         <Route path="/auth" component={AuthPage} />
         <Route path="/design/wedding">{() => <WeddingStudioPage />}</Route>
+        <Route path="/design/party">{() => <PartyStudioPage />}</Route>
         <Route path="/i/:token" component={GuestRoute} />
         <Route path="/">{() => <RequireAuth><DashboardRoute /></RequireAuth>}</Route>
+        <Route path="/drafts/:type/:draftId">{() => <RequireAuth><DraftRoutePage /></RequireAuth>}</Route>
         <Route path="/weddings/:eventId/:section">{() => <RequireAuth><WeddingProjectRoute /></RequireAuth>}</Route>
         <Route path="/parties/:eventId/:section">{() => <RequireAuth><PartyProjectRoute /></RequireAuth>}</Route>
         <Route path="/admin/:section">{() => <RequireAuth admin><AdminRoute /></RequireAuth>}</Route>

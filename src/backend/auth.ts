@@ -22,7 +22,7 @@ export async function signUp(email: string, password: string, displayName: strin
   const { data, error } = await getSupabase().auth.signUp({
     email,
     password,
-    options: { data: { display_name: displayName.trim() } },
+    options: { data: { display_name: displayName.trim() }, emailRedirectTo: new URL(`${import.meta.env.BASE_URL.replace(/\/$/, '')}/auth`, window.location.origin).href },
   });
   if (error) throw toBackendError(error);
   return data.session === null;

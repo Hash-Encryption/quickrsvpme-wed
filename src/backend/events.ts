@@ -2,7 +2,7 @@ import { toBackendError } from './errors';
 import { getSupabase } from './supabase';
 import type { BackendEvent, CreateEventInput } from './types';
 
-const eventFields = 'id, client_id, product_id, title, lifecycle_status, invitation_locale, starts_at, ends_at, rsvp_deadline, venue_name, city, request_companion_names, allow_custom_messages, allow_rsvp_changes, general_invite_allowed_companions, archived_at, deleted_at, created_at, updated_at';
+const eventFields = 'id, client_id, product_id, title, lifecycle_status, invitation_locale, starts_at, ends_at, rsvp_deadline, venue_name, city, request_companion_names, allow_custom_messages, allow_rsvp_changes, general_invite_allowed_companions, archived_at, deleted_at, created_at, updated_at, source_draft_id';
 
 export async function listEvents(signal?: AbortSignal): Promise<BackendEvent[]> {
   const request = getSupabase().from('events').select(eventFields).is('deleted_at', null).order('created_at', { ascending: false });

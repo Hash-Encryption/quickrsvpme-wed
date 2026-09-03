@@ -10,9 +10,9 @@ import {
 } from "react";
 import { defaultWeddingEvent, mergeWeddingEvent, type WeddingEventData } from "./model.ts";
 import { useAuth } from "../auth/AuthProvider.tsx";
-import { createDesignDraft, deleteDesignDraft, listDesignDrafts, listEventConfigs, publishArtwork, saveWeddingConfig, updateDesignDraft, type DesignDraft } from "../backend/phase2.ts";
-import { createEvent, updateEvent } from "../backend/events.ts";
-import { anonymousWeddingTransferKey, anonymousWeddingTransferResultKey, anonymousWeddingTransferredEvent } from "./anonymous-transfer.ts";
+import { createDesignDraft, deleteDesignDraft, listDesignDrafts, listEventConfigs, publishArtwork, saveWeddingConfig, updateDesignDraft, uploadDraftArtwork, type DesignDraft } from "../backend/phase2.ts";
+import { updateEvent } from "../backend/events.ts";
+import { anonymousDesignTransferFailedEvent, anonymousDesignTransferKey, anonymousDesignTransferResultKey, anonymousDesignTransferredEvent, hasDraftTransferMarker, transferredDraftResult, withDraftTransferMarker } from "./anonymous-transfer.ts";
 import { IndexedDbWeddingWorkspaceStorage } from "./workspace-storage.ts";
 import {
   applySavedDesignToEvent,
@@ -53,6 +53,7 @@ type WeddingWorkspaceContextValue = {
   applyDesign: (id: string) => void;
   renameDesign: (id: string, name: string) => Promise<void>;
   deleteDesign: (id: string) => Promise<void>;
+  openDraft: (id: string) => Promise<void>;
 };
 
 const WeddingWorkspaceContext = createContext<WeddingWorkspaceContextValue | null>(null);
@@ -103,6 +104,8 @@ export function WeddingWorkspaceProvider({
   const backendArtworkRef = useRef(new Map<string, string | null>());
   const uploadedArtworkRef = useRef(new Map<string, { id: string; publicUrl: string }>());
   const backendDraftsRef = useRef(new Map<string, DesignDraft<Record<string, unknown>>>());
+  const transferRef = useRef<Promise<string | null> | null>(null);
+  const authenticatedUserRef = useRef<string | null>(null);
 
   const setWorkspace = useCallback((next: WeddingWorkspaceState) => {
     workspaceRef.current = next;
@@ -158,35 +161,47 @@ export function WeddingWorkspaceProvider({
   }, [setWorkspace]);
 
   useEffect(() => {
+    if (auth.session) {
+      authenticatedUserRef.current = auth.session.user.id;
+      return;
+    }
+    if (auth.loading || !authenticatedUserRef.current) return;
+    authenticatedUserRef.current = null;
+    backendDraftsRef.current.clear();
+    backendVersionsRef.current.clear();
+    initializeWeddingWorkspace(storageRef.current, null).then(setWorkspace).catch((error) => {
+      setSaveStatus("error");
+      setStorageError(errorMessage(error));
+    });
+  }, [auth.loading, auth.session, setWorkspace]);
+
+  useEffect(() => {
     if (!auth.session || auth.loading) return;
     const events = auth.events.filter((event) => event.product_id === "wedding" && !event.deleted_at);
     let live = true;
     const transfer = async () => {
-      if (sessionStorage.getItem(anonymousWeddingTransferKey) !== "1") return false;
+      if (sessionStorage.getItem(anonymousDesignTransferKey) !== "wedding") return null;
       const current = workspaceRef.current;
       const source = current?.projects.find((project) => project.id === current.activeProjectId);
-      if (!source) return false;
-      const pendingEventId = sessionStorage.getItem(anonymousWeddingTransferResultKey);
-      const targetId = pendingEventId ?? (await createEvent({ productId: "wedding", title: source.name, invitationLocale: source.event.invitationLocale, venueName: source.event.venue || undefined, city: source.event.city || undefined })).id;
-      sessionStorage.setItem(anonymousWeddingTransferResultKey, targetId);
-      let configuration = structuredClone(source.event) as WeddingEventData & Record<string, unknown>;
-      const existingConfig = (await listEventConfigs<Partial<WeddingEventData>>("wedding")).find((config) => config.event_id === targetId);
-      if (!existingConfig) {
-        let artworkId: string | null = null;
-        if (configuration.visual.source === "uploaded-background" && configuration.visual.uploadedBackground.dataUrl.startsWith("data:")) {
-          const artwork = await publishArtwork(targetId, configuration.visual.uploadedBackground.dataUrl, configuration.visual.uploadedBackground.mimeType);
-          artworkId = artwork.id;
-          configuration.visual.uploadedBackground.dataUrl = artwork.publicUrl;
+      if (!source) return null;
+      const drafts = await listDesignDrafts<Record<string, unknown>>("wedding");
+      let draft = drafts.find((item) => hasDraftTransferMarker(item.configuration, source.id));
+      if (!draft) {
+        const configuration = withDraftTransferMarker(structuredClone(source.event) as WeddingEventData & Record<string, unknown>, source.id);
+        draft = await createDesignDraft("wedding", source.name, configuration);
+        if (source.event.visual.source === "uploaded-background" && source.event.visual.uploadedBackground.dataUrl.startsWith("data:")) {
+          const artworkId = await uploadDraftArtwork(draft.id, source.event.visual.uploadedBackground.dataUrl, source.event.visual.uploadedBackground.mimeType);
+          draft = { ...draft, artwork_asset_id: artworkId };
         }
-        await saveWeddingConfig(targetId, configuration, 0, artworkId);
-      } else configuration = mergeWeddingEvent(existingConfig.configuration) as WeddingEventData & Record<string, unknown>;
-      await createDesignDraft("wedding", source.name, structuredClone(configuration));
-      sessionStorage.removeItem(anonymousWeddingTransferKey);
-      await auth.refresh();
-      window.dispatchEvent(new Event(anonymousWeddingTransferredEvent));
-      return true;
+      }
+      sessionStorage.setItem(anonymousDesignTransferResultKey, transferredDraftResult("wedding", draft.id));
+      sessionStorage.removeItem(anonymousDesignTransferKey);
+      await enqueue({ deleteProjectIds: [source.id] });
+      window.dispatchEvent(new Event(anonymousDesignTransferredEvent));
+      return draft.id;
     };
-    void transfer().then((transferred) => transferred || !events.length ? undefined : Promise.all([listEventConfigs<Partial<WeddingEventData>>("wedding"), listDesignDrafts<Partial<WeddingEventData>>("wedding")]).then(([configs, drafts]) => {
+    transferRef.current ??= transfer().finally(() => { transferRef.current = null; });
+    void transferRef.current.then((transferredDraftId) => Promise.all([listEventConfigs<Partial<WeddingEventData>>("wedding"), listDesignDrafts<Partial<WeddingEventData>>("wedding")]).then(async ([configs, drafts]) => {
       if (!live) return;
       const byEvent = new Map(configs.map((config) => [config.event_id, config]));
       const projects = events.map((event) => {
@@ -197,24 +212,41 @@ export function WeddingWorkspaceProvider({
         backendArtworkRef.current.set(event.id, config?.artwork_asset_id ?? null);
         return createWeddingProject({ ...config?.configuration, invitationLocale: event.invitation_locale, venue: event.venue_name ?? config?.configuration.venue, city: event.city ?? config?.configuration.city }, event.title, { id: event.id, now: event.created_at });
       });
-      const designs = drafts.map((draft) => {
+      const draftProjects = drafts.map((draft) => {
         backendDraftsRef.current.set(draft.id, draft as DesignDraft<Record<string, unknown>>);
-        return createSavedDesignFromEvent(mergeWeddingEvent(draft.configuration), draft.title, { id: draft.id, now: draft.created_at });
+        return createWeddingProject(mergeWeddingEvent(draft.configuration), draft.title, { id: draft.id, now: draft.created_at });
       });
       const current = workspaceRef.current;
-      const activeProjectId = projects.some((project) => project.id === current?.activeProjectId) ? current!.activeProjectId : projects[0].id;
-      setWorkspace({ projects, designs, activeProjectId, metadata: { schemaVersion: 1, activeProjectId, legacyMigrationVersion: 1 } });
+      const allProjects = [...projects, ...draftProjects];
+      if (!allProjects.length) return;
+      await enqueue({ deleteProjectIds: allProjects.map((project) => project.id) });
+      const activeProjectId = transferredDraftId ?? (allProjects.some((project) => project.id === current?.activeProjectId) ? current!.activeProjectId : allProjects[0].id);
+      setWorkspace({ projects: allProjects, designs: current?.designs ?? [], activeProjectId, metadata: { schemaVersion: 1, activeProjectId, legacyMigrationVersion: 1 } });
     })).catch((error) => {
       if (!live) return;
       setSaveStatus("error");
       setStorageError(errorMessage(error));
+      window.dispatchEvent(new CustomEvent(anonymousDesignTransferFailedEvent, { detail: errorMessage(error) }));
     });
     return () => { live = false; };
-  }, [auth.events, auth.loading, auth.refresh, auth.session, setWorkspace]);
+  }, [auth.events, auth.loading, auth.session, enqueue, setWorkspace]);
 
   const saveBackendProject = useCallback(async (project: WeddingProject) => {
-    if (!auth.session || !auth.events.some((event) => event.id === project.id)) return;
+    if (!auth.session) return;
     const configuration = structuredClone(project.event) as WeddingEventData & Record<string, unknown>;
+    const draft = backendDraftsRef.current.get(project.id);
+    if (draft) {
+      let currentDraft = draft;
+      let artworkId = draft.artwork_asset_id;
+      if (!artworkId && configuration.visual.source === "uploaded-background" && configuration.visual.uploadedBackground.dataUrl.startsWith("data:")) {
+        artworkId = await uploadDraftArtwork(draft.id, configuration.visual.uploadedBackground.dataUrl, configuration.visual.uploadedBackground.mimeType);
+        currentDraft = (await listDesignDrafts<Record<string, unknown>>("wedding")).find((item) => item.id === draft.id) ?? draft;
+      }
+      const saved = await updateDesignDraft({ ...currentDraft, artwork_asset_id: artworkId }, project.name, configuration);
+      backendDraftsRef.current.set(project.id, { ...saved, artwork_asset_id: artworkId });
+      return;
+    }
+    if (!auth.events.some((event) => event.id === project.id)) return;
     let artworkId = backendArtworkRef.current.get(project.id) ?? null;
     if (configuration.visual.source === "uploaded-background" && configuration.visual.uploadedBackground.dataUrl.startsWith("data:")) {
       const dataUrl = configuration.visual.uploadedBackground.dataUrl;
@@ -243,8 +275,9 @@ export function WeddingWorkspaceProvider({
     timerRef.current = null;
     const version = editVersionRef.current;
     const project = activeProject();
-    await Promise.all([enqueue({ projects: [project] }, version), saveBackendProject(project)]);
-  }, [activeProject, enqueue, saveBackendProject]);
+    const localSave = auth.session && (backendDraftsRef.current.has(project.id) || auth.events.some((event) => event.id === project.id)) ? Promise.resolve() : enqueue({ projects: [project] }, version);
+    await Promise.all([localSave, saveBackendProject(project)]);
+  }, [activeProject, auth.events, auth.session, enqueue, saveBackendProject]);
 
   const updateActiveEvent = useCallback((event: WeddingEventData) => {
     const current = workspaceRef.current;
@@ -260,21 +293,27 @@ export function WeddingWorkspaceProvider({
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
-      void Promise.all([enqueue({ projects: [updated] }, version), saveBackendProject(updated)]).catch((error) => {
+      const localSave = auth.session && (backendDraftsRef.current.has(updated.id) || auth.events.some((item) => item.id === updated.id)) ? Promise.resolve() : enqueue({ projects: [updated] }, version);
+      void Promise.all([localSave, saveBackendProject(updated)]).catch((error) => {
         setSaveStatus("error");
         setStorageError(errorMessage(error));
       });
     }, 500);
-  }, [activeProject, enqueue, saveBackendProject, setWorkspace]);
+  }, [activeProject, auth.events, auth.session, enqueue, saveBackendProject, setWorkspace]);
 
   const createProject = useCallback(async (name: string) => {
     await saveNow();
     const current = workspaceRef.current!;
-    const project = createWeddingProject(defaultWeddingEvent, name);
+    let project = createWeddingProject(defaultWeddingEvent, name);
+    if (auth.session) {
+      const draft = await createDesignDraft("wedding", name, structuredClone(project.event) as WeddingEventData & Record<string, unknown>);
+      backendDraftsRef.current.set(draft.id, draft);
+      project = createWeddingProject(draft.configuration, draft.title, { id: draft.id, now: draft.created_at });
+    }
     const metadata = { ...current.metadata, activeProjectId: project.id };
-    await enqueue({ projects: [project], metadata });
+    if (!auth.session) await enqueue({ projects: [project], metadata });
     setWorkspace({ ...current, projects: [...current.projects, project], activeProjectId: project.id, metadata });
-  }, [enqueue, saveNow, setWorkspace]);
+  }, [auth.session, enqueue, saveNow, setWorkspace]);
 
   const openProject = useCallback(async (id: string) => {
     const current = workspaceRef.current!;
@@ -282,26 +321,32 @@ export function WeddingWorkspaceProvider({
     await saveNow();
     const latest = workspaceRef.current!;
     const metadata = { ...latest.metadata, activeProjectId: id };
-    await enqueue({ metadata });
+    if (!auth.session) await enqueue({ metadata });
     setWorkspace({ ...latest, activeProjectId: id, metadata });
-  }, [enqueue, saveNow, setWorkspace]);
+  }, [auth.session, enqueue, saveNow, setWorkspace]);
 
   const renameProject = useCallback(async (name: string) => {
     await saveNow();
     const current = workspaceRef.current!;
     const project = renameWeddingProject(activeProject(), name);
-    await enqueue({ projects: [project] });
+    if (!auth.session) await enqueue({ projects: [project] });
+    else await saveBackendProject(project);
     setWorkspace({ ...current, projects: current.projects.map((item) => item.id === project.id ? project : item) });
-  }, [activeProject, enqueue, saveNow, setWorkspace]);
+  }, [activeProject, auth.session, enqueue, saveBackendProject, saveNow, setWorkspace]);
 
   const duplicateProject = useCallback(async (name?: string) => {
     await saveNow();
     const current = workspaceRef.current!;
-    const project = duplicateWeddingProject(activeProject(), name);
+    let project = duplicateWeddingProject(activeProject(), name);
+    if (auth.session) {
+      const draft = await createDesignDraft("wedding", project.name, structuredClone(project.event) as WeddingEventData & Record<string, unknown>);
+      backendDraftsRef.current.set(draft.id, draft);
+      project = createWeddingProject(draft.configuration, draft.title, { id: draft.id, now: draft.created_at });
+    }
     const metadata = { ...current.metadata, activeProjectId: project.id };
-    await enqueue({ projects: [project], metadata });
+    if (!auth.session) await enqueue({ projects: [project], metadata });
     setWorkspace({ ...current, projects: [...current.projects, project], activeProjectId: project.id, metadata });
-  }, [activeProject, enqueue, saveNow, setWorkspace]);
+  }, [activeProject, auth.session, enqueue, saveNow, setWorkspace]);
 
   const deleteProject = useCallback(async () => {
     await saveNow();
@@ -311,13 +356,27 @@ export function WeddingWorkspaceProvider({
     const replacement = remaining[0] ?? createWeddingProject(defaultWeddingEvent);
     const projects = remaining.length ? remaining : [replacement];
     const metadata = { ...current.metadata, activeProjectId: replacement.id };
-    await enqueue({
+    if (backendDraftsRef.current.has(deleting.id)) {
+      await deleteDesignDraft(deleting.id);
+      backendDraftsRef.current.delete(deleting.id);
+    }
+    if (!auth.session) await enqueue({
       projects: remaining.length ? undefined : [replacement],
       deleteProjectIds: [deleting.id],
       metadata,
     });
     setWorkspace({ ...current, projects, activeProjectId: replacement.id, metadata });
-  }, [activeProject, enqueue, saveNow, setWorkspace]);
+  }, [activeProject, auth.session, enqueue, saveNow, setWorkspace]);
+
+  const openDraft = useCallback(async (id: string) => {
+    const draft = (await listDesignDrafts<Record<string, unknown>>("wedding")).find((item) => item.id === id);
+    if (!draft) throw new Error("Design Draft not found.");
+    backendDraftsRef.current.set(id, draft);
+    const current = workspaceRef.current!;
+    const project = createWeddingProject(mergeWeddingEvent(draft.configuration), draft.title, { id: draft.id, now: draft.created_at });
+    const projects = current.projects.some((item) => item.id === id) ? current.projects.map((item) => item.id === id ? project : item) : [...current.projects, project];
+    setWorkspace({ ...current, projects, activeProjectId: id, metadata: { ...current.metadata, activeProjectId: id } });
+  }, [setWorkspace]);
 
   const saveCurrentDesign = useCallback(async (name: string) => {
     await saveNow();
@@ -376,7 +435,8 @@ export function WeddingWorkspaceProvider({
     applyDesign,
     renameDesign,
     deleteDesign,
-  }), [workspace, saveStatus, storageError, preserveLegacyWedding, updateActiveEvent, saveNow, createProject, openProject, renameProject, duplicateProject, deleteProject, saveCurrentDesign, applyDesign, renameDesign, deleteDesign]);
+    openDraft,
+  }), [workspace, saveStatus, storageError, preserveLegacyWedding, updateActiveEvent, saveNow, createProject, openProject, renameProject, duplicateProject, deleteProject, saveCurrentDesign, applyDesign, renameDesign, deleteDesign, openDraft]);
 
   return <WeddingWorkspaceContext.Provider value={value}>{workspace ? children : null}</WeddingWorkspaceContext.Provider>;
 }

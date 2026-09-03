@@ -1,6 +1,6 @@
 import { toBackendError } from './errors';
 import { getSupabase } from './supabase';
-import type { EventGuest, InvitationResolution, ProductId } from './types';
+import type { BackendEvent, EventGuest, InvitationResolution, ProductId } from './types';
 
 export type EventConfig<T> = {
   event_id: string;
@@ -11,7 +11,15 @@ export type EventConfig<T> = {
   version: number;
 };
 
-export type DesignDraft<T> = { id: string; product_id: ProductId; title: string; configuration: T; template_version_id: string | null; template_snapshot: Record<string, unknown>; version: number; created_at: string; updated_at: string };
+export type DesignDraft<T> = { id: string; product_id: ProductId; title: string; configuration: T; template_version_id: string | null; template_snapshot: Record<string, unknown>; artwork_asset_id: string | null; version: number; created_at: string; updated_at: string };
+
+export type DesignDraftPublishAccess = Record<string, unknown> & {
+  allowed?: boolean;
+  can_publish?: boolean;
+  reason?: string;
+  code?: string;
+  event_id?: string | null;
+};
 
 const fail = (error: unknown) => { throw toBackendError(error); };
 
@@ -24,7 +32,7 @@ export async function listEventConfigs<T>(product: ProductId): Promise<EventConf
 }
 
 export async function listDesignDrafts<T>(product: ProductId): Promise<DesignDraft<T>[]> {
-  const { data, error } = await getSupabase().from('design_drafts').select('id, product_id, title, configuration, template_version_id, template_snapshot, version, created_at, updated_at').eq('product_id', product).order('updated_at', { ascending: false });
+  const { data, error } = await getSupabase().from('design_drafts').select('id, product_id, title, configuration, template_version_id, template_snapshot, artwork_asset_id, version, created_at, updated_at').eq('product_id', product).order('updated_at', { ascending: false });
   if (error) fail(error);
   return (data ?? []) as DesignDraft<T>[];
 }
@@ -38,9 +46,45 @@ export async function createDesignDraft(product: ProductId, title: string, confi
 }
 
 export async function updateDesignDraft(draft: DesignDraft<Record<string, unknown>>, title: string, configuration: Record<string, unknown>): Promise<DesignDraft<Record<string, unknown>>> {
-  const { data, error } = await getSupabase().rpc('save_design_draft', { p_draft_id: draft.id, p_title: title, p_configuration: configuration, p_template_version_id: draft.template_version_id, p_template_snapshot: draft.template_snapshot, p_expected_version: draft.version });
+  const templateChanged = configuration.templateId !== draft.configuration.templateId;
+  const template = templateChanged && typeof configuration.templateId === 'string' ? await templateVersion(draft.product_id, configuration.templateId) : null;
+  const { data, error } = await getSupabase().rpc('save_design_draft', { p_draft_id: draft.id, p_title: title, p_configuration: configuration, p_template_version_id: templateChanged ? template?.id ?? null : draft.template_version_id, p_template_snapshot: templateChanged ? template?.render_snapshot ?? {} : draft.template_snapshot, p_expected_version: draft.version });
   if (error) fail(error);
   return data as DesignDraft<Record<string, unknown>>;
+}
+
+export async function getDesignDraftPublishAccess(id: string): Promise<DesignDraftPublishAccess> {
+  const { data, error } = await getSupabase().rpc('get_design_draft_publish_access', { p_draft_id: id });
+  if (error) fail(error);
+  return (Array.isArray(data) ? data[0] : data ?? {}) as DesignDraftPublishAccess;
+}
+
+export async function publishDesignDraft(id: string): Promise<BackendEvent> {
+  const { data, error } = await getSupabase().rpc('publish_design_draft', { p_draft_id: id });
+  if (error) fail(error);
+  const value = Array.isArray(data) ? data[0] : data;
+  if (typeof value === 'string') return { id: value } as BackendEvent;
+  const record = value as Record<string, unknown>;
+  if (record?.event && typeof record.event === 'object') return record.event as BackendEvent;
+  return { ...record, id: typeof record?.id === 'string' ? record.id : record?.event_id } as BackendEvent;
+}
+
+export async function setDesignDraftArtwork(draftId: string, assetId: string): Promise<void> {
+  const { error } = await getSupabase().rpc('set_design_draft_artwork', { p_draft_id: draftId, p_artwork_asset_id: assetId });
+  if (error) fail(error);
+}
+
+export async function uploadDraftArtwork(draftId: string, dataUrl: string, mimeType: string): Promise<string> {
+  const blob = await fetch(dataUrl).then((response) => response.blob());
+  const { data, error } = await getSupabase().rpc('reserve_invitation_asset', { p_owner_kind: 'draft', p_owner_id: draftId, p_purpose: 'private_source', p_content_type: mimeType, p_byte_size: blob.size, p_source_asset_id: null });
+  if (error) fail(error);
+  const asset = data as { id: string; bucket_id: string; object_path: string };
+  const uploaded = await getSupabase().storage.from(asset.bucket_id).upload(asset.object_path, blob, { contentType: mimeType, upsert: false });
+  if (uploaded.error) fail(uploaded.error);
+  const status = await getSupabase().from('invitation_assets').update({ status: 'uploaded' }).eq('id', asset.id);
+  if (status.error) fail(status.error);
+  await setDesignDraftArtwork(draftId, asset.id);
+  return asset.id;
 }
 
 export async function deleteDesignDraft(id: string): Promise<void> {
