@@ -19,3 +19,8 @@ export async function isPlatformAdmin(signal?: AbortSignal): Promise<boolean> {
   if (error) throw toBackendError(error);
   return data === true;
 }
+
+export async function updateCurrentClientDisplayName(id: string, displayName: string): Promise<void> {
+  const { error } = await getSupabase().from('clients').update({ display_name: displayName.trim() }).eq('id', id);
+  if (error) throw toBackendError(error);
+}

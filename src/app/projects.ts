@@ -9,7 +9,7 @@ export type ProjectSummary = {
 };
 
 export type ProjectSection = 'overview' | 'invitation' | 'guests' | 'send' | 'scanner' | 'settings';
-export type AdminSection = 'customers' | 'events' | 'templates' | 'usage' | 'support' | 'subscriptions';
+export type AdminSection = 'customers' | 'events' | 'drafts' | 'subscriptions' | 'templates' | 'policies' | 'assets' | 'usage' | 'support';
 
 export const partyProject: ProjectSummary = {
   id: 'party-demo',
@@ -24,7 +24,7 @@ export const projectSections: Record<ProjectType, readonly ProjectSection[]> = {
   party: ['overview', 'invitation', 'guests', 'send', 'scanner', 'settings'],
 };
 
-export const adminSections: readonly AdminSection[] = ['customers', 'events', 'templates', 'usage', 'support', 'subscriptions'];
+export const adminSections: readonly AdminSection[] = ['customers', 'events', 'drafts', 'subscriptions', 'templates', 'policies', 'assets', 'usage', 'support'];
 
 export function buildProjectRoute(type: ProjectType, id: string, section: ProjectSection): string {
   return `/${type === 'wedding' ? 'weddings' : 'parties'}/${encodeURIComponent(id)}/${section}`;

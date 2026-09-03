@@ -1,13 +1,13 @@
-import { type ReactNode, type ComponentType, useContext, useEffect, useMemo, useRef, useState, createContext } from 'react';
+import { type ReactNode, type ComponentType, type CSSProperties, useContext, useEffect, useMemo, useRef, useState, createContext } from 'react';
 import { ErrorBoundary, type ErrorFallbackProps } from '@/components/error-boundary';
 import { AppLanguageControl, AppLocaleProvider, useAppLocale } from '@/i18n/app-locale';
 import { localeDirection, type InvitationLocale } from '@/i18n/locale';
 import { invitationT } from '@/i18n/invitation';
 import { partyInvitationT, resolvePartyInvitationLocale, type PartyInvitationKey } from '@/i18n/party';
-import { AnimatePresence, motion, Reorder } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
-  ArrowDown, ArrowDownToLine, ArrowLeft, ArrowUp, CalendarDays, Check, CheckCircle2, ChevronDown,
-  Edit3, ExternalLink, GripVertical, Heart, HelpCircle,
+  ArrowDown, ArrowDownToLine, ArrowLeft, ArrowUp, CalendarDays, Check, CheckCircle2, ChevronDown, Copy,
+  Edit3, ExternalLink, Heart, HelpCircle, Plus, Trash2,
   Link2, LockKeyhole, MessageCircle, Music2, PartyPopper, QrCode, Search, Shirt, Sparkles,
   Utensils, X, XCircle,
 } from 'lucide-react';
@@ -20,7 +20,10 @@ import { WeddingWorkspaceProvider, useWeddingWorkspace } from '@/wedding/Wedding
 import { anonymousDesignTransferFailedEvent, anonymousDesignTransferKey, anonymousDesignTransferResultKey, anonymousDesignTransferredEvent, hasDraftTransferMarker, requestAnonymousDesignTransfer, transferredDraftResult, withDraftTransferMarker } from '@/wedding/anonymous-transfer';
 import type { WeddingProject } from '@/wedding/workspace';
 import { AdminPage } from '@/admin/AdminPage';
+import { AccountPage } from '@/app/AccountPage';
 import { DashboardPage } from '@/app/DashboardPage';
+import { commercialSummary, type CommercialSource } from '@/app/commercial';
+import { allowedEventTransitions, isTerminalEvent } from '@/app/lifecycle';
 import { EmptyProjectSection, ProjectShell } from '@/app/ProjectShell';
 import { BackendGuestManager, BackendScanner, EventOperationsOverview } from '@/app/Phase3Operations';
 import {
@@ -49,7 +52,9 @@ import {
 import { defaultPartyEvent, formatPartyDate, mergePartyEvent, partyTemplates, type PartyEventData } from '@/party/model';
 import { createDesignDraft, createGeneralInvitation, createGuest, deleteDesignDraft, getDesignDraftPublishAccess, listDesignDrafts, listEventConfigs, listGuests, publishDesignDraft, recordInvitationOpen, resolveInvitation, rotatePersonalInvitation, savePartyConfig, submitGeneralRsvp, submitPersonalRsvp, tagGuest, updateDesignDraft, updateGuest, type DesignDraft, type DesignDraftPublishAccess } from '@/backend/phase2';
 import { updateEvent } from '@/backend/events';
-import { loadAdminSnapshot, setAdminEntitlement, setTemplateActive, type AdminSnapshot } from '@/backend/phase3';
+import { loadCommercialSource } from '@/backend/commercial';
+import { updateCurrentClientDisplayName } from '@/backend/clients';
+import { loadAdminSection, retireAsset, setAdminEntitlement, setProductPolicy, setTemplateActive, type AdminSnapshot } from '@/backend/phase3';
 import type { BackendEvent, EntitlementStatus, EventGuest, EventLifecycle, InvitationResolution, ProductId } from '@/backend/types';
 import {
   emptyOperationalState,
@@ -64,7 +69,7 @@ import {
 } from '@/app/operations';
 
 type RSVPStatus = 'pending' | 'accepted' | 'declined';
-type BlockKey = 'catering' | 'dress' | 'schedule' | 'registry' | 'song' | 'faq';
+type BlockKey = 'catering' | 'dress' | 'schedule' | 'registry' | 'song' | 'faq' | 'text' | 'venue' | 'host' | 'cta' | 'divider' | 'spacer';
 type IconType = ComponentType<{ size?: number; strokeWidth?: number; className?: string }>;
 
 type BlockContent = {
@@ -73,8 +78,9 @@ type BlockContent = {
   swatches?: string[];
   questions?: { q: string; a: string }[];
   note?: string;
+  url?: string;
 };
-type StudioBlock = { key: BlockKey; enabled: boolean; label: string; eyebrow: string; content: BlockContent };
+type StudioBlock = { id: string; key: BlockKey; enabled: boolean; label: string; eyebrow: string; content: BlockContent };
 type EngineState = {
   rsvp: RSVPStatus;
   plusOnes: number;
@@ -91,13 +97,21 @@ type EngineState = {
 };
 
 const initialBlocks: StudioBlock[] = [
-  { key: 'catering', enabled: true, label: 'Catering', eyebrow: 'YOUR TABLE', content: { heading: 'A seat at our table', entree: ['Rosemary chicken', 'Miso-glazed salmon', 'Garden ravioli'], swatches: ['#6D3F35', '#C48B63', '#34594B'] } },
-  { key: 'dress', enabled: true, label: 'Dress code', eyebrow: 'THE ATTIRE', content: { heading: 'Garden formal', note: 'A little polished, a little effortless. Suits, silk, and evening colors are encouraged.' } },
-  { key: 'schedule', enabled: true, label: 'Schedule', eyebrow: 'THE EVENING', content: { heading: 'A day in full bloom' } },
-  { key: 'registry', enabled: true, label: 'Registry', eyebrow: 'A LITTLE SOMETHING', content: { heading: 'Your presence is enough' } },
-  { key: 'song', enabled: true, label: 'Song request', eyebrow: 'SET THE TONE', content: { heading: 'Bring a song to the dance floor' } },
-  { key: 'faq', enabled: true, label: 'FAQ', eyebrow: 'GOOD TO KNOW', content: { heading: 'Before you join us', questions: [{ q: 'Can I bring a plus one?', a: 'Your invitation will note your guest count. For this invitation, we are looking forward to celebrating with you.' }, { q: 'Where should I park?', a: 'Valet parking will be available at the south entrance of The Grand Palace Hall from 5:00 PM.' }, { q: 'What time should I arrive?', a: 'Please arrive between 5:15 and 5:45 PM so we can welcome you before the ceremony.' }] } },
+  { id: 'catering', key: 'catering', enabled: true, label: 'Catering', eyebrow: 'YOUR TABLE', content: { heading: 'A seat at our table', entree: ['Rosemary chicken', 'Miso-glazed salmon', 'Garden ravioli'], swatches: ['#6D3F35', '#C48B63', '#34594B'] } },
+  { id: 'dress', key: 'dress', enabled: true, label: 'Dress code', eyebrow: 'THE ATTIRE', content: { heading: 'Garden formal', note: 'A little polished, a little effortless. Suits, silk, and evening colors are encouraged.' } },
+  { id: 'schedule', key: 'schedule', enabled: true, label: 'Schedule', eyebrow: 'THE EVENING', content: { heading: 'A day in full bloom' } },
+  { id: 'registry', key: 'registry', enabled: true, label: 'Registry', eyebrow: 'A LITTLE SOMETHING', content: { heading: 'Your presence is enough' } },
+  { id: 'song', key: 'song', enabled: true, label: 'Song request', eyebrow: 'SET THE TONE', content: { heading: 'Bring a song to the dance floor' } },
+  { id: 'faq', key: 'faq', enabled: true, label: 'FAQ', eyebrow: 'GOOD TO KNOW', content: { heading: 'Before you join us', questions: [{ q: 'Can I bring a plus one?', a: 'Your invitation will note your guest count. For this invitation, we are looking forward to celebrating with you.' }, { q: 'Where should I park?', a: 'Valet parking will be available at the south entrance of The Grand Palace Hall from 5:00 PM.' }, { q: 'What time should I arrive?', a: 'Please arrive between 5:15 and 5:45 PM so we can welcome you before the ceremony.' }] } },
 ];
+
+const blockKeys: BlockKey[] = ['catering', 'dress', 'schedule', 'registry', 'song', 'faq', 'text', 'venue', 'host', 'cta', 'divider', 'spacer'];
+const normalizeBlocks = (value: unknown, fallback = initialBlocks): StudioBlock[] => !Array.isArray(value) ? fallback : value.flatMap((item, index) => {
+  if (!item || typeof item !== 'object') return [];
+  const source = item as Partial<StudioBlock>;
+  if (!blockKeys.includes(source.key as BlockKey)) return [];
+  return [{ id: typeof source.id === 'string' && source.id ? source.id : `${source.key}-${index}`, key: source.key as BlockKey, enabled: source.enabled !== false, label: typeof source.label === 'string' ? source.label : String(source.key), eyebrow: typeof source.eyebrow === 'string' ? source.eyebrow : '', content: source.content && typeof source.content === 'object' ? source.content : { heading: '' } }];
+});
 
 const defaultState: EngineState = {
   rsvp: 'pending', plusOnes: 0, song: '', meal: '', checkedIn: false, blocks: initialBlocks,
@@ -111,9 +125,12 @@ type EngineContextValue = {
   setRsvp: (value: RSVPStatus, guestCount?: number) => void;
   setSong: (value: string) => void;
   setMeal: (value: string) => void;
-  toggleBlock: (key: BlockKey) => void;
+  toggleBlock: (id: string) => void;
   reorderBlocks: (blocks: StudioBlock[]) => void;
-  updateBlock: (key: BlockKey, patch: Partial<BlockContent>) => void;
+  updateBlock: (id: string, patch: Partial<BlockContent>) => void;
+  addBlock: (key: BlockKey) => void;
+  duplicateBlock: (id: string) => void;
+  deleteBlock: (id: string) => void;
   setMode: (mode: EventMode) => void;
   setInvitationLocale: (locale: InvitationLocale) => void;
   updatePartyEvent: (patch: Partial<PartyEventData>) => void;
@@ -162,6 +179,7 @@ function EngineProvider({ children }: { children: ReactNode }) {
       const next = {
           ...defaultState,
           ...genericSaved,
+          blocks: normalizeBlocks(genericSaved.blocks),
           invitationLocale: resolvePartyInvitationLocale(saved),
           partyEvent: mergePartyEvent(saved.partyEvent as Partial<PartyEventData> | undefined),
           weddingGuest: { ...defaultWeddingGuest, ...saved.weddingGuest },
@@ -199,7 +217,7 @@ function EngineProvider({ children }: { children: ReactNode }) {
     setActivePartyEventId('');
     try {
       const saved = JSON.parse(localStorage.getItem('luxury-rsvp-engine') ?? '{}') as Partial<EngineState>;
-      setState((current) => ({ ...current, partyEvent: mergePartyEvent(saved.partyEvent), blocks: Array.isArray(saved.blocks) ? saved.blocks : initialBlocks, invitationLocale: resolvePartyInvitationLocale(saved) }));
+      setState((current) => ({ ...current, partyEvent: mergePartyEvent(saved.partyEvent), blocks: normalizeBlocks(saved.blocks), invitationLocale: resolvePartyInvitationLocale(saved) }));
     } catch {
       setState((current) => ({ ...current, partyEvent: defaultPartyEvent, blocks: initialBlocks, invitationLocale: 'ar' }));
     }
@@ -218,7 +236,7 @@ function EngineProvider({ children }: { children: ReactNode }) {
       partyVersionRef.current = config?.version ?? 0;
       partyTemplateRef.current = config?.template_version_id ?? null;
       partyTemplateKeyRef.current = typeof config?.template_snapshot.templateId === 'string' ? config.template_snapshot.templateId : null;
-      setState((current) => ({ ...current, partyEvent: mergePartyEvent(config?.configuration ?? { title: event.title, venue: event.venue_name ?? '', city: event.city ?? '' }), blocks: Array.isArray(config?.configuration.blocks) ? config.configuration.blocks : current.blocks, invitationLocale: config?.configuration.invitationLocale === 'en' ? 'en' : event.invitation_locale }));
+      setState((current) => ({ ...current, partyEvent: mergePartyEvent(config?.configuration ?? { title: event.title, venue: event.venue_name ?? '', city: event.city ?? '' }), blocks: normalizeBlocks(config?.configuration.blocks, current.blocks), invitationLocale: config?.configuration.invitationLocale === 'en' ? 'en' : event.invitation_locale }));
       partyHydratedRef.current = true;
     }).catch(() => { partyHydratedRef.current = true; });
   }, [activePartyEventId, auth.events, auth.loading, auth.session]);
@@ -291,9 +309,12 @@ function EngineProvider({ children }: { children: ReactNode }) {
     },
     setSong: (song: string) => setState((s) => ({ ...s, song })),
     setMeal: (meal: string) => setState((s) => ({ ...s, meal })),
-    toggleBlock: (key: BlockKey) => setState((s) => ({ ...s, blocks: s.blocks.map((b) => b.key === key ? { ...b, enabled: !b.enabled } : b) })),
+    toggleBlock: (id: string) => setState((s) => ({ ...s, blocks: s.blocks.map((b) => b.id === id ? { ...b, enabled: !b.enabled } : b) })),
     reorderBlocks: (blocks: StudioBlock[]) => setState((s) => ({ ...s, blocks })),
-    updateBlock: (key: BlockKey, patch: Partial<BlockContent>) => setState((s) => ({ ...s, blocks: s.blocks.map((b) => b.key === key ? { ...b, content: { ...b.content, ...patch } } : b) })),
+    updateBlock: (id: string, patch: Partial<BlockContent>) => setState((s) => ({ ...s, blocks: s.blocks.map((b) => b.id === id ? { ...b, content: { ...b.content, ...patch } } : b) })),
+    addBlock: (key: BlockKey) => setState((s) => ({ ...s, blocks: [...s.blocks, { id: crypto.randomUUID(), key, enabled: true, label: key, eyebrow: '', content: { heading: '', note: '' } }] })),
+    duplicateBlock: (id: string) => setState((s) => { const index = s.blocks.findIndex((block) => block.id === id); if (index < 0) return s; const blocks = [...s.blocks]; blocks.splice(index + 1, 0, { ...structuredClone(blocks[index]), id: crypto.randomUUID() }); return { ...s, blocks }; }),
+    deleteBlock: (id: string) => setState((s) => ({ ...s, blocks: s.blocks.filter((block) => block.id !== id) })),
     setMode: (mode: EventMode) => setState((s) => ({ ...s, mode })),
     setInvitationLocale: (invitationLocale: InvitationLocale) => setState((s) => ({ ...s, invitationLocale })),
     updatePartyEvent: (patch: Partial<PartyEventData>) => setState((s) => ({ ...s, partyEvent: mergePartyEvent({ ...s.partyEvent, ...patch }) })),
@@ -308,7 +329,7 @@ function EngineProvider({ children }: { children: ReactNode }) {
       setActivePartyEventId('');
       partyHydratedRef.current = false;
       const configuration = draft.configuration as Partial<PartyEventData> & { blocks?: StudioBlock[]; invitationLocale?: InvitationLocale };
-      setState((current) => ({ ...current, mode: 'standard', partyEvent: mergePartyEvent(configuration), blocks: Array.isArray(configuration.blocks) ? configuration.blocks : current.blocks, invitationLocale: configuration.invitationLocale === 'en' ? 'en' : 'ar' }));
+      setState((current) => ({ ...current, mode: 'standard', partyEvent: mergePartyEvent(configuration), blocks: normalizeBlocks(configuration.blocks, current.blocks), invitationLocale: configuration.invitationLocale === 'en' ? 'en' : 'ar' }));
       partyHydratedRef.current = true;
     },
     savePartyDraft: async () => {
@@ -325,7 +346,7 @@ function EngineProvider({ children }: { children: ReactNode }) {
       const guest = resolution.guest;
       const allowedCompanions = guest?.allowed_companions ?? resolution.event.general_invite_allowed_companions;
       setPublicInvitation({ token, kind: resolution.kind, requestId: crypto.randomUUID(), readOnly: resolution.status === 'archived_read_only' });
-      setState((current) => ({ ...current, mode: resolution.event!.product_id === 'wedding' ? 'wedding' : 'standard', invitationLocale: resolution.event!.invitation_locale, partyEvent: resolution.event!.product_id === 'party' ? mergePartyEvent(configuration as Partial<PartyEventData>) : current.partyEvent, blocks: Array.isArray(configuration.blocks) ? configuration.blocks as StudioBlock[] : current.blocks, weddingGuest: { ...defaultWeddingGuest, name: guest?.name ?? generalName, token, allowedCompanions, invitationVariantOverride: guest?.invitation_variant_override ?? undefined }, rsvp: guest?.rsvp_status ?? 'pending', plusOnes: Math.max(0, (guest?.confirmed_party_size ?? 1) - 1), weddingResponse: { guestCount: guest?.confirmed_party_size || 1, message: guest?.custom_message ?? '' } }));
+      setState((current) => ({ ...current, mode: resolution.event!.product_id === 'wedding' ? 'wedding' : 'standard', invitationLocale: resolution.event!.invitation_locale, partyEvent: resolution.event!.product_id === 'party' ? mergePartyEvent(configuration as Partial<PartyEventData>) : current.partyEvent, blocks: normalizeBlocks(configuration.blocks, current.blocks), weddingGuest: { ...defaultWeddingGuest, name: guest?.name ?? generalName, token, allowedCompanions, invitationVariantOverride: guest?.invitation_variant_override ?? undefined }, rsvp: guest?.rsvp_status ?? 'pending', plusOnes: Math.max(0, (guest?.confirmed_party_size ?? 1) - 1), weddingResponse: { guestCount: guest?.confirmed_party_size || 1, message: guest?.custom_message ?? '' } }));
     },
     publicReadOnly: publicInvitation?.readOnly ?? false,
     storageAvailable,
@@ -386,9 +407,9 @@ function QRMark({ label }: { label: string }) {
   return <div className="grid grid-cols-9 gap-[3px] rounded-lg bg-[#FFFDF9] p-3 shadow-inner" aria-label={label} data-testid="qr-pass">{cells.map((filled, i) => <span key={i} className={`aspect-square rounded-[1px] ${filled ? 'bg-[#0A2E23]' : 'bg-transparent'}`} />)}</div>;
 }
 
-const blockIcons: Record<BlockKey, IconType> = { catering: Utensils, dress: Shirt, schedule: CalendarDays, registry: Heart, song: Music2, faq: HelpCircle };
+const blockIcons: Record<BlockKey, IconType> = { catering: Utensils, dress: Shirt, schedule: CalendarDays, registry: Heart, song: Music2, faq: HelpCircle, text: Edit3, venue: CalendarDays, host: Heart, cta: ExternalLink, divider: ArrowDown, spacer: ArrowDown };
 
-function GuestPage({ preview = false }: { preview?: boolean } = {}) {
+function GuestPage({ preview = false, onSelectBlock }: { preview?: boolean; onSelectBlock?: (id: string) => void } = {}) {
   const { state, ready, setRsvp, setSong, setMeal, submitWeddingRsvp, loadPublicInvitation, publicReadOnly } = useEngine();
   const { activeProject } = useWeddingWorkspace();
   const { token } = useParams<{ token: string }>();
@@ -436,8 +457,9 @@ function GuestPage({ preview = false }: { preview?: boolean } = {}) {
     onSubmit={submitWeddingRsvp}
     readOnly={publicReadOnly}
   />;
-  return <div className={`party-invitation party-template--${partyEvent.templateId} grain min-h-[100dvh] overflow-hidden text-[#2D2421] ${preview ? 'party-invitation--preview' : ''}`} lang={state.invitationLocale} dir={localeDirection(state.invitationLocale)}>
-    <div className="gold-thread" />
+  const partyStyle = { '--party-bg': partyEvent.backgroundColor ?? undefined, '--party-primary': partyEvent.primaryColor ?? undefined, '--party-accent': partyEvent.accentColor ?? undefined } as CSSProperties;
+  return <div style={partyStyle} className={`party-invitation party-template--${partyEvent.templateId} party-layout--${partyEvent.layout} party-type--${partyEvent.typography} party-motion--${partyEvent.motion} grain min-h-[100dvh] overflow-hidden text-[#2D2421] ${preview ? 'party-invitation--preview' : ''}`} lang={state.invitationLocale} dir={localeDirection(state.invitationLocale)}>
+    {partyEvent.decorations && <div className="gold-thread" />}
     <header className="relative z-20 flex items-center justify-between px-5 py-6 sm:px-10" aria-label={invitationT(state.invitationLocale, 'invitation')}><Monogram compact /></header>
     <main className="relative z-10 mx-auto max-w-4xl px-5 pb-28 sm:px-8">
       <FadeIn className="relative flex flex-col items-center pb-16 pt-10 text-center sm:pt-16">
@@ -470,7 +492,7 @@ function GuestPage({ preview = false }: { preview?: boolean } = {}) {
             {!publicReadOnly && <button onClick={() => setRsvp('pending')} data-testid="button-change-rsvp" className="focus-ring mt-7 min-h-11 text-[10px] font-bold uppercase tracking-[.18em] text-[#A98219] underline underline-offset-4">{partyInvitationT(state.invitationLocale, 'changeResponse')}</button>}
           </SuiteCard>
           <div className="my-16 text-center"><Eyebrow>{partyInvitationT(state.invitationLocale, 'details')}</Eyebrow><p className="mt-3 font-display text-3xl text-[#0A2E23]">{partyInvitationT(state.invitationLocale, 'detailsTitle')}</p></div>
-          {visibleBlocks.map((block, index) => <GuestBlock key={block.key} block={block} index={index} openFaq={openFaq} setOpenFaq={setOpenFaq} song={state.song} setSong={preview ? () => undefined : setSong} meal={state.meal} setMeal={preview ? () => undefined : setMeal} />)}
+          {visibleBlocks.map((block, index) => <GuestBlock key={block.id} block={block} index={index} openFaq={openFaq} setOpenFaq={setOpenFaq} song={state.song} setSong={preview ? () => undefined : setSong} meal={state.meal} setMeal={preview ? () => undefined : setMeal} onSelect={onSelectBlock} />)}
           <SuiteCard className="mt-14 p-8 text-center sm:p-12">
             <Eyebrow>{partyInvitationT(state.invitationLocale, 'digitalPass')}</Eyebrow><h2 className="mt-3 font-display text-4xl text-[#0A2E23]">{partyInvitationT(state.invitationLocale, 'passTitle')}</h2><p className="mx-auto mt-3 max-w-xs text-sm leading-6 text-[#2D2421]/65">{partyInvitationT(state.invitationLocale, 'passBody')}</p><div className="mx-auto mt-7 w-fit"><QRMark label={partyInvitationT(state.invitationLocale, 'digitalPass')} /></div><p className="mt-4 break-all font-mono text-[10px] tracking-[.12em] text-[#2D2421]/50"><bdi>{partyEvent.title} · {state.weddingGuest.passId}</bdi></p>
           </SuiteCard>
@@ -481,11 +503,11 @@ function GuestPage({ preview = false }: { preview?: boolean } = {}) {
   </div>;
 }
 
-function GuestBlock({ block, index, openFaq, setOpenFaq, song, setSong, meal, setMeal }: { block: StudioBlock; index: number; openFaq: number | null; setOpenFaq: (n: number | null) => void; song: string; setSong: (s: string) => void; meal: string; setMeal: (s: string) => void }) {
+function GuestBlock({ block, index, openFaq, setOpenFaq, song, setSong, meal, setMeal, onSelect }: { block: StudioBlock; index: number; openFaq: number | null; setOpenFaq: (n: number | null) => void; song: string; setSong: (s: string) => void; meal: string; setMeal: (s: string) => void; onSelect?: (id: string) => void }) {
   const { state } = useEngine();
   const Icon = blockIcons[block.key];
   const c = block.content;
-  return <SuiteCard className="mb-10 p-7 sm:p-10" id={`guest-${block.key}`}>
+  return <div onClick={() => onSelect?.(block.id)} className={onSelect ? 'cursor-pointer' : ''}><SuiteCard className="mb-10 p-7 sm:p-10" id={`guest-${block.id}`}>
     <div className="mb-8 flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-full border border-[#D4AF37] text-[#0A2E23]"><Icon size={16} strokeWidth={1.5} /></div><Eyebrow>{c.note ? block.eyebrow : block.eyebrow}</Eyebrow><span className="ml-auto font-mono text-[10px] text-[#2D2421]/35">0{index + 1}</span></div>
     {block.key === 'catering' && <><h2 className="font-display text-4xl text-[#0A2E23]">{c.heading}</h2><p className="mt-2 text-sm leading-6 text-[#2D2421]/65">{partyInvitationT(state.invitationLocale, 'choosePlate')}</p><div className="mt-7 grid gap-3 sm:grid-cols-3">{c.entree?.map((dish) => <button key={dish} onClick={() => setMeal(dish)} data-testid={`button-entree-${dish}`} className={`focus-ring min-h-11 rounded-2xl border p-4 text-start transition ${meal === dish ? 'border-[#0A2E23] bg-[#0A2E23] text-[#FFFDF9]' : 'border-[#D4AF37]/45 bg-[#FFFDF9]/45 hover:bg-[#FFFDF9]'}`}><span className="mb-4 block h-2 w-10 rounded-full" style={{ background: c.swatches?.[c.entree?.indexOf(dish) ?? 0] }} /><span className="text-xs font-semibold">{dish}</span></button>)}</div><p className="mt-4 text-[10px] uppercase tracking-[.12em] text-[#2D2421]/45">{partyInvitationT(state.invitationLocale, 'selected')}: {meal || partyInvitationT(state.invitationLocale, 'notSelected')}</p></>}
     {block.key === 'dress' && <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="font-display text-4xl text-[#0A2E23]">{c.heading}</h2><p className="mt-3 max-w-md text-sm leading-7 text-[#2D2421]/65">{c.note}</p></div><div className="flex -space-x-2" aria-label={partyInvitationT(state.invitationLocale, 'suggestedColors')}><span className="h-10 w-10 rounded-full border-2 border-[#EADBC8] bg-[#6D3F35]" /><span className="h-10 w-10 rounded-full border-2 border-[#EADBC8] bg-[#C48B63]" /><span className="h-10 w-10 rounded-full border-2 border-[#EADBC8] bg-[#34594B]" /></div></div>}
@@ -493,7 +515,10 @@ function GuestBlock({ block, index, openFaq, setOpenFaq, song, setSong, meal, se
     {block.key === 'registry' && <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-display text-4xl text-[#0A2E23]">{c.heading}</h2><p className="mt-2 max-w-md text-sm leading-6 text-[#2D2421]/65">{partyInvitationT(state.invitationLocale, 'registryBody')}</p></div><Button variant="ivory" icon={ExternalLink} onClick={() => window.open('https://example.com', '_blank')}>{partyInvitationT(state.invitationLocale, 'viewRegistry')}</Button></div>}
     {block.key === 'song' && <><h2 className="break-words font-display text-4xl text-[#0A2E23]">{c.heading}</h2><p className="mt-2 text-sm text-[#2D2421]/65">{partyInvitationT(state.invitationLocale, 'songHelp')}</p><div className="mt-6 flex flex-col gap-3 sm:flex-row"><input value={song} onChange={(e) => setSong(e.target.value)} data-testid="input-song-request" aria-label={partyInvitationT(state.invitationLocale, 'songPlaceholder')} placeholder={partyInvitationT(state.invitationLocale, 'songPlaceholder')} className="focus-ring min-h-11 min-w-0 flex-1 rounded-full border border-[#D4AF37]/50 bg-[#FFFDF9]/60 px-5 py-3 text-sm outline-none placeholder:text-[#2D2421]/35" /><Button variant="dark" icon={Music2} onClick={() => setSong(song)}>{partyInvitationT(state.invitationLocale, 'saveSong')}</Button></div></>}
     {block.key === 'faq' && <><h2 className="break-words font-display text-4xl text-[#0A2E23]">{c.heading}</h2><div className="mt-5">{c.questions?.map((item, qIndex) => <div key={item.q} className="border-b border-[#D4AF37]/35"><button onClick={() => setOpenFaq(openFaq === qIndex ? null : qIndex)} data-testid={`button-faq-${qIndex}`} aria-expanded={openFaq === qIndex} className="focus-ring flex w-full items-center justify-between gap-3 py-4 text-start text-sm font-semibold text-[#2D2421]"><span className="break-words">{item.q}</span><ChevronDown aria-hidden="true" size={16} className={`shrink-0 text-[#A98219] transition-transform ${openFaq === qIndex ? 'rotate-180' : ''}`} /></button><AnimatePresence initial={false}>{openFaq === qIndex && <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden pb-4 text-sm leading-6 text-[#2D2421]/65">{item.a}</motion.p>}</AnimatePresence></div>)}</div></>}
-  </SuiteCard>;
+    {['text', 'venue', 'host', 'cta'].includes(block.key) && <div><h2 className="break-words font-display text-4xl text-[#0A2E23]">{c.heading}</h2>{c.note && <p className="mt-3 whitespace-pre-line text-sm leading-7 text-[#2D2421]/65">{c.note}</p>}{block.key === 'cta' && /^https?:\/\//.test(c.url ?? '') && (onSelect ? <span className="mt-5 inline-flex min-h-11 items-center rounded-full bg-[#0A2E23] px-5 text-xs font-semibold text-white">{c.heading}</span> : <a href={c.url} target="_blank" rel="noreferrer" className="mt-5 inline-flex min-h-11 items-center rounded-full bg-[#0A2E23] px-5 text-xs font-semibold text-white">{c.heading}</a>)}</div>}
+    {block.key === 'divider' && <hr className="border-[#D4AF37]/50" />}
+    {block.key === 'spacer' && <div className="h-14" aria-hidden="true" />}
+  </SuiteCard></div>;
 }
 
 function LoadingPage() {
@@ -650,12 +675,13 @@ function StudioHubPage() {
 }
 
 function PartyStudioPage({ embedded = false }: { embedded?: boolean }) {
-  const { state, ready, toggleBlock, reorderBlocks, updateBlock, setMode, setInvitationLocale, updatePartyEvent } = useEngine();
+  const { state, ready, toggleBlock, reorderBlocks, updateBlock, addBlock, duplicateBlock, deleteBlock, setMode, setInvitationLocale, updatePartyEvent } = useEngine();
   const auth = useAuth();
   const { t, locale } = useAppLocale();
-  const [activeEditor, setActiveEditor] = useState<BlockKey | null>(null);
+  const [activeEditor, setActiveEditor] = useState<string | null>(null);
+  const [newBlock, setNewBlock] = useState<BlockKey>('text');
   const [view, setView] = useState<'edit' | 'preview'>('edit');
-  const activeBlock = state.blocks.find((b) => b.key === activeEditor);
+  const activeBlock = state.blocks.find((b) => b.id === activeEditor);
   const moveBlock = (index: number, offset: -1 | 1) => {
     const target = index + offset;
     if (target < 0 || target >= state.blocks.length) return;
@@ -724,7 +750,8 @@ function PartyStudioPage({ embedded = false }: { embedded?: boolean }) {
             <section className="suite-card grommetless p-6 sm:p-8" aria-labelledby="party-design">
               <Eyebrow>{t('designNav')}</Eyebrow><h2 id="party-design" className="mt-2 font-display text-4xl text-[#0A2E23]">{t('chooseTemplate')}</h2>
               <label className="mt-6 block max-w-xs text-xs font-semibold"><span className="mb-2 block">{t('invitationLanguage')}</span><select data-testid="select-party-invitation-locale" value={state.invitationLocale} onChange={(event) => setInvitationLocale(event.target.value as InvitationLocale)} className="focus-ring min-h-11 w-full rounded-xl border border-[#D4AF37]/55 bg-[#FFFDF9] px-4"><option value="ar">{t('arabic')}</option><option value="en">{t('english')}</option></select></label>
-              <div className="party-template-grid mt-6 grid gap-3 sm:grid-cols-3">{Object.values(partyTemplates).map((template) => <button key={template.id} type="button" data-testid={`button-party-template-${template.id}`} onClick={() => updatePartyEvent({ templateId: template.id })} aria-pressed={state.partyEvent.templateId === template.id} className={`focus-ring min-h-24 rounded-2xl border p-4 text-start ${state.partyEvent.templateId === template.id ? 'border-[#0A2E23] bg-[#0A2E23] text-white' : 'border-[#D4AF37]/45 bg-[#FFFDF9]/60'}`}><span className={`party-template-swatch party-template-swatch--${template.id}`} /><strong className="mt-3 block text-sm">{locale === 'ar' ? template.nameAr : template.name}</strong><span className="mt-1 block text-[10px] opacity-65">{locale === 'ar' ? template.descriptionAr : template.description}</span>{state.partyEvent.templateId === template.id && <span className="mt-2 inline-flex items-center gap-1 text-[10px]"><Check size={13} /> {t('selected')}</span>}</button>)}</div>
+              <div className="party-template-grid mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{Object.values(partyTemplates).map((template) => <button key={template.id} type="button" data-testid={`button-party-template-${template.id}`} onClick={() => updatePartyEvent({ templateId: template.id })} aria-pressed={state.partyEvent.templateId === template.id} className={`focus-ring min-h-24 rounded-2xl border p-4 text-start ${state.partyEvent.templateId === template.id ? 'border-[#0A2E23] bg-[#0A2E23] text-white' : 'border-[#D4AF37]/45 bg-[#FFFDF9]/60'}`}><span className={`party-template-swatch party-template-swatch--${template.id}`} /><strong className="mt-3 block text-sm">{locale === 'ar' ? template.nameAr : template.name}</strong><span className="mt-1 block text-[10px] opacity-65">{locale === 'ar' ? template.descriptionAr : template.description}</span>{state.partyEvent.templateId === template.id && <span className="mt-2 inline-flex items-center gap-1 text-[10px]"><Check size={13} /> {t('selected')}</span>}</button>)}</div>
+              <div className="mt-6 grid gap-4 border-t border-[#D4AF37]/30 pt-6 sm:grid-cols-3"><label className="text-xs font-semibold">{t('background')}<input type="color" value={state.partyEvent.backgroundColor ?? '#faf7f2'} onChange={(event) => updatePartyEvent({ backgroundColor: event.target.value })} className="mt-2 h-11 w-full rounded-xl border p-1" /></label><label className="text-xs font-semibold">{t('primaryColor')}<input type="color" value={state.partyEvent.primaryColor ?? '#0a2e23'} onChange={(event) => updatePartyEvent({ primaryColor: event.target.value })} className="mt-2 h-11 w-full rounded-xl border p-1" /></label><label className="text-xs font-semibold">{t('accentColor')}<input type="color" value={state.partyEvent.accentColor ?? '#d4af37'} onChange={(event) => updatePartyEvent({ accentColor: event.target.value })} className="mt-2 h-11 w-full rounded-xl border p-1" /></label><label className="text-xs font-semibold">{t('typography')}<select value={state.partyEvent.typography} onChange={(event) => updatePartyEvent({ typography: event.target.value as PartyEventData['typography'] })} className="mt-2 min-h-11 w-full rounded-xl border px-3"><option value="display">{t('displayStyle')}</option><option value="modern">{t('modernStyle')}</option></select></label><label className="text-xs font-semibold">{t('layout')}<select value={state.partyEvent.layout} onChange={(event) => updatePartyEvent({ layout: event.target.value as PartyEventData['layout'] })} className="mt-2 min-h-11 w-full rounded-xl border px-3"><option value="centered">{t('centered')}</option><option value="editorial">{t('editorial')}</option></select></label><label className="text-xs font-semibold">{t('motion')}<select value={state.partyEvent.motion} onChange={(event) => updatePartyEvent({ motion: event.target.value as PartyEventData['motion'] })} className="mt-2 min-h-11 w-full rounded-xl border px-3"><option value="gentle">{t('gentle')}</option><option value="none">{t('none')}</option></select></label><label className="flex min-h-11 items-center gap-2 text-xs font-semibold sm:col-span-3"><input type="checkbox" checked={state.partyEvent.decorations} onChange={(event) => updatePartyEvent({ decorations: event.target.checked })} />{t('decorations')}</label></div>
             </section>
             <div className="suite-card p-6 sm:p-8">
               <div className="flex items-end justify-between gap-4">
@@ -739,10 +766,10 @@ function PartyStudioPage({ embedded = false }: { embedded?: boolean }) {
               <p className="mt-2 text-sm text-[#2D2421]/60">
                 {t('blocksHelp')}
               </p>
-              <Reorder.Group axis="y" values={state.blocks} onReorder={reorderBlocks} className="mt-7 space-y-3">
+              <div className="mt-5 flex flex-col gap-2 sm:flex-row"><select value={newBlock} onChange={(event) => setNewBlock(event.target.value as BlockKey)} className="min-h-11 flex-1 rounded-xl border border-[#D4AF37]/55 bg-[#FFFDF9] px-3">{(['text', 'venue', 'host', 'cta', 'divider', 'spacer'] as BlockKey[]).map((key) => <option key={key} value={key}>{t(key)}</option>)}</select><Button icon={Plus} onClick={() => addBlock(newBlock)}>{t('addBlock')}</Button></div>
+              <div className="mt-7 space-y-3">
                 {state.blocks.map((block, index) => (
-                  <Reorder.Item key={block.key} value={block} className={`party-block-row flex flex-wrap items-center gap-3 rounded-2xl border p-3 transition ${block.enabled ? 'border-[#D4AF37]/55 bg-[#FFFDF9]/50' : 'border-[#2D2421]/10 bg-[#2D2421]/[.03] opacity-55'}`}>
-                    <GripVertical data-testid={`grip-${block.key}`} size={18} className="party-drag-handle shrink-0 cursor-grab text-[#A98219]" />
+                  <div key={block.id} className={`party-block-row flex flex-wrap items-center gap-3 rounded-2xl border p-3 transition ${block.enabled ? 'border-[#D4AF37]/55 bg-[#FFFDF9]/50' : 'border-[#2D2421]/10 bg-[#2D2421]/[.03] opacity-55'}`}>
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0A2E23] text-[#D4AF37]">
                       <BlockIcon block={block.key} />
                     </div>
@@ -753,21 +780,23 @@ function PartyStudioPage({ embedded = false }: { embedded?: boolean }) {
                     <div className="party-block-actions flex w-full items-center justify-end gap-2 sm:w-auto">
                     <button onClick={() => moveBlock(index, -1)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); moveBlock(index, -1); } }} disabled={index === 0} aria-label={`${t('moveUp')} ${t(block.key)}`} className="focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-full border border-[#D4AF37]/55 text-[#0A2E23] disabled:opacity-30"><ArrowUp size={14} /></button>
                     <button onClick={() => moveBlock(index, 1)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); moveBlock(index, 1); } }} disabled={index === state.blocks.length - 1} aria-label={`${t('moveDown')} ${t(block.key)}`} className="focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-full border border-[#D4AF37]/55 text-[#0A2E23] disabled:opacity-30"><ArrowDown size={14} /></button>
-                    <button onClick={() => setActiveEditor(block.key)} data-testid={`button-edit-${block.key}`} aria-label={`${t('edit')} ${t(block.key)}`} className="focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-full border border-[#D4AF37]/55 text-[#0A2E23] hover:bg-[#D4AF37]/10">
+                    <button onClick={() => setActiveEditor(block.id)} data-testid={`button-edit-${block.id}`} aria-label={`${t('edit')} ${t(block.key)}`} className="focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-full border border-[#D4AF37]/55 text-[#0A2E23] hover:bg-[#D4AF37]/10">
                       <Edit3 size={14} />
                     </button>
-                    <button onClick={() => toggleBlock(block.key)} data-testid={`button-toggle-${block.key}`} aria-label={`${t(block.enabled ? 'hide' : 'show')} ${t(block.key)}`} aria-pressed={block.enabled} className={`focus-ring relative h-11 w-12 shrink-0 rounded-full transition ${block.enabled ? 'bg-[#0A2E23]' : 'bg-[#2D2421]/20'}`}>
+                    <button onClick={() => duplicateBlock(block.id)} aria-label={`${t('duplicate')} ${t(block.key)}`} className="focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-full border border-[#D4AF37]/55"><Copy size={14} /></button>
+                    <button onClick={() => { if (window.confirm(t('confirmDelete'))) deleteBlock(block.id); }} aria-label={`${t('delete')} ${t(block.key)}`} className="focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-full border border-[#D4AF37]/55 text-[#8c302b]"><Trash2 size={14} /></button>
+                    <button onClick={() => toggleBlock(block.id)} data-testid={`button-toggle-${block.id}`} aria-label={`${t(block.enabled ? 'hide' : 'show')} ${t(block.key)}`} aria-pressed={block.enabled} className={`focus-ring relative h-11 w-12 shrink-0 rounded-full transition ${block.enabled ? 'bg-[#0A2E23]' : 'bg-[#2D2421]/20'}`}>
                       <span className={`absolute top-3.5 h-4 w-4 rounded-full border border-[#D4AF37] bg-[#FFFDF9] transition-transform ${block.enabled ? 'end-2' : 'start-2'}`} />
                     </button>
                     </div>
-                  </Reorder.Item>
+                  </div>
                 ))}
-              </Reorder.Group>
+              </div>
             </div>
             {activeBlock && <EditorPanel key={activeBlock.key} block={activeBlock} close={() => setActiveEditor(null)} updateBlock={updateBlock} />}
           </div>
           <aside className={`party-preview-column ${view === 'edit' ? 'party-mobile-hidden' : ''}`} aria-label={t('previewView')}>
-            <div className="party-preview-frame"><GuestPage preview /></div>
+            <div className="party-preview-frame"><GuestPage preview onSelectBlock={(id) => { setActiveEditor(id); setView('edit'); }} /></div>
           </aside>
         </div>
       </main>
@@ -895,15 +924,16 @@ function WeddingStudioPage({ embedded = false }: { embedded?: boolean }) {
 }
 
 function BlockIcon({ block }: { block: BlockKey }) { const Icon = blockIcons[block]; return <Icon size={15} strokeWidth={1.6} />; }
-function EditorPanel({ block, close, updateBlock }: { block: StudioBlock; close: () => void; updateBlock: (key: BlockKey, patch: Partial<BlockContent>) => void }) {
+function EditorPanel({ block, close, updateBlock }: { block: StudioBlock; close: () => void; updateBlock: (id: string, patch: Partial<BlockContent>) => void }) {
   const { t } = useAppLocale();
   const [heading, setHeading] = useState(block.content.heading);
   const [note, setNote] = useState(block.content.note ?? '');
   const [entree, setEntree] = useState((block.content.entree ?? []).join('\n'));
   const [questions, setQuestions] = useState(block.content.questions ?? []);
   const [swatches, setSwatches] = useState(block.content.swatches ?? ['#6D3F35', '#C48B63', '#34594B']);
-  const save = () => { updateBlock(block.key, { heading, note, entree: entree.split('\n').map((x) => x.trim()).filter(Boolean), questions, swatches }); close(); };
-  return <motion.div initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 16 }} className="suite-card grommetless p-6"><div className="flex items-start justify-between"><div><Eyebrow>{t('edit')} / {t(block.key)}</Eyebrow><h3 className="mt-2 font-display text-3xl text-[#0A2E23]">{t(block.key)}</h3></div><button onClick={close} data-testid="button-close-editor" aria-label={t('cancel')} className="focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-full text-[#2D2421]/60"><X size={18} /></button></div><div className="mt-6 space-y-5"><label className="block"><span className="mb-2 block text-[10px] font-bold uppercase tracking-[.12em] text-[#2D2421]/55">{t('heading')}</span><input value={heading} onChange={(e) => setHeading(e.target.value)} data-testid="input-edit-heading" className="focus-ring w-full rounded-xl border border-[#D4AF37]/50 bg-[#FFFDF9]/60 px-4 py-3 text-sm outline-none" /></label>{(block.key === 'dress') && <label className="block"><span className="mb-2 block text-[10px] font-bold uppercase tracking-[.12em] text-[#2D2421]/55">{t('description')}</span><textarea value={note} onChange={(e) => setNote(e.target.value)} data-testid="input-edit-note" rows={4} className="focus-ring w-full resize-none rounded-xl border border-[#D4AF37]/50 bg-[#FFFDF9]/60 px-4 py-3 text-sm outline-none" /></label>}{block.key === 'catering' && <><label className="block"><span className="mb-2 block text-[10px] font-bold uppercase tracking-[.12em] text-[#2D2421]/55">{t('entrees')}</span><textarea value={entree} onChange={(e) => setEntree(e.target.value)} data-testid="input-edit-entrees" rows={4} className="focus-ring w-full resize-none rounded-xl border border-[#D4AF37]/50 bg-[#FFFDF9]/60 px-4 py-3 text-sm outline-none" /></label><div><span className="mb-2 block text-[10px] font-bold uppercase tracking-[.12em] text-[#2D2421]/55">{t('menuSwatches')}</span><div className="flex gap-3">{swatches.map((swatch, i) => <input key={i} type="color" value={swatch} onChange={(e) => setSwatches(swatches.map((color, colorI) => colorI === i ? e.target.value : color))} data-testid={`input-edit-swatch-${i}`} aria-label={`${t('menuSwatches')} ${i + 1}`} className="h-10 w-full cursor-pointer rounded-xl border border-[#D4AF37]/50 bg-[#FFFDF9]/60 p-1" />)}</div></div></>}{block.key === 'faq' && <div><span className="mb-2 block text-[10px] font-bold uppercase tracking-[.12em] text-[#2D2421]/55">{t('questions')}</span>{questions.map((item, i) => <input key={i} value={item.q} onChange={(e) => setQuestions(questions.map((q, qI) => qI === i ? { ...q, q: e.target.value } : q))} data-testid={`input-edit-question-${i}`} className="focus-ring mb-2 w-full rounded-xl border border-[#D4AF37]/50 bg-[#FFFDF9]/60 px-4 py-3 text-sm outline-none" />)}</div>}<Button variant="dark" className="w-full" icon={Check} onClick={save}>{t('saveChanges')}</Button></div></motion.div>;
+  const [url, setUrl] = useState(block.content.url ?? '');
+  const save = () => { updateBlock(block.id, { heading, note, url, entree: entree.split('\n').map((x) => x.trim()).filter(Boolean), questions, swatches }); close(); };
+  return <motion.div initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 16 }} className="suite-card grommetless p-6"><div className="flex items-start justify-between"><div><Eyebrow>{t('edit')} / {t(block.key)}</Eyebrow><h3 className="mt-2 font-display text-3xl text-[#0A2E23]">{t(block.key)}</h3></div><button onClick={close} data-testid="button-close-editor" aria-label={t('cancel')} className="focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-full text-[#2D2421]/60"><X size={18} /></button></div><div className="mt-6 space-y-5"><label className="block"><span className="mb-2 block text-[10px] font-bold uppercase tracking-[.12em] text-[#2D2421]/55">{t('heading')}</span><input value={heading} onChange={(e) => setHeading(e.target.value)} data-testid="input-edit-heading" className="focus-ring w-full rounded-xl border border-[#D4AF37]/50 bg-[#FFFDF9]/60 px-4 py-3 text-sm outline-none" /></label>{!['catering', 'faq', 'divider', 'spacer'].includes(block.key) && <label className="block"><span className="mb-2 block text-[10px] font-bold uppercase tracking-[.12em] text-[#2D2421]/55">{t('description')}</span><textarea value={note} onChange={(e) => setNote(e.target.value)} data-testid="input-edit-note" rows={4} className="focus-ring w-full resize-none rounded-xl border border-[#D4AF37]/50 bg-[#FFFDF9]/60 px-4 py-3 text-sm outline-none" /></label>}{block.key === 'cta' && <label className="block"><span className="mb-2 block text-[10px] font-bold uppercase tracking-[.12em] text-[#2D2421]/55">URL</span><input type="url" value={url} onChange={(event) => setUrl(event.target.value)} className="focus-ring w-full rounded-xl border border-[#D4AF37]/50 bg-[#FFFDF9]/60 px-4 py-3 text-sm" /></label>}{block.key === 'catering' && <><label className="block"><span className="mb-2 block text-[10px] font-bold uppercase tracking-[.12em] text-[#2D2421]/55">{t('entrees')}</span><textarea value={entree} onChange={(e) => setEntree(e.target.value)} data-testid="input-edit-entrees" rows={4} className="focus-ring w-full resize-none rounded-xl border border-[#D4AF37]/50 bg-[#FFFDF9]/60 px-4 py-3 text-sm outline-none" /></label><div><span className="mb-2 block text-[10px] font-bold uppercase tracking-[.12em] text-[#2D2421]/55">{t('menuSwatches')}</span><div className="flex gap-3">{swatches.map((swatch, i) => <input key={i} type="color" value={swatch} onChange={(e) => setSwatches(swatches.map((color, colorI) => colorI === i ? e.target.value : color))} data-testid={`input-edit-swatch-${i}`} aria-label={`${t('menuSwatches')} ${i + 1}`} className="h-10 w-full cursor-pointer rounded-xl border border-[#D4AF37]/50 bg-[#FFFDF9]/60 p-1" />)}</div></div></>}{block.key === 'faq' && <div><span className="mb-2 block text-[10px] font-bold uppercase tracking-[.12em] text-[#2D2421]/55">{t('questions')}</span>{questions.map((item, i) => <input key={i} value={item.q} onChange={(e) => setQuestions(questions.map((q, qI) => qI === i ? { ...q, q: e.target.value } : q))} data-testid={`input-edit-question-${i}`} className="focus-ring mb-2 w-full rounded-xl border border-[#D4AF37]/50 bg-[#FFFDF9]/60 px-4 py-3 text-sm outline-none" />)}</div>}<Button variant="dark" className="w-full" icon={Check} onClick={save}>{t('saveChanges')}</Button></div></motion.div>;
 }
 
 function GuestManager({ project }: { project?: ProjectSummary } = {}) {
@@ -986,16 +1016,17 @@ function partyProjectSummary(event: PartyEventData): ProjectSummary {
   return { id: partyProject.id, type: 'party', name: event.title, date: formatPartyDate(event.date, 'en'), venue: [event.venue, event.city].filter(Boolean).join(', ') };
 }
 
-function backendProjectSummary(event: BackendEvent): ProjectSummary & { lifecycleStatus: string } {
+function backendProjectSummary(event: BackendEvent): ProjectSummary & { lifecycleStatus: EventLifecycle } {
   return { id: event.id, type: event.product_id, name: event.title, date: event.starts_at ?? '', venue: [event.venue_name, event.city].filter(Boolean).join(', '), lifecycleStatus: event.lifecycle_status };
 }
 
-function DashboardRoute() {
+function DashboardRoute({ product }: { product?: ProductId }) {
   const auth = useAuth();
   const [, navigate] = useLocation();
   const [drafts, setDrafts] = useState<DesignDraft<Record<string, unknown>>[]>([]);
+  const [commercial, setCommercial] = useState<CommercialSource | null>(null);
   const loadDrafts = () => Promise.all([listDesignDrafts<Record<string, unknown>>('wedding'), listDesignDrafts<Record<string, unknown>>('party')]).then(([wedding, party]) => setDrafts([...wedding, ...party]));
-  useEffect(() => { void loadDrafts().catch(() => setDrafts([])); }, []);
+  useEffect(() => { void loadDrafts().catch(() => setDrafts([])); void loadCommercialSource().then(setCommercial).catch(() => setCommercial(null)); }, []);
   return <DashboardPage
     projects={auth.events.filter((event) => !event.deleted_at).map(backendProjectSummary)}
     drafts={drafts.map((draft) => ({ id: draft.id, type: draft.product_id, name: draft.title, updatedAt: draft.updated_at }))}
@@ -1006,6 +1037,11 @@ function DashboardRoute() {
       eventCount: auth.events.length,
       access: Object.fromEntries(auth.entitlements.map((item) => [item.product_id, item.status])),
     }}
+    commercial={commercial ? {
+      wedding: commercialSummary('wedding', auth.entitlements, commercial, auth.events),
+      party: commercialSummary('party', auth.entitlements, commercial, auth.events),
+    } : {}}
+    product={product}
     onSignOut={() => void auth.signOut()}
     onCreate={async (type, title) => {
       const configuration = type === 'wedding'
@@ -1019,6 +1055,18 @@ function DashboardRoute() {
     onDelete={async (id) => { await updateEvent(id, { deleted_at: new Date().toISOString() }); await auth.refresh(); }}
     onDeleteDraft={async (id) => { await deleteDesignDraft(id); await loadDrafts(); }}
   />;
+}
+
+function AccountRoute() {
+  const auth = useAuth();
+  const [source, setSource] = useState<CommercialSource | null>(null);
+  useEffect(() => { void loadCommercialSource().then(setSource).catch(() => setSource(null)); }, []);
+  if (!auth.client) return <LoadingPage />;
+  const commercial = source ? {
+    wedding: commercialSummary('wedding', auth.entitlements, source, auth.events),
+    party: commercialSummary('party', auth.entitlements, source, auth.events),
+  } : {};
+  return <AccountPage name={auth.client.display_name} email={auth.session?.user.email ?? ''} commercial={commercial} onSave={async (name) => { await updateCurrentClientDisplayName(auth.client!.id, name); await auth.refresh(); }} />;
 }
 
 function DraftRoutePage() {
@@ -1099,7 +1147,10 @@ function ProjectRoutePage({ type }: { type: ProjectType }) {
 
   let content: ReactNode;
   const deadline = type === 'wedding' ? weddingProject?.event.rsvpDeadline ?? '' : state.partyEvent.rsvpDeadline;
-  if (section === 'overview') content = <EventOperationsOverview project={project} rsvpDeadline={deadline} />;
+  const terminal = backendEvent && isTerminalEvent(backendEvent.lifecycle_status);
+  if (terminal && section !== 'overview' && section !== 'settings') content = <EmptyProjectSection title={t('eventReadOnly')}>{t('eventReadOnlyHelp')}</EmptyProjectSection>;
+  else if (backendEvent?.lifecycle_status === 'planning' && section === 'scanner') content = <EmptyProjectSection title={t('eventDayScanner')}>{t('scannerActiveOnly')}</EmptyProjectSection>;
+  else if (section === 'overview') content = <EventOperationsOverview project={project} rsvpDeadline={deadline} />;
   else if (section === 'invitation') content = type === 'wedding' ? <WeddingStudioPage embedded /> : <PartyStudioPage embedded />;
   else if (section === 'guests') content = <BackendGuestManager project={project} />;
   else if (section === 'scanner') content = <BackendScanner project={project} />;
@@ -1115,26 +1166,30 @@ function EventLifecycleControl({ event, onSave }: { event: BackendEvent; onSave:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
   const labels = { planning: 'lifecyclePlanning', active: 'lifecycleActive', ended: 'lifecycleEnded', archived: 'lifecycleArchived', cancelled: 'lifecycleCancelled' } as const;
-  return <section className="mx-auto max-w-2xl rounded-3xl border border-[#D9D2C5] bg-white p-7"><h2 className="font-semibold">{t('eventStatus')}</h2><div className="mt-4 flex flex-col gap-3 sm:flex-row"><select aria-label={t('eventStatus')} value={status} onChange={(change) => setStatus(change.target.value as EventLifecycle)} className="min-h-11 flex-1 rounded-xl border border-[#D9D2C5] px-3">{Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</select><button disabled={busy || status === event.lifecycle_status} onClick={() => { setBusy(true); setError(false); void onSave(status).catch(() => setError(true)).finally(() => setBusy(false)); }} className="min-h-11 rounded-xl bg-[#0C2D24] px-5 text-xs font-bold text-white disabled:opacity-40">{t('saveChanges')}</button></div>{error && <p className="mt-3 text-sm text-[#8c302b]" role="alert">{t('operationFailed')}</p>}</section>;
+  const allowed = allowedEventTransitions(event.lifecycle_status);
+  return <section className="mx-auto max-w-2xl rounded-3xl border border-[#D9D2C5] bg-white p-7"><h2 className="font-semibold">{t('eventStatus')}</h2><div className="mt-4 flex flex-col gap-3 sm:flex-row"><select aria-label={t('eventStatus')} value={status} disabled={allowed.length === 1} onChange={(change) => setStatus(change.target.value as EventLifecycle)} className="min-h-11 flex-1 rounded-xl border border-[#D9D2C5] px-3 disabled:opacity-60">{allowed.map((value) => <option key={value} value={value}>{t(labels[value])}</option>)}</select><button disabled={busy || status === event.lifecycle_status || allowed.length === 1} onClick={() => { setBusy(true); setError(false); void onSave(status).catch(() => setError(true)).finally(() => setBusy(false)); }} className="min-h-11 rounded-xl bg-[#0C2D24] px-5 text-xs font-bold text-white disabled:opacity-40">{t('saveChanges')}</button></div>{error && <p className="mt-3 text-sm text-[#8c302b]" role="alert">{t('operationFailed')}</p>}</section>;
 }
 
 function WeddingProjectRoute() { return <ProjectRoutePage type="wedding" />; }
 function PartyProjectRoute() { return <ProjectRoutePage type="party" />; }
 function GuestRoute() { return <GuestPage />; }
 
-const emptyAdminSnapshot: AdminSnapshot = { clients: [], entitlements: [], events: [], guests: [], templates: [], assets: [], activity: [] };
+const emptyAdminSnapshot: AdminSnapshot = { clients: [], entitlements: [], events: [], drafts: [], guests: [], templates: [], policies: [], assets: [], activity: [], entitlementActivity: [] };
 
 function AdminRoute() {
   const { section } = useParams<{ section?: string }>();
   const { t } = useAppLocale();
+  const activeSection = resolveAdminSection(section);
   const [snapshot, setSnapshot] = useState<AdminSnapshot>(emptyAdminSnapshot);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const refresh = async () => { setLoading(true); setError(''); try { setSnapshot(await loadAdminSnapshot()); } catch { setError(t('operationFailed')); } finally { setLoading(false); } };
-  useEffect(() => { void refresh(); }, []);
-  const entitlement = async (clientId: string, productId: ProductId, status: EntitlementStatus, endsAt: string | null) => { await setAdminEntitlement(clientId, productId, status, endsAt); await refresh(); };
+  const refresh = async () => { setLoading(true); setError(''); try { setSnapshot(await loadAdminSection(activeSection)); } catch { setError(t('operationFailed')); } finally { setLoading(false); } };
+  useEffect(() => { void refresh(); }, [activeSection]);
+  const entitlement = async (clientId: string, productId: ProductId, status: EntitlementStatus, startsAt: string | null, endsAt: string | null, overrides: Record<string, unknown>) => { await setAdminEntitlement(clientId, productId, status, startsAt, endsAt, overrides); await refresh(); };
   const template = async (id: string, active: boolean) => { await setTemplateActive(id, active); await refresh(); };
-  return <AdminPage section={resolveAdminSection(section)} snapshot={snapshot} loading={loading} error={error} onRefresh={refresh} onEntitlement={entitlement} onTemplate={template} />;
+  const policy = async (productId: ProductId, configuration: Record<string, unknown>) => { await setProductPolicy(productId, configuration); await refresh(); };
+  const asset = async (id: string) => { await retireAsset(id); await refresh(); };
+  return <AdminPage section={activeSection} snapshot={snapshot} loading={loading} error={error} onRefresh={refresh} onEntitlement={entitlement} onTemplate={template} onPolicy={policy} onRetireAsset={asset} />;
 }
 
 function LegacyRedirect({ path }: { path: '/studio/wedding' | '/studio/party' | '/scanner' }) {
@@ -1164,6 +1219,9 @@ function Router() {
         <Route path="/design/party">{() => <PartyStudioPage />}</Route>
         <Route path="/i/:token" component={GuestRoute} />
         <Route path="/">{() => <RequireAuth><DashboardRoute /></RequireAuth>}</Route>
+        <Route path="/planner/wedding">{() => <RequireAuth><DashboardRoute product="wedding" /></RequireAuth>}</Route>
+        <Route path="/planner/party">{() => <RequireAuth><DashboardRoute product="party" /></RequireAuth>}</Route>
+        <Route path="/account">{() => <RequireAuth><AccountRoute /></RequireAuth>}</Route>
         <Route path="/drafts/:type/:draftId">{() => <RequireAuth><DraftRoutePage /></RequireAuth>}</Route>
         <Route path="/weddings/:eventId/:section">{() => <RequireAuth><WeddingProjectRoute /></RequireAuth>}</Route>
         <Route path="/parties/:eventId/:section">{() => <RequireAuth><PartyProjectRoute /></RequireAuth>}</Route>

@@ -174,14 +174,20 @@
   position: relative;
   background: var(--party-bg);
 }
-.party-template--confetti-pop { --party-bg: #fff5f2; --party-surface: rgba(255, 224, 218, .9); --party-primary: #5b2345; --party-accent: #d85b64; }
-.party-template--skyline-toast { --party-bg: #f2f7f8; --party-surface: rgba(213, 229, 232, .92); --party-primary: #17364a; --party-accent: #b87142; }
+.party-template--birthday { --party-bg: #fff5f2; --party-surface: rgba(255, 224, 218, .9); --party-primary: #5b2345; --party-accent: #d85b64; }
+.party-template--corporate { --party-bg: #f2f7f8; --party-surface: rgba(213, 229, 232, .92); --party-primary: #17364a; --party-accent: #b87142; }
+.party-template--baby-shower { --party-bg: #fff8f4; --party-surface: rgba(232, 218, 226, .9); --party-primary: #547581; --party-accent: #d29b94; }
 .party-invitation .suite-card { background: linear-gradient(145deg, var(--party-surface), color-mix(in srgb, var(--party-surface) 78%, white)); border-color: color-mix(in srgb, var(--party-accent) 70%, transparent); }
 .party-invitation .party-title { color: var(--party-primary); }
+.party-type--modern .font-display { font-family: var(--app-font-sans); font-style: normal; }
+.party-layout--editorial .party-title { max-width: 36rem; text-align: start; }
+.party-motion--none *, .party-motion--none *::before, .party-motion--none *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 .party-hero-mark { color: var(--party-accent); border-color: var(--party-accent); background: var(--party-primary); }
 .party-template-swatch { display: block; height: 28px; border-radius: 999px; background: linear-gradient(90deg, #0a2e23 0 58%, #d4af37 58%); }
-.party-template-swatch--confetti-pop { background: linear-gradient(90deg, #5b2345 0 58%, #d85b64 58%); }
-.party-template-swatch--skyline-toast { background: linear-gradient(90deg, #17364a 0 58%, #b87142 58%); }
+.party-template-swatch--corporate { background: linear-gradient(90deg, #17364a 0 58%, #b87142 58%); }
+.party-template-swatch--birthday { background: linear-gradient(90deg, #5b2345 0 58%, #d85b64 58%); }
+.party-template-swatch--baby-shower { background: linear-gradient(90deg, #7897a4 0 50%, #e6b8b1 50%); }
+.party-template-swatch--custom { background: linear-gradient(90deg, #0a2e23 0 58%, #d4af37 58%); }
 .party-preview-frame {
   container-type: inline-size;
   height: calc(100dvh - 215px);
