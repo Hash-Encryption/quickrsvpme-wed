@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { commercialSummary, type CommercialSource } from './commercial.ts';
+import { commercialSummary, normalizePublicationPolicy, type CommercialSource } from './commercial.ts';
 import type { BackendEvent, ClientEntitlement } from '../backend/types.ts';
 
 const source: CommercialSource = {
@@ -27,4 +27,9 @@ test('missing publication-ledger access stays unknown instead of inventing usage
   const summary = commercialSummary('wedding', [], { ...source, publications: null }, []);
   assert.equal(summary.used, null);
   assert.equal(summary.remaining, null);
+});
+
+test('Party publication settings feed the shared backend publication authority', () => {
+  assert.deepEqual(normalizePublicationPolicy('party', { event_limit: 1 }), { event_limit: 1, publication_limit: 1 });
+  assert.deepEqual(normalizePublicationPolicy('wedding', { publication_limit: 2 }), { publication_limit: 2 });
 });

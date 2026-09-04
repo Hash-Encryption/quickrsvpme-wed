@@ -25,6 +25,11 @@ export type CommercialSummary = {
 
 const integer = (value: unknown): number | null => typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
 
+export const normalizePublicationPolicy = (product: ProductId, policy: Record<string, unknown>): Record<string, unknown> =>
+  product === 'party' && policy.publication_limit === undefined && policy.event_limit !== undefined
+    ? { ...policy, publication_limit: policy.event_limit }
+    : policy;
+
 export function commercialSummary(product: ProductId, entitlements: ClientEntitlement[], source: CommercialSource, events: BackendEvent[]): CommercialSummary {
   const entitlement = entitlements.find((item) => item.product_id === product);
   const policy = source.policies.find((item) => item.product_id === product)?.configuration ?? {};

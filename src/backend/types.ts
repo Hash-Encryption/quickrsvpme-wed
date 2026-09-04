@@ -63,6 +63,30 @@ export type EventGuest = {
   event_guest_tag_assignments?: Array<{ event_guest_tags: { name: string } | Array<{ name: string }> | null }>;
 };
 
+export type GeneralInvitationRequest = {
+  id: string;
+  general_invitation_id: string;
+  event_id: string;
+  client_id: string;
+  name: string;
+  phone: string;
+  state: 'awaiting' | 'approved' | 'rejected';
+  guest_id: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type GeneralInvitationRequestStatus = {
+  state: GeneralInvitationRequest['state'];
+  request_id?: string;
+  submitted_at?: string;
+  reviewed_at?: string | null;
+};
+
+export type GeneralInvitationRequestLookup = GeneralInvitationRequestStatus | { state: 'invalid' };
+
 export type InvitationResolution = {
   status: 'active' | 'archived_read_only' | 'invalid' | 'unavailable' | 'cancelled' | 'planning' | 'ended' | 'subscription_unavailable';
   kind?: 'personal' | 'general';

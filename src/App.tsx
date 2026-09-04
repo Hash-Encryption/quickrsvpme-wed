@@ -22,7 +22,7 @@ import type { WeddingProject } from '@/wedding/workspace';
 import { AdminPage } from '@/admin/AdminPage';
 import { AccountPage } from '@/app/AccountPage';
 import { DashboardPage } from '@/app/DashboardPage';
-import { commercialSummary, type CommercialSource } from '@/app/commercial';
+import { commercialSummary, normalizePublicationPolicy, type CommercialSource } from '@/app/commercial';
 import { allowedEventTransitions, isTerminalEvent } from '@/app/lifecycle';
 import { EmptyProjectSection, ProjectShell } from '@/app/ProjectShell';
 import { BackendGuestManager, BackendScanner, EventOperationsOverview } from '@/app/Phase3Operations';
@@ -50,12 +50,12 @@ import {
   type WeddingRsvp,
 } from '@/wedding/model';
 import { defaultPartyEvent, formatPartyDate, mergePartyEvent, partyTemplates, type PartyEventData } from '@/party/model';
-import { createDesignDraft, createGeneralInvitation, createGuest, deleteDesignDraft, getDesignDraftPublishAccess, listDesignDrafts, listEventConfigs, listGuests, publishDesignDraft, recordInvitationOpen, resolveInvitation, rotatePersonalInvitation, savePartyConfig, submitGeneralRsvp, submitPersonalRsvp, tagGuest, updateDesignDraft, updateGuest, type DesignDraft, type DesignDraftPublishAccess } from '@/backend/phase2';
+import { createDesignDraft, createGeneralInvitation, createGuest, deleteDesignDraft, getDesignDraftPublishAccess, getGeneralInvitationRequestStatus, listDesignDrafts, listEventConfigs, listGuests, publishDesignDraft, recordInvitationOpen, resolveInvitation, rotatePersonalInvitation, savePartyConfig, submitGeneralInvitationRequest, submitPersonalRsvp, tagGuest, updateDesignDraft, updateGuest, type DesignDraft, type DesignDraftPublishAccess } from '@/backend/phase2';
 import { updateEvent } from '@/backend/events';
 import { loadCommercialSource } from '@/backend/commercial';
 import { updateCurrentClientDisplayName } from '@/backend/clients';
 import { loadAdminSection, retireAsset, setAdminEntitlement, setProductPolicy, setTemplateActive, type AdminSnapshot } from '@/backend/phase3';
-import type { BackendEvent, EntitlementStatus, EventGuest, EventLifecycle, InvitationResolution, ProductId } from '@/backend/types';
+import type { BackendEvent, EntitlementStatus, EventGuest, EventLifecycle, GeneralInvitationRequestStatus, InvitationResolution, ProductId } from '@/backend/types';
 import {
   emptyOperationalState,
   guestsCsv,
@@ -284,9 +284,7 @@ function EngineProvider({ children }: { children: ReactNode }) {
   }, [activePartyEventId, auth.session, state.blocks, state.invitationLocale, state.partyEvent]);
   const commitPublicRsvp = (rsvp: RSVPStatus, guestCount: number, message = '') => {
     if (!publicInvitation || rsvp === 'pending') return Promise.resolve();
-    return publicInvitation.kind === 'personal'
-      ? submitPersonalRsvp(publicInvitation.token, rsvp, rsvp === 'accepted' ? guestCount : 0, message)
-      : submitGeneralRsvp(publicInvitation.token, publicInvitation.requestId, state.weddingGuest.name, rsvp, rsvp === 'accepted' ? guestCount : 0, message);
+    return submitPersonalRsvp(publicInvitation.token, rsvp, rsvp === 'accepted' ? guestCount : 0, message);
   };
   const value = useMemo(() => ({
     state, ready,
@@ -416,7 +414,11 @@ function GuestPage({ preview = false, onSelectBlock }: { preview?: boolean; onSe
   const [resolution, setResolution] = useState<InvitationResolution | null>(null);
   const [resolutionError, setResolutionError] = useState(false);
   const [generalName, setGeneralName] = useState('');
-  const [identified, setIdentified] = useState(false);
+  const [generalPhone, setGeneralPhone] = useState('');
+  const [generalRequestId, setGeneralRequestId] = useState('');
+  const [generalStatus, setGeneralStatus] = useState<GeneralInvitationRequestStatus | null>(null);
+  const [generalBusy, setGeneralBusy] = useState(false);
+  const [generalError, setGeneralError] = useState(false);
   const openedRef = useRef('');
   const loadedRef = useRef('');
   const [openFaq, setOpenFaq] = useState<number | null>(0);
@@ -425,12 +427,12 @@ function GuestPage({ preview = false, onSelectBlock }: { preview?: boolean; onSe
     if (!backendToken) return;
     let live = true;
     loadedRef.current = '';
-    setResolution(null); setResolutionError(false); setIdentified(false);
+    setResolution(null); setResolutionError(false); setGeneralStatus(null); setGeneralError(false);
     void resolveInvitation(backendToken).then((result) => { if (live) setResolution(result); }).catch(() => { if (live) setResolutionError(true); });
     return () => { live = false; };
   }, [backendToken]);
   useEffect(() => {
-    if (!backendToken || !resolution?.kind || !resolution.event || (resolution.kind === 'general' && !identified)) return;
+    if (!backendToken || !resolution?.kind || !resolution.event || resolution.kind === 'general') return;
     if (loadedRef.current === backendToken) return;
     loadedRef.current = backendToken;
     loadPublicInvitation(resolution, backendToken, generalName);
@@ -438,10 +440,36 @@ function GuestPage({ preview = false, onSelectBlock }: { preview?: boolean; onSe
       openedRef.current = backendToken;
       void recordInvitationOpen(backendToken).catch(() => undefined);
     }
-  }, [backendToken, generalName, identified, loadPublicInvitation, resolution]);
+  }, [backendToken, loadPublicInvitation, resolution]);
+  useEffect(() => {
+    if (!backendToken || resolution?.kind !== 'general') return;
+    const key = `quickrsvp-general-request:${backendToken}`;
+    let requestId = '';
+    try { requestId = localStorage.getItem(key) ?? ''; } catch { /* Status still works for this visit. */ }
+    if (!requestId) return;
+    setGeneralRequestId(requestId);
+    void getGeneralInvitationRequestStatus(backendToken, requestId).then((status) => {
+      if (status.state !== 'invalid') setGeneralStatus(status);
+    }).catch(() => setGeneralError(true));
+  }, [backendToken, resolution?.kind]);
   if (backendToken && (!resolution || resolutionError)) return resolutionError ? <TokenError /> : <LoadingPage />;
   if (resolution && !['active', 'archived_read_only'].includes(resolution.status)) return <TokenError />;
-  if (resolution?.kind === 'general' && !identified) return <div className="grain flex min-h-[100dvh] items-center justify-center bg-[#FAF7F2] p-5"><form onSubmit={(event) => { event.preventDefault(); if (generalName.trim()) setIdentified(true); }} className="suite-card w-full max-w-md p-7"><Eyebrow>{invitationT(resolution.event!.invitation_locale, 'invitation')}</Eyebrow><h1 className="mt-3 font-display text-4xl text-[#0A2E23]">{resolution.event!.title}</h1><input autoFocus required value={generalName} onChange={(event) => setGeneralName(event.target.value)} placeholder={invitationT(resolution.event!.invitation_locale, 'guestName')} className="mt-6 min-h-12 w-full rounded-xl border border-[#D4AF37]/55 px-4" /><Button type="submit" className="mt-4 w-full">{invitationT(resolution.event!.invitation_locale, 'continue')}</Button></form></div>;
+  if (resolution?.kind === 'general') {
+    const copy = resolution.event!.invitation_locale === 'ar'
+      ? { title: 'طلب دعوة', help: 'أدخل اسمك ورقم هاتفك لإرسال الطلب إلى المضيف.', phone: 'رقم الهاتف', submit: 'إرسال الطلب', awaiting: 'تم إرسال طلبك وهو بانتظار موافقة المضيف.', approved: 'تمت الموافقة على طلبك. سيرسل لك المضيف رابط دعوتك الخاصة.', rejected: 'تعذر قبول طلبك لهذه المناسبة.', failed: 'تعذر إرسال الطلب. تحقق من البيانات وحاول مرة أخرى.' }
+      : { title: 'Request an invitation', help: 'Enter your name and phone number to send a request to the host.', phone: 'Phone number', submit: 'Send request', awaiting: 'Your request was sent and is awaiting host approval.', approved: 'Your request was approved. The host will send your personal invitation link.', rejected: 'Your request could not be accepted for this event.', failed: 'The request could not be sent. Check your details and try again.' };
+    const submitRequest = async () => {
+      const requestId = generalRequestId || crypto.randomUUID();
+      setGeneralBusy(true); setGeneralError(false);
+      try {
+        const status = await submitGeneralInvitationRequest(backendToken!, requestId, generalName, generalPhone);
+        setGeneralRequestId(requestId); setGeneralStatus(status);
+        try { localStorage.setItem(`quickrsvp-general-request:${backendToken}`, requestId); } catch { /* Current status remains visible. */ }
+      } catch { setGeneralError(true); }
+      finally { setGeneralBusy(false); }
+    };
+    return <div className="grain flex min-h-[100dvh] items-center justify-center bg-[#FAF7F2] p-5" lang={resolution.event!.invitation_locale} dir={localeDirection(resolution.event!.invitation_locale)}><div className="suite-card w-full max-w-md p-7"><Eyebrow>{invitationT(resolution.event!.invitation_locale, 'invitation')}</Eyebrow><h1 className="mt-3 font-display text-4xl text-[#0A2E23]">{resolution.event!.title}</h1>{generalStatus ? <div className="mt-6 rounded-2xl border border-[#D4AF37]/45 bg-[#FFFDF9]/60 p-5 text-sm leading-7 text-[#2D2421]" role="status">{copy[generalStatus.state]}</div> : <form onSubmit={(event) => { event.preventDefault(); void submitRequest(); }}><h2 className="mt-6 text-xl font-semibold text-[#0A2E23]">{copy.title}</h2><p className="mt-2 text-sm leading-6 text-[#2D2421]/65">{copy.help}</p><input autoFocus required maxLength={200} value={generalName} onChange={(event) => setGeneralName(event.target.value)} placeholder={invitationT(resolution.event!.invitation_locale, 'guestName')} className="mt-5 min-h-12 w-full rounded-xl border border-[#D4AF37]/55 px-4" /><input required type="tel" minLength={7} maxLength={32} pattern="[0-9+() .-]{7,32}" dir="ltr" value={generalPhone} onChange={(event) => setGeneralPhone(event.target.value)} placeholder={copy.phone} aria-label={copy.phone} className="mt-3 min-h-12 w-full rounded-xl border border-[#D4AF37]/55 px-4" /><Button type="submit" disabled={generalBusy} className="mt-4 w-full">{copy.submit}</Button></form>}{generalError && <p className="mt-4 text-sm text-[#8c302b]" role="alert">{copy.failed}</p>}</div></div>;
+  }
   const validToken = Boolean(resolution) || preview || isValidGuestToken(token, state.weddingGuest.token);
   const visibleBlocks = state.blocks.filter((block) => block.enabled);
   const displayedRsvp = preview ? 'accepted' : state.rsvp;
@@ -1187,9 +1215,9 @@ function AdminRoute() {
   const [error, setError] = useState('');
   const refresh = async () => { setLoading(true); setError(''); try { setSnapshot(await loadAdminSection(activeSection)); } catch { setError(t('operationFailed')); } finally { setLoading(false); } };
   useEffect(() => { void refresh(); }, [activeSection]);
-  const entitlement = async (clientId: string, productId: ProductId, status: EntitlementStatus, startsAt: string | null, endsAt: string | null, overrides: Record<string, unknown>) => { await setAdminEntitlement(clientId, productId, status, startsAt, endsAt, overrides); await refresh(); };
+  const entitlement = async (clientId: string, productId: ProductId, status: EntitlementStatus, startsAt: string | null, endsAt: string | null, overrides: Record<string, unknown>) => { await setAdminEntitlement(clientId, productId, status, startsAt, endsAt, normalizePublicationPolicy(productId, overrides)); await refresh(); };
   const template = async (id: string, active: boolean) => { await setTemplateActive(id, active); await refresh(); };
-  const policy = async (productId: ProductId, configuration: Record<string, unknown>) => { await setProductPolicy(productId, configuration); await refresh(); };
+  const policy = async (productId: ProductId, configuration: Record<string, unknown>) => { await setProductPolicy(productId, normalizePublicationPolicy(productId, configuration)); await refresh(); };
   const asset = async (id: string) => { await retireAsset(id); await refresh(); };
   return <AdminPage section={activeSection} snapshot={snapshot} loading={loading} error={error} onRefresh={refresh} onEntitlement={entitlement} onTemplate={template} onPolicy={policy} onRetireAsset={asset} />;
 }

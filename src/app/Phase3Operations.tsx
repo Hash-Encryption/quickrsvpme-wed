@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Camera, CameraOff, Check, CircleAlert, Clock3, QrCode, Search, Users, XCircle } from 'lucide-react';
 
-import { createGuest, listGuests, tagGuest, updateGuest } from '@/backend/phase2';
+import { createGuest, listGeneralInvitationRequests, listGuests, reviewGeneralInvitationRequest, tagGuest, updateGuest } from '@/backend/phase2';
 import {
   checkInPartyMembers,
   checkinStatus,
@@ -13,7 +13,7 @@ import {
   type CheckinStatus,
   type EventOperationalSummary,
 } from '@/backend/phase3';
-import type { EventGuest } from '@/backend/types';
+import type { EventGuest, GeneralInvitationRequest } from '@/backend/types';
 import { useAppLocale } from '@/i18n/app-locale';
 import type { ProjectSummary } from './projects';
 
@@ -39,6 +39,7 @@ type GuestFilter = 'all' | 'not_opened' | 'opened_no_rsvp' | EventGuest['rsvp_st
 export function BackendGuestManager({ project }: { project: ProjectSummary }) {
   const { t } = useAppLocale();
   const [guests, setGuests] = useState<EventGuest[]>([]);
+  const [requests, setRequests] = useState<GeneralInvitationRequest[]>([]);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<GuestFilter>('all');
   const [drafts, setDrafts] = useState<Record<string, number>>({});
@@ -46,7 +47,7 @@ export function BackendGuestManager({ project }: { project: ProjectSummary }) {
   const [newGuest, setNewGuest] = useState({ name: '', phone: '', companions: 0 });
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
-  const refresh = async () => { const next = await listGuests(project.id); setGuests(next); setDrafts(Object.fromEntries(next.map((guest) => [guest.id, guest.checked_in_count]))); };
+  const refresh = async () => { const [nextGuests, nextRequests] = await Promise.all([listGuests(project.id), listGeneralInvitationRequests(project.id)]); setGuests(nextGuests); setRequests(nextRequests); setDrafts(Object.fromEntries(nextGuests.map((guest) => [guest.id, guest.checked_in_count]))); };
   useEffect(() => { setError(''); void refresh().catch(() => setError(t('operationFailed'))); }, [project.id]);
   const visible = useMemo(() => guests.filter((guest) => {
     const opened = (guest.personal_invitations?.[0]?.open_count ?? 0) > 0;
@@ -61,8 +62,15 @@ export function BackendGuestManager({ project }: { project: ProjectSummary }) {
     catch { setError(t('operationFailed')); }
     finally { setBusy(''); }
   };
+  const review = async (request: GeneralInvitationRequest, decision: 'approved' | 'rejected') => {
+    setBusy(request.id); setError('');
+    try { await reviewGeneralInvitationRequest(project.id, request.id, decision); await refresh(); }
+    catch { setError(t('operationFailed')); }
+    finally { setBusy(''); }
+  };
   return <div>
     <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs font-bold uppercase tracking-[.16em] text-[#8B7040]">{t('guestOperations')}</p><h1 className="mt-2 text-3xl font-semibold tracking-[-.04em] sm:text-5xl">{t('guestListTitle')}</h1></div><span className="w-fit rounded-full border border-[#D9D2C5] bg-white px-3 py-2 text-[10px] font-semibold">{guests.length} {t('guestRecords')}</span></div>
+    <section className="mt-6 rounded-3xl border border-[#D9D2C5] bg-white p-5 sm:p-6"><div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">{t('generalRequests')}</h2><p className="mt-1 text-xs text-[#756F66]">{t('generalRequestsHelp')}</p></div><span className="rounded-full bg-[#F0E9DB] px-3 py-2 text-[10px] font-bold">{requests.filter((request) => request.state === 'awaiting').length} {t('awaiting')}</span></div>{requests.length === 0 ? <p className="mt-5 text-sm text-[#756F66]">{t('noGeneralRequests')}</p> : <div className="mt-5 grid gap-3">{requests.map((request) => <article key={request.id} className="flex flex-col gap-4 rounded-2xl border border-[#E6DFD3] p-4 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><p className="font-semibold">{request.name}</p><p className="mt-1 text-xs text-[#756F66]"><bdi>{request.phone}</bdi> · <time dateTime={request.created_at}>{new Date(request.created_at).toLocaleString()}</time></p></div><span className="w-fit rounded-full bg-[#F5F2EC] px-3 py-2 text-[10px] font-bold uppercase">{t(request.state)}</span>{request.state === 'awaiting' && <div className="flex gap-2"><button disabled={busy === request.id} onClick={() => void review(request, 'approved')} className="min-h-11 rounded-xl bg-[#0C2D24] px-4 text-xs font-bold text-white disabled:opacity-40">{t('approve')}</button><button disabled={busy === request.id} onClick={() => void review(request, 'rejected')} className="min-h-11 rounded-xl border border-[#8c302b]/40 px-4 text-xs font-bold text-[#8c302b] disabled:opacity-40">{t('reject')}</button></div>}</article>)}</div>}</section>
     <div className="mt-6 grid gap-2 rounded-2xl border border-[#D9D2C5] bg-white p-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_110px_auto]"><input value={newGuest.name} onChange={(event) => setNewGuest({ ...newGuest, name: event.target.value })} placeholder={t('guest')} className="min-h-11 rounded-xl border px-3" /><input value={newGuest.phone} onChange={(event) => setNewGuest({ ...newGuest, phone: event.target.value })} placeholder={t('missingPhone')} className="min-h-11 rounded-xl border px-3" /><input type="number" min="0" max="50" value={newGuest.companions} onChange={(event) => setNewGuest({ ...newGuest, companions: Number(event.target.value) })} aria-label={t('companionAllowance')} className="min-h-11 rounded-xl border px-3" /><button disabled={!newGuest.name.trim() || busy === 'create'} onClick={() => { setBusy('create'); void createGuest(project.id, newGuest.name.trim(), newGuest.phone.trim(), newGuest.companions).then(() => { setNewGuest({ name: '', phone: '', companions: 0 }); return refresh(); }).catch(() => setError(t('operationFailed'))).finally(() => setBusy('')); }} className="min-h-11 rounded-xl bg-[#0C2D24] px-5 text-xs font-bold text-white disabled:opacity-40">{t('addGuest')}</button></div>
     <div className="mt-6 grid gap-2 sm:grid-cols-[minmax(0,1fr)_220px]"><label className="sr-only" htmlFor="phase3-guest-search">{t('searchGuests')}</label><input id="phase3-guest-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('searchGuests')} className="focus-ring min-h-12 rounded-xl border border-[#D9D2C5] bg-white px-4" /><label className="sr-only" htmlFor="phase3-guest-filter">{t('filter')}</label><select id="phase3-guest-filter" value={filter} onChange={(event) => setFilter(event.target.value as GuestFilter)} className="focus-ring min-h-12 rounded-xl border border-[#D9D2C5] bg-white px-4"><option value="all">{t('allResponses')}</option><option value="not_opened">{t('notOpened')}</option><option value="opened_no_rsvp">{t('openedNoRsvp')}</option><option value="accepted">{t('accepted')}</option><option value="declined">{t('declined')}</option><option value="pending">{t('pending')}</option><option value="not_arrived">{t('notArrived')}</option><option value="partial">{t('partiallyCheckedIn')}</option><option value="complete">{t('fullyCheckedIn')}</option></select></div>
     {error && <p className="mt-4 rounded-2xl bg-[#8c302b]/10 p-4 text-sm text-[#8c302b]" role="alert">{error}</p>}

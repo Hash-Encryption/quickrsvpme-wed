@@ -1,6 +1,6 @@
 import { toBackendError } from './errors';
 import { getSupabase } from './supabase';
-import type { BackendEvent, EventGuest, InvitationResolution, ProductId } from './types';
+import type { BackendEvent, EventGuest, GeneralInvitationRequest, GeneralInvitationRequestLookup, GeneralInvitationRequestStatus, InvitationResolution, ProductId } from './types';
 
 export type EventConfig<T> = {
   event_id: string;
@@ -193,8 +193,26 @@ export async function submitPersonalRsvp(token: string, status: 'accepted' | 'de
   if (error) fail(error);
 }
 
-export async function submitGeneralRsvp(token: string, requestId: string, name: string, status: 'accepted' | 'declined', partySize: number, message = '', companionNames: string[] = []): Promise<void> {
-  const { error } = await getSupabase().rpc('submit_general_rsvp', { p_token: token, p_request_id: requestId, p_name: name, p_status: status, p_party_size: partySize, p_companion_names: companionNames, p_message: message || null });
+export async function submitGeneralInvitationRequest(token: string, requestId: string, name: string, phone: string): Promise<GeneralInvitationRequestStatus> {
+  const { data, error } = await getSupabase().rpc('submit_general_invitation_request', { p_token: token, p_request_id: requestId, p_name: name, p_phone: phone });
+  if (error) fail(error);
+  return data as GeneralInvitationRequestStatus;
+}
+
+export async function getGeneralInvitationRequestStatus(token: string, requestId: string): Promise<GeneralInvitationRequestLookup> {
+  const { data, error } = await getSupabase().rpc('get_general_invitation_request_status', { p_token: token, p_request_id: requestId });
+  if (error) fail(error);
+  return data as GeneralInvitationRequestLookup;
+}
+
+export async function listGeneralInvitationRequests(eventId: string): Promise<GeneralInvitationRequest[]> {
+  const { data, error } = await getSupabase().rpc('list_general_invitation_requests', { p_event_id: eventId });
+  if (error) fail(error);
+  return (data ?? []) as GeneralInvitationRequest[];
+}
+
+export async function reviewGeneralInvitationRequest(eventId: string, requestId: string, decision: 'approved' | 'rejected'): Promise<void> {
+  const { error } = await getSupabase().rpc('review_general_invitation_request', { p_event_id: eventId, p_request_id: requestId, p_decision: decision });
   if (error) fail(error);
 }
 
