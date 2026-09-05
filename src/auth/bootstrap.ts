@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 import { BackendError, toBackendError } from '../backend/errors.ts';
 
 export const accountBootstrapTimeoutMs = 8_000;
+export const needsAccountBootstrap = (pathname: string) => !pathname.startsWith('/i/');
 
 type BootstrapLoaders<Client, Entitlements, Events> = {
   client: (signal?: AbortSignal) => Promise<Client>;
@@ -37,6 +38,7 @@ export async function startAccountBootstrap<Client, Entitlements, Events>(
   loaders: BootstrapLoaders<Client, Entitlements, Events>,
   timeoutMs = accountBootstrapTimeoutMs,
 ) {
+  const client = await withTimeout(loaders.client, timeoutMs);
   const optional = Promise.allSettled([
     withTimeout(loaders.entitlements, timeoutMs),
     withTimeout(loaders.events, timeoutMs),
@@ -47,7 +49,7 @@ export async function startAccountBootstrap<Client, Entitlements, Events>(
     admin: admin.status === 'fulfilled' ? admin.value as boolean : undefined,
     errors: [entitlements, events, admin].flatMap((result) => result.status === 'rejected' ? [toBackendError(result.reason)] : []),
   }));
-  return { client: await withTimeout(loaders.client, timeoutMs), optional };
+  return { client, optional };
 }
 
 export function accountBootstrapError(error: unknown): BackendError {

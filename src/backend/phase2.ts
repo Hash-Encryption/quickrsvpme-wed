@@ -31,8 +31,10 @@ export async function listEventConfigs<T>(product: ProductId): Promise<EventConf
   return (data ?? []) as unknown as EventConfig<T>[];
 }
 
-export async function listDesignDrafts<T>(product: ProductId): Promise<DesignDraft<T>[]> {
-  const { data, error } = await getSupabase().from('design_drafts').select('id, product_id, title, configuration, template_version_id, template_snapshot, artwork_asset_id, version, created_at, updated_at').eq('product_id', product).order('updated_at', { ascending: false });
+export async function listDesignDrafts<T>(product?: ProductId): Promise<DesignDraft<T>[]> {
+  let request = getSupabase().from('design_drafts').select('id, product_id, title, configuration, template_version_id, template_snapshot, artwork_asset_id, version, created_at, updated_at');
+  if (product) request = request.eq('product_id', product);
+  const { data, error } = await request.order('updated_at', { ascending: false });
   if (error) fail(error);
   return (data ?? []) as DesignDraft<T>[];
 }
@@ -46,6 +48,7 @@ export async function createDesignDraft(product: ProductId, title: string, confi
 }
 
 export async function updateDesignDraft(draft: DesignDraft<Record<string, unknown>>, title: string, configuration: Record<string, unknown>): Promise<DesignDraft<Record<string, unknown>>> {
+  if (draft.title === title && JSON.stringify(draft.configuration) === JSON.stringify(configuration)) return draft;
   const templateChanged = configuration.templateId !== draft.configuration.templateId;
   const template = templateChanged && typeof configuration.templateId === 'string' ? await templateVersion(draft.product_id, configuration.templateId) : null;
   const { data, error } = await getSupabase().rpc('save_design_draft', { p_draft_id: draft.id, p_title: title, p_configuration: configuration, p_template_version_id: templateChanged ? template?.id ?? null : draft.template_version_id, p_template_snapshot: templateChanged ? template?.render_snapshot ?? {} : draft.template_snapshot, p_expected_version: draft.version });

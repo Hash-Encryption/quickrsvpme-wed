@@ -2,11 +2,17 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { BackendError } from '../backend/errors.ts';
-import { accountBootstrapError, createAuthBootstrapScheduler, startAccountBootstrap } from './bootstrap.ts';
+import { accountBootstrapError, createAuthBootstrapScheduler, needsAccountBootstrap, startAccountBootstrap } from './bootstrap.ts';
 
 const client = { id: 'client-1', display_name: 'Client' };
 
-test('fresh and restored sessions start essential and optional account requests concurrently', async () => {
+test('public invitation routes do not load authenticated account data', () => {
+  assert.equal(needsAccountBootstrap('/i/public-token'), false);
+  assert.equal(needsAccountBootstrap('/'), true);
+  assert.equal(needsAccountBootstrap('/weddings/event-1/overview'), true);
+});
+
+test('fresh and restored sessions verify the account before starting optional requests', async () => {
   const started: string[] = [];
   const result = await startAccountBootstrap({
     client: async () => { started.push('client'); return client; },
@@ -17,6 +23,17 @@ test('fresh and restored sessions start essential and optional account requests 
   assert.deepEqual(new Set(started), new Set(['client', 'entitlements', 'events', 'admin']));
   assert.equal(result.client, client);
   assert.deepEqual(await result.optional, { entitlements: ['wedding'], events: ['event-1'], admin: false, errors: [] });
+});
+
+test('essential profile failure does not fan out optional database requests', async () => {
+  const started: string[] = [];
+  await assert.rejects(startAccountBootstrap({
+    client: async () => { started.push('client'); throw new Error('profile missing'); },
+    entitlements: async () => { started.push('entitlements'); return []; },
+    events: async () => { started.push('events'); return []; },
+    admin: async () => { started.push('admin'); return false; },
+  }));
+  assert.deepEqual(started, ['client']);
 });
 
 test('Admin plus Client and normal Client bootstraps preserve both authorities', async () => {

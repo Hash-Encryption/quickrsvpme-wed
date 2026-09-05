@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
+import { useLocation } from 'wouter';
 
 import { getSession, onAuthStateChange, signOut as endSession } from '@/backend/auth';
 import { getCurrentClient, isPlatformAdmin } from '@/backend/clients';
@@ -7,7 +8,7 @@ import { listEntitlements } from '@/backend/entitlements';
 import { toBackendError, type BackendError } from '@/backend/errors';
 import { listEvents } from '@/backend/events';
 import type { BackendEvent, ClientAccount, ClientEntitlement } from '@/backend/types';
-import { accountBootstrapError, createAuthBootstrapScheduler, startAccountBootstrap } from './bootstrap';
+import { accountBootstrapError, createAuthBootstrapScheduler, needsAccountBootstrap, startAccountBootstrap } from './bootstrap';
 
 type AuthContextValue = {
   session: Session | null;
@@ -25,6 +26,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const [location] = useLocation();
   const [session, setSession] = useState<Session | null>(null);
   const [client, setClient] = useState<ClientAccount | null>(null);
   const [entitlements, setEntitlements] = useState<ClientEntitlement[]>([]);
@@ -35,6 +37,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<BackendError | null>(null);
   const requestRef = useRef(0);
   const activeUserRef = useRef<string | null>(null);
+  const locationRef = useRef(location);
+  locationRef.current = location;
 
   const hydrate = useCallback(async (nextSession: Session | null) => {
     const request = ++requestRef.current;
@@ -43,6 +47,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setDataLoading(Boolean(nextSession));
     setError(null);
     if (!nextSession) {
+      activeUserRef.current = null;
+      setClient(null); setEntitlements([]); setEvents([]); setAdmin(false); setLoading(false); setDataLoading(false);
+      return;
+    }
+    if (!needsAccountBootstrap(locationRef.current)) {
       activeUserRef.current = null;
       setClient(null); setEntitlements([]); setEvents([]); setAdmin(false); setLoading(false); setDataLoading(false);
       return;
@@ -83,6 +92,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     return () => { active = false; scheduler.cancel(); subscription?.unsubscribe(); };
   }, [hydrate]);
+
+  useEffect(() => {
+    if (!session) return;
+    if (!needsAccountBootstrap(location)) {
+      ++requestRef.current;
+      activeUserRef.current = null;
+      setClient(null); setEntitlements([]); setEvents([]); setAdmin(false); setLoading(false); setDataLoading(false); setError(null);
+      return;
+    }
+    if (activeUserRef.current !== session.user.id) void hydrate(session);
+  }, [hydrate, location, session]);
 
   const refresh = useCallback(async () => hydrate(await getSession()), [hydrate]);
   const signOut = useCallback(async () => {

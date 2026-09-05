@@ -67,7 +67,12 @@ begin
   begin
     perform public.save_wedding_event_config(wedding_event.id, '{}', wedding_template.id, wedding_template.render_snapshot, null, 0);
     raise exception 'FAIL: stale Wedding autosave was accepted.';
-  exception when serialization_failure then null;
+  exception when sqlstate 'PT409' then null;
+  end;
+  begin
+    perform public.save_party_event_config(party_event.id, '{}', party_template.id, party_template.render_snapshot, 0);
+    raise exception 'FAIL: stale Party autosave was accepted.';
+  exception when sqlstate 'PT409' then null;
   end;
 
   draft := public.create_design_draft('wedding', 'Draft only', '{"templateId":"soft-floral-garden"}', wedding_template.id, wedding_template.render_snapshot);
@@ -76,7 +81,7 @@ begin
   begin
     perform public.save_design_draft(draft.id, 'Stale Draft', '{}', wedding_template.id, wedding_template.render_snapshot, 1);
     raise exception 'FAIL: stale Draft save was accepted.';
-  exception when serialization_failure then null;
+  exception when sqlstate 'PT409' then null;
   end;
 
   source_asset := public.reserve_invitation_asset('event', wedding_event.id, 'private_source', 'image/webp', 1024, null);

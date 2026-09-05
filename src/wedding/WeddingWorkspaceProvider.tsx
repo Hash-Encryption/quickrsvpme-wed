@@ -31,6 +31,7 @@ import {
   type WeddingWorkspaceState,
   type WeddingWorkspaceStorage,
 } from "./workspace.ts";
+import { useLocation } from "wouter";
 
 type SaveStatus = "saving" | "saved" | "error";
 
@@ -84,6 +85,8 @@ export function WeddingWorkspaceProvider({
   storage?: WeddingWorkspaceStorage;
 }) {
   const auth = useAuth();
+  const [location] = useLocation();
+  const backendHydrationActive = location.startsWith("/weddings/") || location === "/studio/wedding";
   const fallbackRef = useRef(createWeddingProject(defaultWeddingEvent));
   const [workspace, setWorkspaceState] = useState<WeddingWorkspaceState | null>(null);
   const workspaceRef = useRef<WeddingWorkspaceState | null>(null);
@@ -102,6 +105,8 @@ export function WeddingWorkspaceProvider({
   const backendTemplatesRef = useRef(new Map<string, string | null>());
   const backendTemplateKeysRef = useRef(new Map<string, string | null>());
   const backendArtworkRef = useRef(new Map<string, string | null>());
+  const backendConfigurationSignaturesRef = useRef(new Map<string, string>());
+  const backendEventMetadataSignaturesRef = useRef(new Map<string, string>());
   const uploadedArtworkRef = useRef(new Map<string, { id: string; publicUrl: string }>());
   const backendDraftsRef = useRef(new Map<string, DesignDraft<Record<string, unknown>>>());
   const transferRef = useRef<Promise<string | null> | null>(null);
@@ -169,6 +174,8 @@ export function WeddingWorkspaceProvider({
     authenticatedUserRef.current = null;
     backendDraftsRef.current.clear();
     backendVersionsRef.current.clear();
+    backendConfigurationSignaturesRef.current.clear();
+    backendEventMetadataSignaturesRef.current.clear();
     initializeWeddingWorkspace(storageRef.current, null).then(setWorkspace).catch((error) => {
       setSaveStatus("error");
       setStorageError(errorMessage(error));
@@ -176,7 +183,7 @@ export function WeddingWorkspaceProvider({
   }, [auth.loading, auth.session, setWorkspace]);
 
   useEffect(() => {
-    if (!auth.session || auth.loading) return;
+    if (!backendHydrationActive || !auth.session || auth.loading) return;
     const events = auth.events.filter((event) => event.product_id === "wedding" && !event.deleted_at);
     let live = true;
     const transfer = async () => {
@@ -210,7 +217,10 @@ export function WeddingWorkspaceProvider({
         backendTemplatesRef.current.set(event.id, config?.template_version_id ?? null);
         backendTemplateKeysRef.current.set(event.id, typeof config?.template_snapshot.templateId === "string" ? config.template_snapshot.templateId : null);
         backendArtworkRef.current.set(event.id, config?.artwork_asset_id ?? null);
-        return createWeddingProject({ ...config?.configuration, invitationLocale: event.invitation_locale, venue: event.venue_name ?? config?.configuration.venue, city: event.city ?? config?.configuration.city }, event.title, { id: event.id, now: event.created_at });
+        const project = createWeddingProject({ ...config?.configuration, invitationLocale: event.invitation_locale, venue: event.venue_name ?? config?.configuration.venue, city: event.city ?? config?.configuration.city }, event.title, { id: event.id, now: event.created_at });
+        backendConfigurationSignaturesRef.current.set(event.id, JSON.stringify(project.event));
+        backendEventMetadataSignaturesRef.current.set(event.id, JSON.stringify({ title: event.title, invitation_locale: event.invitation_locale, venue_name: event.venue_name, city: event.city }));
+        return project;
       });
       const draftProjects = drafts.map((draft) => {
         backendDraftsRef.current.set(draft.id, draft as DesignDraft<Record<string, unknown>>);
@@ -229,7 +239,7 @@ export function WeddingWorkspaceProvider({
       window.dispatchEvent(new CustomEvent(anonymousDesignTransferFailedEvent, { detail: errorMessage(error) }));
     });
     return () => { live = false; };
-  }, [auth.events, auth.loading, auth.session, enqueue, setWorkspace]);
+  }, [auth.events, auth.loading, auth.session, backendHydrationActive, enqueue, setWorkspace]);
 
   const saveBackendProject = useCallback(async (project: WeddingProject) => {
     if (!auth.session) return;
@@ -247,21 +257,30 @@ export function WeddingWorkspaceProvider({
       return;
     }
     if (!auth.events.some((event) => event.id === project.id)) return;
-    let artworkId = backendArtworkRef.current.get(project.id) ?? null;
-    if (configuration.visual.source === "uploaded-background" && configuration.visual.uploadedBackground.dataUrl.startsWith("data:")) {
-      const dataUrl = configuration.visual.uploadedBackground.dataUrl;
-      const artwork = uploadedArtworkRef.current.get(dataUrl) ?? await publishArtwork(project.id, dataUrl, configuration.visual.uploadedBackground.mimeType);
-      artworkId = artwork.id;
-      uploadedArtworkRef.current.set(dataUrl, artwork);
-      configuration.visual.uploadedBackground.dataUrl = artwork.publicUrl;
+    const configurationSignature = JSON.stringify(project.event);
+    if (backendConfigurationSignaturesRef.current.get(project.id) !== configurationSignature) {
+      let artworkId = backendArtworkRef.current.get(project.id) ?? null;
+      if (configuration.visual.source === "uploaded-background" && configuration.visual.uploadedBackground.dataUrl.startsWith("data:")) {
+        const dataUrl = configuration.visual.uploadedBackground.dataUrl;
+        const artwork = uploadedArtworkRef.current.get(dataUrl) ?? await publishArtwork(project.id, dataUrl, configuration.visual.uploadedBackground.mimeType);
+        artworkId = artwork.id;
+        uploadedArtworkRef.current.set(dataUrl, artwork);
+        configuration.visual.uploadedBackground.dataUrl = artwork.publicUrl;
+      }
+      const existingTemplateId = backendTemplateKeysRef.current.get(project.id) === project.event.templateId ? backendTemplatesRef.current.get(project.id) : null;
+      const saved = await saveWeddingConfig(project.id, configuration, backendVersionsRef.current.get(project.id) ?? 0, artworkId, existingTemplateId);
+      backendVersionsRef.current.set(project.id, saved.version);
+      backendTemplatesRef.current.set(project.id, saved.template_version_id);
+      backendTemplateKeysRef.current.set(project.id, project.event.templateId);
+      backendArtworkRef.current.set(project.id, saved.artwork_asset_id ?? artworkId);
+      backendConfigurationSignaturesRef.current.set(project.id, configurationSignature);
     }
-    const existingTemplateId = backendTemplateKeysRef.current.get(project.id) === project.event.templateId ? backendTemplatesRef.current.get(project.id) : null;
-    const saved = await saveWeddingConfig(project.id, configuration, backendVersionsRef.current.get(project.id) ?? 0, artworkId, existingTemplateId);
-    backendVersionsRef.current.set(project.id, saved.version);
-    backendTemplatesRef.current.set(project.id, saved.template_version_id);
-    backendTemplateKeysRef.current.set(project.id, project.event.templateId);
-    backendArtworkRef.current.set(project.id, saved.artwork_asset_id ?? artworkId);
-    await updateEvent(project.id, { title: project.name, invitation_locale: project.event.invitationLocale, venue_name: project.event.venue || null, city: project.event.city || null });
+    const eventMetadata = { title: project.name, invitation_locale: project.event.invitationLocale, venue_name: project.event.venue || null, city: project.event.city || null };
+    const eventMetadataSignature = JSON.stringify(eventMetadata);
+    if (backendEventMetadataSignaturesRef.current.get(project.id) !== eventMetadataSignature) {
+      await updateEvent(project.id, eventMetadata);
+      backendEventMetadataSignaturesRef.current.set(project.id, eventMetadataSignature);
+    }
   }, [auth.events, auth.session]);
 
   const activeProject = useCallback(() => {
@@ -298,7 +317,7 @@ export function WeddingWorkspaceProvider({
         setSaveStatus("error");
         setStorageError(errorMessage(error));
       });
-    }, 500);
+    }, 2000);
   }, [activeProject, auth.events, auth.session, enqueue, saveBackendProject, setWorkspace]);
 
   const createProject = useCallback(async (name: string) => {

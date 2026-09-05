@@ -147,6 +147,8 @@ const EngineContext = createContext<EngineContextValue | null>(null);
 
 function EngineProvider({ children }: { children: ReactNode }) {
   const auth = useAuth();
+  const [location] = useLocation();
+  const partyBackendActive = location.startsWith('/parties/') || location.startsWith('/drafts/party/') || location === '/studio/party';
   const { activeProject, preserveLegacyWedding } = useWeddingWorkspace();
   const initialWeddingId = useRef(activeProject.id).current;
   const [state, setState] = useState<EngineState>(defaultState);
@@ -157,6 +159,10 @@ function EngineProvider({ children }: { children: ReactNode }) {
   const partyTemplateRef = useRef<string | null>(null);
   const partyTemplateKeyRef = useRef<string | null>(null);
   const partyHydratedRef = useRef(false);
+  const partyHydratedEventRef = useRef('');
+  const partySaveBlockedRef = useRef(false);
+  const partySavedConfigurationRef = useRef('');
+  const partySavedEventMetadataRef = useRef('');
   const partyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const partyQueueRef = useRef(Promise.resolve());
   const partyDraftRef = useRef<DesignDraft<Record<string, unknown>> | null>(null);
@@ -223,23 +229,37 @@ function EngineProvider({ children }: { children: ReactNode }) {
     }
   }, [auth.loading, auth.session]);
   useEffect(() => {
+    if (!partyBackendActive || location.startsWith('/drafts/party/')) { partyHydratedEventRef.current = ''; return; }
     if (!auth.session || auth.loading) return;
     if (sessionStorage.getItem(anonymousDesignTransferKey) === 'party') return;
     const partyEvents = auth.events.filter((event) => event.product_id === 'party' && !event.deleted_at);
-    const eventId = partyEvents.some((event) => event.id === activePartyEventId) ? activePartyEventId : partyEvents[0]?.id;
+    const routeEventId = location.match(/^\/parties\/([^/]+)/)?.[1];
+    const eventId = partyEvents.some((event) => event.id === routeEventId) ? routeEventId : partyEvents.some((event) => event.id === activePartyEventId) ? activePartyEventId : partyEvents[0]?.id;
     if (!eventId) return;
-    setActivePartyEventId(eventId);
+    if (eventId !== activePartyEventId) { setActivePartyEventId(eventId); return; }
+    if (partyHydratedEventRef.current === eventId) return;
+    partyHydratedEventRef.current = eventId;
     partyHydratedRef.current = false;
+    partySaveBlockedRef.current = true;
+    partySavedConfigurationRef.current = '';
     void listEventConfigs<Partial<PartyEventData> & { blocks?: StudioBlock[]; invitationLocale?: InvitationLocale }>('party').then((configs) => {
       const config = configs.find((item) => item.event_id === eventId);
       const event = partyEvents.find((item) => item.id === eventId)!;
       partyVersionRef.current = config?.version ?? 0;
       partyTemplateRef.current = config?.template_version_id ?? null;
       partyTemplateKeyRef.current = typeof config?.template_snapshot.templateId === 'string' ? config.template_snapshot.templateId : null;
-      setState((current) => ({ ...current, partyEvent: mergePartyEvent(config?.configuration ?? { title: event.title, venue: event.venue_name ?? '', city: event.city ?? '' }), blocks: normalizeBlocks(config?.configuration.blocks, current.blocks), invitationLocale: config?.configuration.invitationLocale === 'en' ? 'en' : event.invitation_locale }));
+      partySavedEventMetadataRef.current = JSON.stringify({ title: event.title, invitation_locale: event.invitation_locale, venue_name: event.venue_name, city: event.city });
+      setState((current) => {
+        const partyEvent = mergePartyEvent(config?.configuration ?? { title: event.title, venue: event.venue_name ?? '', city: event.city ?? '' });
+        const blocks = normalizeBlocks(config?.configuration.blocks, current.blocks);
+        const invitationLocale = config?.configuration.invitationLocale === 'en' ? 'en' : event.invitation_locale;
+        partySavedConfigurationRef.current = JSON.stringify({ ...partyEvent, blocks, invitationLocale });
+        partySaveBlockedRef.current = false;
+        return { ...current, partyEvent, blocks, invitationLocale };
+      });
       partyHydratedRef.current = true;
-    }).catch(() => { partyHydratedRef.current = true; });
-  }, [activePartyEventId, auth.events, auth.loading, auth.session]);
+    }).catch(() => { partyHydratedEventRef.current = ''; partySaveBlockedRef.current = true; });
+  }, [activePartyEventId, auth.events, auth.loading, auth.session, location, partyBackendActive]);
   useEffect(() => {
     if (!ready || !auth.session || auth.loading || sessionStorage.getItem(anonymousDesignTransferKey) !== 'party' || partyTransferRef.current) return;
     partyTransferRef.current = (async () => {
@@ -263,25 +283,42 @@ function EngineProvider({ children }: { children: ReactNode }) {
     }).finally(() => { partyTransferRef.current = null; });
   }, [auth.loading, auth.session, ready, state.blocks, state.invitationLocale, state.partyEvent]);
   useEffect(() => {
-    if (!partyHydratedRef.current || (!activePartyEventId && !partyDraftRef.current) || !auth.session) return;
+    if (!partyBackendActive || !partyHydratedRef.current || partySaveBlockedRef.current || (!activePartyEventId && !partyDraftRef.current) || !auth.session) return;
     if (partyTimerRef.current) clearTimeout(partyTimerRef.current);
     partyTimerRef.current = setTimeout(() => {
       const configuration = { ...state.partyEvent, blocks: state.blocks, invitationLocale: state.invitationLocale };
+      const signature = JSON.stringify(configuration);
+      const eventMetadata = { title: state.partyEvent.title, invitation_locale: state.invitationLocale, venue_name: state.partyEvent.venue || null, city: state.partyEvent.city || null };
+      const eventMetadataSignature = JSON.stringify(eventMetadata);
+      if (signature === partySavedConfigurationRef.current && (partyDraftRef.current || eventMetadataSignature === partySavedEventMetadataRef.current)) return;
       const existingTemplate = partyTemplateKeyRef.current === state.partyEvent.templateId ? partyTemplateRef.current : null;
-      partyQueueRef.current = partyQueueRef.current.then(async () => {
+      const operation = partyQueueRef.current.then(async () => {
+        if (partySaveBlockedRef.current) return;
         if (partyDraftRef.current) {
+          if (signature === partySavedConfigurationRef.current) return;
           partyDraftRef.current = await updateDesignDraft(partyDraftRef.current, state.partyEvent.title, configuration);
+          partySavedConfigurationRef.current = signature;
           return;
         }
-        const saved = await savePartyConfig(activePartyEventId, configuration, partyVersionRef.current, existingTemplate);
-        partyVersionRef.current = saved.version;
-        partyTemplateRef.current = saved.template_version_id;
-        partyTemplateKeyRef.current = state.partyEvent.templateId;
-        await updateEvent(activePartyEventId, { title: state.partyEvent.title, invitation_locale: state.invitationLocale, venue_name: state.partyEvent.venue || null, city: state.partyEvent.city || null });
-      }).catch(() => undefined);
-    }, 500);
+        if (signature !== partySavedConfigurationRef.current) {
+          const saved = await savePartyConfig(activePartyEventId, configuration, partyVersionRef.current, existingTemplate);
+          partyVersionRef.current = saved.version;
+          partyTemplateRef.current = saved.template_version_id;
+          partyTemplateKeyRef.current = state.partyEvent.templateId;
+          partySavedConfigurationRef.current = signature;
+        }
+        if (eventMetadataSignature !== partySavedEventMetadataRef.current) {
+          await updateEvent(activePartyEventId, eventMetadata);
+          partySavedEventMetadataRef.current = eventMetadataSignature;
+        }
+      });
+      partyQueueRef.current = operation.catch((caught) => {
+        partySaveBlockedRef.current = true;
+        if (import.meta.env.DEV) console.error('QuickRSVP Party autosave stopped after a backend conflict or failure.', caught);
+      });
+    }, 2000);
     return () => { if (partyTimerRef.current) clearTimeout(partyTimerRef.current); };
-  }, [activePartyEventId, auth.session, state.blocks, state.invitationLocale, state.partyEvent]);
+  }, [activePartyEventId, auth.session, partyBackendActive, state.blocks, state.invitationLocale, state.partyEvent]);
   const commitPublicRsvp = (rsvp: RSVPStatus, guestCount: number, message = '') => {
     if (!publicInvitation || rsvp === 'pending') return Promise.resolve();
     return submitPersonalRsvp(publicInvitation.token, rsvp, rsvp === 'accepted' ? guestCount : 0, message);
@@ -321,22 +358,44 @@ function EngineProvider({ children }: { children: ReactNode }) {
       setState((s) => ({ ...s, rsvp: response.status, plusOnes: Math.max(0, response.guestCount - 1), weddingResponse: { guestCount: response.guestCount, message: response.message }, operations: publicInvitation ? s.operations : updateOperationalGuestByToken(s.operations, projectKey('wedding', activeProject.id), s.weddingGuest.token, { rsvp: response.status, guestCount: response.guestCount, message: response.message }) }));
     },
     activePartyEventId,
-    openPartyEvent: (id: string) => { partyDraftRef.current = null; setActivePartyEventId(id); },
+    openPartyEvent: (id: string) => {
+      partyDraftRef.current = null;
+      partyHydratedRef.current = false;
+      partyHydratedEventRef.current = '';
+      partySaveBlockedRef.current = true;
+      partySavedConfigurationRef.current = '';
+      partySavedEventMetadataRef.current = '';
+      setActivePartyEventId(id);
+    },
     openPartyDraft: (draft: DesignDraft<Record<string, unknown>>) => {
       partyDraftRef.current = draft;
       setActivePartyEventId('');
       partyHydratedRef.current = false;
+      partySaveBlockedRef.current = true;
       const configuration = draft.configuration as Partial<PartyEventData> & { blocks?: StudioBlock[]; invitationLocale?: InvitationLocale };
-      setState((current) => ({ ...current, mode: 'standard', partyEvent: mergePartyEvent(configuration), blocks: normalizeBlocks(configuration.blocks, current.blocks), invitationLocale: configuration.invitationLocale === 'en' ? 'en' : 'ar' }));
+      setState((current) => {
+        const partyEvent = mergePartyEvent(configuration);
+        const blocks = normalizeBlocks(configuration.blocks, current.blocks);
+        const invitationLocale = configuration.invitationLocale === 'en' ? 'en' : 'ar';
+        partySavedConfigurationRef.current = JSON.stringify({ ...partyEvent, blocks, invitationLocale });
+        partySaveBlockedRef.current = false;
+        return { ...current, mode: 'standard', partyEvent, blocks, invitationLocale };
+      });
       partyHydratedRef.current = true;
     },
     savePartyDraft: async () => {
       if (!partyDraftRef.current) return;
+      if (partySaveBlockedRef.current) throw new Error('Party saving is paused. Reload the Draft before trying again.');
       const configuration = { ...state.partyEvent, blocks: state.blocks, invitationLocale: state.invitationLocale };
-      partyQueueRef.current = partyQueueRef.current.then(async () => {
+      const signature = JSON.stringify(configuration);
+      if (signature === partySavedConfigurationRef.current) return;
+      const operation = partyQueueRef.current.then(async () => {
         partyDraftRef.current = await updateDesignDraft(partyDraftRef.current!, state.partyEvent.title, configuration);
+        partySavedConfigurationRef.current = signature;
       });
-      await partyQueueRef.current;
+      partyQueueRef.current = operation.catch(() => undefined);
+      try { await operation; }
+      catch (caught) { partySaveBlockedRef.current = true; throw caught; }
     },
     loadPublicInvitation: (resolution: InvitationResolution, token: string, generalName = '') => {
       if (!resolution.event || !resolution.kind) return;
@@ -1053,7 +1112,7 @@ function DashboardRoute({ product }: { product?: ProductId }) {
   const [, navigate] = useLocation();
   const [drafts, setDrafts] = useState<DesignDraft<Record<string, unknown>>[]>([]);
   const [commercial, setCommercial] = useState<CommercialSource | null>(null);
-  const loadDrafts = () => Promise.all([listDesignDrafts<Record<string, unknown>>('wedding'), listDesignDrafts<Record<string, unknown>>('party')]).then(([wedding, party]) => setDrafts([...wedding, ...party]));
+  const loadDrafts = () => listDesignDrafts<Record<string, unknown>>().then(setDrafts);
   useEffect(() => { if (auth.dataLoading) return; void loadDrafts().catch(() => setDrafts([])); void loadCommercialSource().then(setCommercial).catch(() => setCommercial(null)); }, [auth.dataLoading]);
   return <DashboardPage
     projects={auth.events.filter((event) => !event.deleted_at).map(backendProjectSummary)}
