@@ -137,6 +137,8 @@ textarea.qr-field { min-height: 7rem; resize: vertical; }
 .qr-bottom-nav a { display: flex; min-width: 0; min-height: 64px; flex-direction: column; align-items: center; justify-content: center; gap: var(--qr-space-1); padding: var(--qr-space-1); border-radius: var(--qr-radius-control); color: var(--qr-secondary); font-size: .6875rem; font-weight: 600; line-height: 1.45; text-align: center; overflow-wrap: anywhere; }
 .qr-bottom-nav a[aria-current='page'] { background: var(--qr-primary-subtle); color: var(--qr-primary); }
 .qr-workspace-content { min-width: 0; padding-bottom: calc(100px + env(safe-area-inset-bottom)); }
+.qr-has-bottom-nav { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
+@media (min-width: 768px) { .qr-has-bottom-nav { padding-bottom: 0; } }
 .qr-sidebar { display: none; }
 .qr-project-header { position: sticky; top: 0; z-index: 30; }
 .qr-sheet { width: min(100% - 2rem, 32rem); max-height: calc(100dvh - 2rem); overflow: auto; margin: auto; padding: var(--qr-card-padding); border: 1px solid var(--qr-border); border-radius: var(--qr-radius-sheet); background: var(--qr-surface); color: var(--qr-text); box-shadow: var(--qr-shadow-dialog); }

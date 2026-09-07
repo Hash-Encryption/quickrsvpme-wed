@@ -1,6 +1,7 @@
 import { type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from 'react';
-import { ArrowLeft, CircleAlert, Inbox } from 'lucide-react';
+import { ArrowLeft, CircleAlert, Heart, Home, Inbox, PartyPopper, UserRound } from 'lucide-react';
 import { Link } from 'wouter';
+import { useAppLocale } from '@/i18n/app-locale';
 
 // Customer controls deliberately do not replace invitation-renderer controls.
 export function Button({ variant = 'primary', loading = false, className = '', disabled, children, type = 'button', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'ghost' | 'danger'; loading?: boolean }) {
@@ -23,6 +24,30 @@ export function PageShell({ children, className = '' }: { children: ReactNode; c
 
 export function BottomNavigation({ label, children }: { label: string; children: ReactNode }) {
   return <nav className="qr-bottom-nav" aria-label={label}>{children}</nav>;
+}
+
+export function CustomerBottomNav({ active }: { active: 'home' | 'wedding' | 'party' | 'account' }) {
+  const { t } = useAppLocale();
+  return (
+    <BottomNavigation label={t('projects')}>
+      <Link href="/" aria-current={active === 'home' ? 'page' : undefined}>
+        <Home size={19} aria-hidden="true" />
+        <span>{t('dashboard')}</span>
+      </Link>
+      <Link href="/planner/wedding" aria-current={active === 'wedding' ? 'page' : undefined}>
+        <Heart size={19} aria-hidden="true" />
+        <span>{t('wedding')}</span>
+      </Link>
+      <Link href="/planner/party" aria-current={active === 'party' ? 'page' : undefined}>
+        <PartyPopper size={19} aria-hidden="true" />
+        <span>{t('party')}</span>
+      </Link>
+      <Link href="/account" aria-current={active === 'account' ? 'page' : undefined}>
+        <UserRound size={19} aria-hidden="true" />
+        <span>{t('account')}</span>
+      </Link>
+    </BottomNavigation>
+  );
 }
 
 export function MobileHeader({ title, description, back, actions }: { title: ReactNode; description?: ReactNode; back?: { href: string; label: string }; actions?: ReactNode }) {

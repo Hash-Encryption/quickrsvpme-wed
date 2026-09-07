@@ -10,7 +10,7 @@ const originalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorag
 const originalLocation = Object.getOwnPropertyDescriptor(globalThis, 'location');
 try {
   Object.defineProperty(globalThis, 'location', { configurable: true, value: { pathname: '/', search: '' } });
-  const { Button, Chip, LoadingState } = await server.ssrLoadModule('/src/components/customer-ui.tsx');
+  const { Button, Chip, LoadingState, CustomerBottomNav } = await server.ssrLoadModule('/src/components/customer-ui.tsx');
   const { ProjectShell } = await server.ssrLoadModule('/src/app/ProjectShell.tsx');
   const { AppLocaleProvider, appTranslations } = await server.ssrLoadModule('/src/i18n/app-locale.tsx');
   const { Router } = await server.ssrLoadModule('wouter');
@@ -22,6 +22,17 @@ try {
   assert.match(renderToStaticMarkup(h(Chip, { selected: true }, 'All')), /aria-pressed="true"/);
   assert.match(renderToStaticMarkup(h(Chip, { selected: false, disabled: true }, 'Unavailable')), /disabled=""/);
   assert.match(renderToStaticMarkup(h(LoadingState, { label: 'Loading' })), /role="status"/);
+
+  // Check CustomerBottomNav
+  for (const activeTab of ['home', 'wedding', 'party', 'account']) {
+    const navMarkup = renderToStaticMarkup(h(AppLocaleProvider, null, h(Router, null, h(CustomerBottomNav, { active: activeTab }))));
+    assert.ok(navMarkup.includes('href="/"'));
+    assert.ok(navMarkup.includes('href="/planner/wedding"'));
+    assert.ok(navMarkup.includes('href="/planner/party"'));
+    assert.ok(navMarkup.includes('href="/account"'));
+    assert.equal((navMarkup.match(/aria-current="page"/g) ?? []).length, 1, `CustomerBottomNav should have 1 active tab for ${activeTab}`);
+  }
+
   for (const locale of ['ar', 'en']) {
     Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: () => locale } });
     for (const type of ['wedding', 'party']) {
@@ -43,7 +54,7 @@ try {
     const contrast = (values[0] + .05) / (values[1] + .05);
     assert.ok(contrast >= 4.5, `${fg}/${bg} contrast ${contrast.toFixed(2)} < 4.5`);
   }
-  console.log('PASS: loading/disabled controls, chip semantics, AR/EN Wedding/Party navigation, 10 text contrast pairs.');
+  console.log('PASS: loading/disabled controls, chip semantics, CustomerBottomNav, AR/EN Wedding/Party navigation, 10 text contrast pairs.');
 } finally {
   if (originalStorage) Object.defineProperty(globalThis, 'localStorage', originalStorage);
   else delete globalThis.localStorage;

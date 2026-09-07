@@ -22,6 +22,12 @@ import { anonymousDesignTransferFailedEvent, anonymousDesignTransferKey, anonymo
 import type { WeddingProject } from '@/wedding/workspace';
 import { AdminPage } from '@/admin/AdminPage';
 import { AccountPage } from '@/app/AccountPage';
+import { ChoosePlannerPage } from '@/app/ChoosePlannerPage';
+import { WeddingPlannerPage } from '@/app/WeddingPlannerPage';
+import { CreateWeddingPage } from '@/app/CreateWeddingPage';
+import { PartyPlannerPage } from '@/app/PartyPlannerPage';
+import { CreatePartyPage } from '@/app/CreatePartyPage';
+import { PartyTemplateSelectionPage } from '@/app/PartyTemplateSelectionPage';
 import { DashboardPage } from '@/app/DashboardPage';
 import { commercialSummary, normalizePublicationPolicy, type CommercialSource } from '@/app/commercial';
 import { allowedEventTransitions, isTerminalEvent } from '@/app/lifecycle';
@@ -1308,9 +1314,13 @@ function Router() {
         <Route path="/design/wedding">{() => <WeddingStudioPage />}</Route>
         <Route path="/design/party">{() => <PartyStudioPage />}</Route>
         <Route path="/i/:token" component={GuestRoute} />
-        <Route path="/">{() => <RequireAuth><DashboardRoute /></RequireAuth>}</Route>
-        <Route path="/planner/wedding">{() => <RequireAuth><DashboardRoute product="wedding" /></RequireAuth>}</Route>
-        <Route path="/planner/party">{() => <RequireAuth><DashboardRoute product="party" /></RequireAuth>}</Route>
+        <Route path="/">{() => <RequireAuth><ChoosePlannerPage /></RequireAuth>}</Route>
+        <Route path="/planner/wedding/new">{() => <RequireAuth><CreateWeddingPage /></RequireAuth>}</Route>
+        <Route path="/planner/wedding">{() => <RequireAuth><WeddingPlannerPage /></RequireAuth>}</Route>
+        <Route path="/planner/party/new">{() => <RequireAuth><CreatePartyPage /></RequireAuth>}</Route>
+        <Route path="/planner/party/templates/:draftId">{() => <RequireAuth><PartyTemplateSelectionPage /></RequireAuth>}</Route>
+        <Route path="/planner/party/templates">{() => <RequireAuth><PartyTemplateSelectionPage /></RequireAuth>}</Route>
+        <Route path="/planner/party">{() => <RequireAuth><PartyPlannerPage /></RequireAuth>}</Route>
         <Route path="/account">{() => <RequireAuth><AccountRoute /></RequireAuth>}</Route>
         <Route path="/drafts/:type/:draftId">{() => <RequireAuth><DraftRoutePage /></RequireAuth>}</Route>
         <Route path="/weddings/:eventId/:section">{() => <RequireAuth><WeddingProjectRoute /></RequireAuth>}</Route>
