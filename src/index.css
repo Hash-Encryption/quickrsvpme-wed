@@ -153,7 +153,24 @@
     backdrop-filter: blur(13px);
   }
   .fine-rule { height: 1px; background: linear-gradient(90deg, transparent, rgba(212,175,55,.7), transparent); }
-  .focus-ring:focus-visible { outline: 2px solid #d4af37; outline-offset: 4px; }
+  .focus-ring:focus-visible { outline: 2px solid #0c2d24; outline-offset: 3px; box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.25); }
+  .qr-field-inline {
+    border: 1.5px solid #d1c7b7;
+    background-color: #fffefa;
+    box-shadow: inset 0 1px 2px rgb(23 37 31 / 3%);
+    transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+  }
+  .qr-field-inline:hover:not(:disabled) {
+    border-color: #a89d8c;
+    background-color: #ffffff;
+  }
+  .qr-field-inline:focus {
+    border-color: #0c2d24;
+    outline: 2px solid #0c2d24;
+    outline-offset: 0;
+    box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.22);
+    background-color: #ffffff;
+  }
 }
 
 @media (max-width: 767px) {

@@ -63,7 +63,7 @@ export function WeddingPlannerPage() {
           <Link
             href="/planner/wedding/new"
             data-testid="link-create-wedding"
-            className="qr-card group flex flex-col items-center justify-center border-2 border-dashed border-[var(--qr-border)] bg-[var(--qr-surface)] p-8 text-center transition-all duration-200 hover:border-[var(--qr-primary)] hover:bg-[var(--qr-subtle)]/40 hover:shadow-sm"
+            className="qr-card group flex flex-col items-center justify-center border-2 border-dashed border-[#d1c7b7] bg-[var(--qr-surface)] p-8 sm:p-10 text-center transition-all duration-200 hover:border-[var(--qr-primary)] hover:bg-[var(--qr-primary-subtle)]/25 hover:shadow-md"
           >
             <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--qr-primary)] text-white shadow-sm transition-transform group-hover:scale-105">
               <Plus size={26} strokeWidth={2.2} aria-hidden="true" />

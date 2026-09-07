@@ -51,7 +51,7 @@ export function AuthPage() {
 
   return <PageShell>
     <MobileHeader title={<Link href="/i/demo" dir="ltr" className="text-xl font-semibold">Quick<span className="qr-gold-text">RSVP</span></Link>} actions={<AppLanguageControl compact />} />
-    <main className="qr-container"><section className="qr-card qr-auth-card">
+    <main className="qr-container"><section className="qr-card qr-auth-card p-7 sm:p-9 shadow-md">
       <p className="qr-caption qr-gold-text">{t('account')}</p><h1 className="qr-page-title mt-2">{t(mode)}</h1><p className="qr-secondary mt-3">{t('authHelp')}</p>
       <form className="mt-7 space-y-4" onSubmit={submit}>
         {mode === 'signUp' && <label className="qr-label">{t('displayName')}<input required autoComplete="name" maxLength={160} value={displayName} onChange={(event) => setDisplayName(event.target.value)} className="qr-field" /></label>}

@@ -122,22 +122,22 @@ export function PartyTemplateSelectionPage() {
                     aria-checked={isSelected}
                     data-testid={`template-card-${tpl.id}`}
                     onClick={() => setSelectedTemplate(tpl.id)}
-                    className={`qr-card relative flex flex-col justify-between p-6 text-start transition-all cursor-pointer ${
+                    className={`qr-card relative flex flex-col justify-between p-7 text-start transition-all cursor-pointer ${
                       isSelected
-                        ? 'border-2 border-[var(--qr-primary)] bg-[var(--qr-primary-subtle)]/30 shadow-md ring-1 ring-[var(--qr-primary)]'
-                        : 'border border-[var(--qr-border)] hover:border-[var(--qr-primary)]/50 hover:bg-[var(--qr-subtle)]/30'
+                        ? 'border-2 border-[var(--qr-primary)] bg-[var(--qr-primary-subtle)]/40 shadow-md ring-2 ring-[var(--qr-primary)]/20'
+                        : 'border border-[var(--qr-border)] hover:border-[var(--qr-primary)]/60 hover:bg-[var(--qr-subtle)]/40 hover:shadow-xs'
                     }`}
                   >
                     <div>
-                      <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center justify-between mb-4">
                         <span className={`party-template-swatch party-template-swatch--${tpl.id}`} />
                         {isSelected ? (
-                          <span className="flex items-center gap-1 text-xs font-bold text-[var(--qr-primary)] bg-white px-2.5 py-1 rounded-full border border-[var(--qr-primary)]/20 shadow-xs">
+                          <span className="flex items-center gap-1.5 text-xs font-bold text-[var(--qr-primary)] bg-white px-3 py-1 rounded-full border border-[var(--qr-primary)]/25 shadow-xs">
                             <Check size={14} strokeWidth={2.5} aria-hidden="true" />
                             <span>{t('templateSelected')}</span>
                           </span>
                         ) : (
-                          <span className="h-6 w-6 rounded-full border-2 border-[var(--qr-border)]" aria-hidden="true" />
+                          <span className="h-6 w-6 rounded-full border-2 border-[#d1c7b7]" aria-hidden="true" />
                         )}
                       </div>
 
@@ -149,11 +149,14 @@ export function PartyTemplateSelectionPage() {
                       </p>
                     </div>
 
-                    <div className="mt-5 pt-3 border-t border-[var(--qr-divider)] text-[11px] font-semibold text-[var(--qr-secondary)]">
-                      {tpl.id === 'corporate' && 'Professional · Brand-focused'}
-                      {tpl.id === 'birthday' && 'Festive · Warm & joyful'}
-                      {tpl.id === 'baby-shower' && 'Delicate · Soft & sweet'}
-                      {tpl.id === 'custom' && 'Universal · General events'}
+                    <div className="mt-6 pt-3.5 border-t border-[var(--qr-divider)] flex items-center justify-between text-[11px] font-semibold text-[var(--qr-secondary)]">
+                      <span>
+                        {tpl.id === 'corporate' && 'Professional · Brand-focused'}
+                        {tpl.id === 'birthday' && 'Festive · Warm & joyful'}
+                        {tpl.id === 'baby-shower' && 'Delicate · Soft & sweet'}
+                        {tpl.id === 'custom' && 'Universal · General events'}
+                      </span>
+                      <span className="text-[10px] tracking-wider uppercase opacity-70 font-mono">{tpl.id}</span>
                     </div>
                   </button>
                 );

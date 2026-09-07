@@ -58,19 +58,24 @@ export function MobileHeader({ title, description, back, actions }: { title: Rea
   </header>;
 }
 
-export function EmptyState({ title, description, icon = <Inbox size={24} aria-hidden="true" />, action, secondaryAction, heading: Heading = 'h2' }: { title: string; description?: ReactNode; icon?: ReactNode; action?: ReactNode; secondaryAction?: ReactNode; heading?: 'h1' | 'h2' | 'h3' }) {
-  return <section className="qr-card qr-state">
-    <div className="qr-state-icon">{icon}</div><Heading className="qr-card-title">{title}</Heading>
-    {description && <p className="qr-secondary">{description}</p>}
-    {(action || secondaryAction) && <div className="qr-state-actions">{action}{secondaryAction}</div>}
+export function EmptyState({ title, description, icon = <Inbox size={28} aria-hidden="true" />, action, secondaryAction, heading: Heading = 'h2' }: { title: string; description?: ReactNode; icon?: ReactNode; action?: ReactNode; secondaryAction?: ReactNode; heading?: 'h1' | 'h2' | 'h3' }) {
+  return <section className="qr-card qr-state p-8 sm:p-12 text-center max-w-lg mx-auto">
+    <div className="qr-state-icon flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--qr-gold-subtle)] text-[var(--qr-on-gold)] shadow-xs">{icon}</div>
+    <Heading className="qr-card-title mt-4 text-xl font-bold text-[var(--qr-primary)]">{title}</Heading>
+    {description && <p className="qr-secondary mt-2 text-sm leading-relaxed max-w-md">{description}</p>}
+    {(action || secondaryAction) && <div className="qr-state-actions mt-6 flex flex-wrap justify-center gap-3">{action}{secondaryAction}</div>}
   </section>;
 }
 
 // Pass localized customer copy, never an Error.message or backend response.
 export function ErrorState({ title, description, action }: { title: string; description?: string; action?: ReactNode }) {
-  return <section className="qr-card qr-state" role="alert">
-    <CircleAlert className="qr-error-text" size={24} aria-hidden="true" /><h1 className="qr-page-title">{title}</h1>
-    {description && <p className="qr-secondary">{description}</p>}{action && <div className="qr-state-actions">{action}</div>}
+  return <section className="qr-card qr-state p-8 sm:p-12 text-center max-w-lg mx-auto border-[var(--qr-error)]/30" role="alert">
+    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--qr-error-subtle)] text-[var(--qr-error)] shadow-xs">
+      <CircleAlert size={28} aria-hidden="true" />
+    </div>
+    <h1 className="qr-page-title mt-4 text-xl font-bold text-[var(--qr-primary)]">{title}</h1>
+    {description && <p className="qr-secondary mt-2 text-sm leading-relaxed max-w-md">{description}</p>}
+    {action && <div className="qr-state-actions mt-6 flex flex-wrap justify-center gap-3">{action}</div>}
   </section>;
 }
 
