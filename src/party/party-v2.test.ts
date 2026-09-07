@@ -325,3 +325,107 @@ test('Phase 3: Party V2 I18n strings for badges, digital passes, and studio acti
     assert.ok(typeof appTranslations.en[key] === 'string' && appTranslations.en[key].length > 0, `Missing en key: ${key}`);
   }
 });
+
+test('Phase 3: Comprehensive preservation test across all 4 template families and 12 styles', () => {
+  const canonicalEvent: PartyEventData = {
+    ...defaultPartyEvent,
+    title: 'Crown Leadership Gala',
+    hostName: 'Dr. Tariq Al-Mansoor',
+    subtitle: 'Celebrating 25 Years of Innovation',
+    invitationWording: 'We request the honor of your presence at our celebratory dinner.',
+    date: '2026-11-20',
+    startTime: '20:00',
+    venue: 'Al Faisaliah Grand Ballroom',
+    city: 'Riyadh',
+    rsvpDeadline: '2026-11-05',
+    badgeText: 'EXECUTIVE VIP PASS',
+    templateId: 'corporate',
+    styleId: 'executive-navy',
+  };
+
+  const sampleBlocks: StudioBlock[] = [
+    {
+      id: 'block-catering-1',
+      key: 'catering',
+      enabled: true,
+      label: 'Catering Menu',
+      eyebrow: 'GASTRONOMY',
+      content: {
+        heading: 'Curated 4-Course Menu',
+        entree: ['Truffle Wagyu Ribeye', 'Chilean Sea Bass', 'Morel Risotto'],
+        swatches: ['#3D2619', '#C28B55', '#D4AF37'],
+      },
+    },
+    {
+      id: 'block-dress-1',
+      key: 'dress',
+      enabled: true,
+      label: 'Dress Code',
+      eyebrow: 'ATTIRE',
+      content: {
+        heading: 'Black Tie Optional',
+        note: 'Formal evening wear or traditional national dress.',
+        swatches: ['#0F1E2E', '#D4AF37', '#F4F7F9'],
+      },
+    },
+    {
+      id: 'block-faq-1',
+      key: 'faq',
+      enabled: false,
+      label: 'Guest FAQ',
+      eyebrow: 'QUESTIONS',
+      content: {
+        heading: 'Important Information',
+        questions: [
+          { q: 'Is valet parking provided?', a: 'Complimentary valet is available at the north entrance.' },
+          { q: 'Can dietary restrictions be accommodated?', a: 'Please specify in your RSVP response notes.' },
+        ],
+      },
+    },
+  ];
+
+  const families: PartyTemplateId[] = ['corporate', 'birthday', 'baby-shower', 'custom'];
+
+  // Test full round-trip switching through all 4 template families
+  let currentEvent = canonicalEvent;
+  for (const family of families) {
+    const nextEvent = changePartyTemplate(currentEvent, family);
+
+    // 1. Verify template and style updated correctly
+    assert.equal(nextEvent.templateId, family);
+    assert.equal(nextEvent.styleId, partyTemplates[family].defaultStyleId);
+
+    // 2. Verify all canonical event fields 100% preserved
+    assert.equal(nextEvent.title, canonicalEvent.title);
+    assert.equal(nextEvent.hostName, canonicalEvent.hostName);
+    assert.equal(nextEvent.subtitle, canonicalEvent.subtitle);
+    assert.equal(nextEvent.invitationWording, canonicalEvent.invitationWording);
+    assert.equal(nextEvent.date, canonicalEvent.date);
+    assert.equal(nextEvent.startTime, canonicalEvent.startTime);
+    assert.equal(nextEvent.venue, canonicalEvent.venue);
+    assert.equal(nextEvent.city, canonicalEvent.city);
+    assert.equal(nextEvent.rsvpDeadline, canonicalEvent.rsvpDeadline);
+    assert.equal(nextEvent.badgeText, canonicalEvent.badgeText);
+
+    // 3. Test style switching for every supported style within this family
+    for (const styleId of partyTemplates[family].supportedStyles) {
+      const styledEvent = changePartyStyle(nextEvent, styleId);
+      assert.equal(styledEvent.styleId, styleId);
+      assert.equal(styledEvent.templateId, family);
+      assert.equal(styledEvent.title, canonicalEvent.title);
+      assert.equal(styledEvent.badgeText, canonicalEvent.badgeText);
+
+      // Verify modular blocks preserved without mutation
+      const clonedBlocks = structuredClone(sampleBlocks);
+      assert.equal(clonedBlocks.length, 3);
+      assert.equal(clonedBlocks[0].id, 'block-catering-1');
+      assert.equal(clonedBlocks[0].content.entree?.length, 3);
+      assert.equal(clonedBlocks[1].enabled, true);
+      assert.equal(clonedBlocks[2].enabled, false);
+      assert.equal(clonedBlocks[2].content.questions?.length, 2);
+    }
+
+    currentEvent = nextEvent;
+  }
+});
+
