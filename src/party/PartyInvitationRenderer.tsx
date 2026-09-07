@@ -337,6 +337,59 @@ export function PartyInvitationRenderer({
           </div>
         </section>
 
+        {/* INVITATION MODULAR BLOCKS */}
+        {visibleBlocks.length > 0 && (
+          <section className="my-8 space-y-6" data-testid="section-blocks">
+            {visibleBlocks.map((block, index) => {
+              const isSelected = isEditMode && selectedBlockId === block.id;
+
+              return (
+                <div
+                  key={block.id}
+                  id={`party-block-${block.id}`}
+                  data-testid={`party-block-${block.key}`}
+                  onClick={() => isEditMode && onSelectBlock?.(block.id)}
+                  className={`relative transition-all duration-200 ${
+                    isEditMode
+                      ? 'cursor-pointer hover:ring-2 hover:ring-[var(--party-accent)]/60'
+                      : ''
+                  } ${
+                    isSelected
+                      ? 'ring-2 ring-[var(--party-accent)] ring-offset-2 ring-offset-black/10 rounded-3xl'
+                      : ''
+                  }`}
+                >
+                  {isEditMode && (
+                    <div className="absolute top-3 end-3 z-10">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-[var(--party-accent)] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-black shadow-xs">
+                        <Edit3 size={10} /> {partyInvitationT(invitationLocale, 'edit')}
+                      </span>
+                    </div>
+                  )}
+
+                  <RenderBlockItem
+                    block={block}
+                    index={index}
+                    openFaq={openFaq}
+                    setOpenFaq={setOpenFaq}
+                    song={isEditMode ? song : localSong}
+                    setSong={(val) => {
+                      setLocalSong(val);
+                      onSongChange?.(val);
+                    }}
+                    meal={meal}
+                    setMeal={(val) => onMealChange?.(val)}
+                    invitationLocale={invitationLocale}
+                    templateId={event.templateId}
+                    eventVenue={[event.venue, event.city].filter(Boolean).join(' · ')}
+                    eventHost={event.hostName}
+                  />
+                </div>
+              );
+            })}
+          </section>
+        )}
+
         {/* RSVP INTERACTION SECTION */}
         <section className="mt-4 mb-12" data-testid="section-rsvp">
           <AnimatePresence mode="wait">
@@ -514,54 +567,6 @@ export function PartyInvitationRenderer({
                   )}
                 </div>
 
-                {/* INVITATION BLOCKS */}
-                <div className="space-y-6">
-                  {visibleBlocks.map((block, index) => {
-                    const isSelected = isEditMode && selectedBlockId === block.id;
-
-                    return (
-                      <div
-                        key={block.id}
-                        id={`party-block-${block.id}`}
-                        onClick={() => isEditMode && onSelectBlock?.(block.id)}
-                        className={`relative transition-all duration-200 ${
-                          isEditMode
-                            ? 'cursor-pointer hover:ring-2 hover:ring-[var(--party-accent)]/60'
-                            : ''
-                        } ${
-                          isSelected
-                            ? 'ring-2 ring-[var(--party-accent)] ring-offset-2 ring-offset-black/10 rounded-3xl'
-                            : ''
-                        }`}
-                      >
-                        {isEditMode && (
-                          <div className="absolute top-3 end-3 z-10">
-                            <span className="inline-flex items-center gap-1 rounded-full bg-[var(--party-accent)] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-black shadow-xs">
-                              <Edit3 size={10} /> {partyInvitationT(invitationLocale, 'edit')}
-                            </span>
-                          </div>
-                        )}
-
-                        <RenderBlockItem
-                          block={block}
-                          index={index}
-                          openFaq={openFaq}
-                          setOpenFaq={setOpenFaq}
-                          song={isEditMode ? song : localSong}
-                          setSong={(val) => {
-                            setLocalSong(val);
-                            onSongChange?.(val);
-                          }}
-                          meal={meal}
-                          setMeal={(val) => onMealChange?.(val)}
-                          invitationLocale={invitationLocale}
-                          templateId={event.templateId}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-
                 {/* DIGITAL ADMISSION PASS (As seen in Reference 1 & 3) */}
                 <div className="party-card rounded-3xl border border-[var(--party-accent)]/50 bg-[var(--party-surface)]/95 p-7 sm:p-10 text-center shadow-xl backdrop-blur-md">
                   <div className="inline-flex items-center gap-2 rounded-full border border-[var(--party-accent)]/30 bg-black/15 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-[var(--party-accent)]">
@@ -618,6 +623,8 @@ function RenderBlockItem({
   setMeal,
   invitationLocale,
   templateId,
+  eventVenue,
+  eventHost,
 }: {
   block: StudioBlock;
   index: number;
@@ -629,6 +636,8 @@ function RenderBlockItem({
   setMeal: (m: string) => void;
   invitationLocale: InvitationLocale;
   templateId: string;
+  eventVenue?: string;
+  eventHost?: string;
 }) {
   const c = block.content;
   const isCorporate = templateId === 'corporate';
@@ -871,11 +880,23 @@ function RenderBlockItem({
             </p>
           )}
 
-          {block.key === 'cta' && c.url && (
+          {!c.note && block.key === 'venue' && eventVenue && (
+            <p className="text-xs sm:text-sm leading-relaxed opacity-80">
+              {eventVenue}
+            </p>
+          )}
+
+          {!c.note && block.key === 'host' && eventHost && (
+            <p className="text-xs sm:text-sm leading-relaxed opacity-80">
+              {partyInvitationT(invitationLocale, 'hostsLabel')}: {eventHost}
+            </p>
+          )}
+
+          {block.key === 'cta' && (
             <a
-              href={c.url}
-              target="_blank"
-              rel="noreferrer"
+              href={c.url || '#'}
+              target={c.url ? '_blank' : undefined}
+              rel={c.url ? 'noreferrer' : undefined}
               className="focus-ring mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-[var(--party-accent)] px-6 py-2.5 text-xs font-bold uppercase tracking-wider text-black shadow-xs hover:brightness-110"
             >
               <ExternalLink size={14} />

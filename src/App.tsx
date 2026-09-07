@@ -147,7 +147,7 @@ type EngineContextValue = {
   activePartyEventId: string;
   openPartyEvent: (id: string) => void;
   openPartyDraft: (draft: DesignDraft<Record<string, unknown>>) => void;
-  savePartyDraft: () => Promise<void>;
+  savePartyDraft: (overrideEvent?: PartyEventData, overrideBlocks?: StudioBlock[], overrideLocale?: InvitationLocale) => Promise<void>;
   loadPublicInvitation: (resolution: InvitationResolution, token: string, generalName?: string) => void;
   publicReadOnly: boolean;
   storageAvailable: boolean;
@@ -392,14 +392,21 @@ function EngineProvider({ children }: { children: ReactNode }) {
       });
       partyHydratedRef.current = true;
     },
-    savePartyDraft: async () => {
+    savePartyDraft: async (
+      overrideEvent?: PartyEventData,
+      overrideBlocks?: StudioBlock[],
+      overrideLocale?: InvitationLocale
+    ) => {
       if (!partyDraftRef.current) return;
       if (partySaveBlockedRef.current) throw new Error('Party saving is paused. Reload the Draft before trying again.');
-      const configuration = { ...state.partyEvent, blocks: state.blocks, invitationLocale: state.invitationLocale };
+      const eventToSave = overrideEvent ?? state.partyEvent;
+      const blocksToSave = overrideBlocks ?? state.blocks;
+      const localeToSave = overrideLocale ?? state.invitationLocale;
+      const configuration = { ...eventToSave, blocks: blocksToSave, invitationLocale: localeToSave };
       const signature = JSON.stringify(configuration);
       if (signature === partySavedConfigurationRef.current) return;
       const operation = partyQueueRef.current.then(async () => {
-        partyDraftRef.current = await updateDesignDraft(partyDraftRef.current!, state.partyEvent.title, configuration);
+        partyDraftRef.current = await updateDesignDraft(partyDraftRef.current!, eventToSave.title, configuration);
         partySavedConfigurationRef.current = signature;
       });
       partyQueueRef.current = operation.catch(() => undefined);
@@ -771,7 +778,7 @@ function PartyStudioPage({ embedded = false }: { embedded?: boolean }) {
       updatePartyEvent(newEvent);
       reorderBlocks(newBlocks);
       setInvitationLocale(newLocale);
-      await savePartyDraft();
+      await savePartyDraft(newEvent, newBlocks, newLocale);
       setSaveStatus('saved');
     } catch {
       setSaveStatus('error');

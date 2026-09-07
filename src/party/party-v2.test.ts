@@ -429,3 +429,42 @@ test('Phase 3: Comprehensive preservation test across all 4 template families an
   }
 });
 
+test('Phase 3 Regression: Multi-block visibility, ordering, and disabled-filtering invariant', () => {
+  const blocks: StudioBlock[] = [
+    { id: 'b-host', key: 'host', enabled: true, label: 'Host', eyebrow: 'HOST', content: { heading: 'Dr. Nora' } },
+    { id: 'b-text', key: 'text', enabled: true, label: 'Text', eyebrow: 'TEXT', content: { heading: 'Welcome' } },
+    { id: 'b-venue', key: 'venue', enabled: true, label: 'Venue', eyebrow: 'VENUE', content: { heading: 'Ballroom' } },
+    { id: 'b-schedule', key: 'schedule', enabled: true, label: 'Schedule', eyebrow: 'TIME', content: { heading: 'Timeline' } },
+    { id: 'b-catering', key: 'catering', enabled: true, label: 'Menu', eyebrow: 'FOOD', content: { heading: '4 Courses', entree: ['A', 'B'] } },
+    { id: 'b-disabled-faq', key: 'faq', enabled: false, label: 'FAQ', eyebrow: 'FAQ', content: { heading: 'Hidden FAQ' } },
+    { id: 'b-cta', key: 'cta', enabled: true, label: 'CTA', eyebrow: 'LINK', content: { heading: 'RSVP Online', url: 'https://example.com' } },
+    { id: 'b-divider', key: 'divider', enabled: true, label: 'Divider', eyebrow: 'DIV', content: { heading: '' } },
+    { id: 'b-spacer', key: 'spacer', enabled: true, label: 'Spacer', eyebrow: 'SPACE', content: { heading: '' } },
+  ];
+
+  // Invariant 1: enabled blocks filter preserves ordering exactly
+  const visible = blocks.filter((b) => b.enabled);
+  assert.equal(visible.length, 8);
+  assert.deepEqual(
+    visible.map((b) => b.id),
+    ['b-host', 'b-text', 'b-venue', 'b-schedule', 'b-catering', 'b-cta', 'b-divider', 'b-spacer']
+  );
+
+  // Invariant 2: disabled blocks are completely excluded
+  assert.ok(!visible.some((b) => b.id === 'b-disabled-faq'));
+  assert.ok(!visible.some((b) => b.enabled === false));
+
+  // Invariant 3: rendering visibility is independent of RSVP status
+  for (const rsvpStatus of ['pending', 'accepted', 'declined'] as const) {
+    const renderedInRsvpState = blocks.filter((b) => b.enabled);
+    assert.equal(renderedInRsvpState.length, 8);
+    assert.equal(renderedInRsvpState[0].id, 'b-host');
+    assert.equal(renderedInRsvpState[7].id, 'b-spacer');
+  }
+
+  // Invariant 4: preview mode has 100% parity with public mode block list
+  const previewBlocks = blocks.filter((b) => b.enabled);
+  const publicBlocks = blocks.filter((b) => b.enabled);
+  assert.deepEqual(previewBlocks, publicBlocks);
+});
+

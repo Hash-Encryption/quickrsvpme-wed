@@ -433,6 +433,7 @@ export function PartyStudio({
             blocks={blocks}
             invitationLocale={invitationLocale}
             isEditMode={!isPreviewOnly}
+            preview={isPreviewOnly}
             selectedBlockId={selectedBlockId}
             onSelectBlock={handleSelectBlockFromPreview}
             onSelectSection={handleSelectSectionFromPreview}
