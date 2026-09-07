@@ -1,4 +1,5 @@
 import { type ReactNode, type ComponentType, type CSSProperties, useContext, useEffect, useMemo, useRef, useState, createContext } from 'react';
+import { Button as CustomerButton, ErrorState, LoadingState, PageShell } from '@/components/customer-ui';
 import { ErrorBoundary, type ErrorFallbackProps } from '@/components/error-boundary';
 import { AppLanguageControl, AppLocaleProvider, useAppLocale } from '@/i18n/app-locale';
 import { localeDirection, type InvitationLocale } from '@/i18n/locale';
@@ -610,7 +611,7 @@ function GuestBlock({ block, index, openFaq, setOpenFaq, song, setSong, meal, se
 
 function LoadingPage() {
   const { t } = useAppLocale();
-  return <div className="min-h-[100dvh] bg-[#FAF7F2] p-6" role="status" aria-live="polite"><span className="sr-only">{t('loading')}</span><div className="mx-auto mt-20 max-w-xl space-y-4" aria-hidden="true"><div className="h-5 w-24 animate-pulse rounded-full bg-[#EADBC8]" /><div className="h-44 animate-pulse rounded-[28px] bg-[#EADBC8]" /><div className="h-24 animate-pulse rounded-[28px] bg-[#EADBC8]" /></div></div>;
+  return <PageShell className="qr-center"><LoadingState label={t('loading')} /></PageShell>;
 }
 function TokenError() {
   const { t } = useAppLocale();
@@ -619,12 +620,12 @@ function TokenError() {
 
 function NotFoundPage() {
   const { t } = useAppLocale();
-  return <div className="flex min-h-[100dvh] items-center justify-center bg-[#F5F2EC] p-6 text-center"><div className="max-w-md"><XCircle className="mx-auto text-[#A4813C]" /><h1 className="mt-5 text-4xl font-semibold">{t('notFoundTitle')}</h1><p className="mt-3 text-sm leading-6 text-[#756F66]">{t('notFoundHelp')}</p><Link href="/" className="focus-ring mt-6 inline-flex min-h-11 items-center rounded-full bg-[#0C2D24] px-5 text-xs font-semibold text-white">{t('backToProjects')}</Link></div></div>;
+  return <PageShell className="qr-center"><ErrorState title={t('notFoundTitle')} description={t('notFoundHelp')} action={<Link href="/" className="qr-button qr-button--primary">{t('backToProjects')}</Link>} /></PageShell>;
 }
 
 function AppErrorFallback({ resetError }: ErrorFallbackProps) {
   const { t } = useAppLocale();
-  return <div className="flex min-h-[100dvh] items-center justify-center bg-[#F5F2EC] p-6 text-center"><div className="max-w-md"><XCircle className="mx-auto text-[#A4813C]" /><h1 className="mt-5 text-4xl font-semibold">{t('appErrorTitle')}</h1><p className="mt-3 text-sm leading-6 text-[#756F66]">{t('appErrorHelp')}</p><button type="button" onClick={resetError} className="focus-ring mt-6 min-h-11 rounded-full bg-[#0C2D24] px-5 text-xs font-semibold text-white">{t(isPublicInvitationRoute(window.location.pathname) ? 'tryAgain' : 'retry')}</button></div></div>;
+  return <PageShell className="qr-center"><ErrorState title={t('appErrorTitle')} description={t('appErrorHelp')} action={<CustomerButton onClick={resetError}>{t(isPublicInvitationRoute(window.location.pathname) ? 'tryAgain' : 'retry')}</CustomerButton>} /></PageShell>;
 }
 
 function StudioHubPage() {
