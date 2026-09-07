@@ -57,6 +57,8 @@ import {
   type WeddingRsvp,
 } from '@/wedding/model';
 import { defaultPartyEvent, formatPartyDate, mergePartyEvent, partyTemplates, type PartyEventData } from '@/party/model';
+import { PartyInvitationRenderer } from '@/party/PartyInvitationRenderer';
+import { PartyStudio } from '@/party/PartyStudio';
 import { createDesignDraft, createGeneralInvitation, createGuest, deleteDesignDraft, getDesignDraftPublishAccess, getGeneralInvitationRequestStatus, listDesignDrafts, listEventConfigs, listGuests, publishDesignDraft, recordInvitationOpen, resolveInvitation, rotatePersonalInvitation, savePartyConfig, submitGeneralInvitationRequest, submitPersonalRsvp, tagGuest, updateDesignDraft, updateGuest, type DesignDraft, type DesignDraftPublishAccess } from '@/backend/phase2';
 import { updateEvent } from '@/backend/events';
 import { loadCommercialSource } from '@/backend/commercial';
@@ -551,50 +553,27 @@ function GuestPage({ preview = false, onSelectBlock }: { preview?: boolean; onSe
     onSubmit={submitWeddingRsvp}
     readOnly={publicReadOnly}
   />;
-  const partyStyle = { '--party-bg': partyEvent.backgroundColor ?? undefined, '--party-primary': partyEvent.primaryColor ?? undefined, '--party-accent': partyEvent.accentColor ?? undefined } as CSSProperties;
-  return <div style={partyStyle} className={`party-invitation party-template--${partyEvent.templateId} party-layout--${partyEvent.layout} party-type--${partyEvent.typography} party-motion--${partyEvent.motion} grain min-h-[100dvh] overflow-hidden text-[#2D2421] ${preview ? 'party-invitation--preview' : ''}`} lang={state.invitationLocale} dir={localeDirection(state.invitationLocale)}>
-    {partyEvent.decorations && <div className="gold-thread" />}
-    <header className="relative z-20 flex items-center justify-between px-5 py-6 sm:px-10" aria-label={invitationT(state.invitationLocale, 'invitation')}><Monogram compact /></header>
-    <main className="relative z-10 mx-auto max-w-4xl px-5 pb-28 sm:px-8">
-      <FadeIn className="relative flex flex-col items-center pb-16 pt-10 text-center sm:pt-16">
-        <div className="party-hero-mark mb-7 flex h-24 w-24 items-center justify-center rounded-full border shadow-[0_12px_25px_rgba(10,46,35,.18)]"><PartyPopper size={34} strokeWidth={1.35} /></div>
-        <Eyebrow className="max-w-full text-center"><bdi>{partyEvent.venue} · {partyEvent.city}</bdi></Eyebrow>
-        <h1 className="party-title mt-5 max-w-2xl break-words font-display text-6xl leading-[.9] sm:text-8xl" data-testid="text-event-title"><bdi>{partyEvent.title}</bdi></h1>
-        <p className="mt-5 max-w-xl break-words font-display text-2xl italic text-[#2D2421]/65"><bdi>{partyEvent.invitationWording}</bdi></p>
-        <div className="mt-7 flex flex-wrap items-center justify-center gap-3 text-[11px] font-semibold uppercase tracking-[.08em] text-[#2D2421]/65"><time dateTime={partyEvent.date}>{formatPartyDate(partyEvent.date, state.invitationLocale)}</time><span className="h-1 w-1 rounded-full bg-[#D4AF37]" /><time dateTime={partyEvent.startTime} dir="ltr">{partyEvent.startTime}</time></div>
-      </FadeIn>
 
-      <AnimatePresence mode="wait">
-        {displayedRsvp === 'pending' && !publicReadOnly && <motion.div key="rsvp" initial={{ opacity: 0, scale: .98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="suite-card mx-auto max-w-xl p-7 text-center sm:p-12">
-          <Eyebrow>{partyInvitationT(state.invitationLocale, 'privateFor')} {state.weddingGuest.name}</Eyebrow>
-          <h2 className="mt-3 font-display text-4xl text-[#0A2E23]">{invitationT(state.invitationLocale, 'rsvpTitle')}</h2>
-          <p className="mx-auto mt-3 max-w-sm text-sm leading-7 text-[#2D2421]/70">{partyInvitationT(state.invitationLocale, 'replyBy')} <time dateTime={partyEvent.rsvpDeadline}>{formatPartyDate(partyEvent.rsvpDeadline, state.invitationLocale)}</time>.</p>
-          <div className="mx-auto mt-7 flex max-w-xs items-center justify-between rounded-2xl border border-[#D4AF37]/45 bg-[#FFFDF9]/45 p-3"><span className="text-start text-xs font-semibold">{invitationT(state.invitationLocale, 'guestCount')}<small className="mt-1 block font-normal text-[#2D2421]/55">{invitationT(state.invitationLocale, 'allowed')}: {1 + state.weddingGuest.allowedCompanions}</small></span><div className="flex items-center gap-3"><button className="focus-ring flex h-11 w-11 items-center justify-center rounded-full border border-[#D4AF37]/55" onClick={() => setRsvp('pending', partyGuestCount - 1)} disabled={partyGuestCount <= 1} aria-label={invitationT(state.invitationLocale, 'decreaseGuests')}>−</button><b>{partyGuestCount}</b><button className="focus-ring flex h-11 w-11 items-center justify-center rounded-full border border-[#D4AF37]/55" onClick={() => setRsvp('pending', partyGuestCount + 1)} disabled={partyGuestCount >= 1 + state.weddingGuest.allowedCompanions} aria-label={invitationT(state.invitationLocale, 'increaseGuests')}>+</button></div></div>
-          <div className="mt-5 flex flex-col justify-center gap-3 sm:flex-row"><Button onClick={() => setRsvp('accepted', partyGuestCount)} icon={Check}>{invitationT(state.invitationLocale, 'attending')}</Button><Button onClick={() => setRsvp('declined')} variant="ghost" icon={X}>{invitationT(state.invitationLocale, 'declining')}</Button></div>
-          <div className="mt-6 flex items-center justify-center gap-2 text-[10px] uppercase tracking-[.12em] text-[#2D2421]/45"><LockKeyhole size={12} /> {partyInvitationT(state.invitationLocale, 'noAccount')}</div>
-        </motion.div>}
-        {displayedRsvp === 'declined' && <motion.div key="declined" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="suite-card mx-auto max-w-xl p-8 text-center sm:p-12">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-[#D4AF37] text-[#D4AF37]"><Heart size={22} strokeWidth={1.4} /></div>
-          <h2 className="mt-5 font-display text-4xl text-[#0A2E23]">{partyInvitationT(state.invitationLocale, 'missedTitle')}</h2>
-          <p className="mx-auto mt-3 max-w-sm text-sm leading-7 text-[#2D2421]/70">{partyInvitationT(state.invitationLocale, 'missedBody')}</p>
-          {!publicReadOnly && <button onClick={() => setRsvp('pending')} data-testid="button-change-rsvp" className="focus-ring mt-7 min-h-11 text-[10px] font-bold uppercase tracking-[.18em] text-[#A98219] underline underline-offset-4">{partyInvitationT(state.invitationLocale, 'changeResponse')}</button>}
-        </motion.div>}
-        {displayedRsvp === 'accepted' && <motion.div key="accepted" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mx-auto max-w-2xl">
-          <SuiteCard className="p-7 sm:p-10">
-            <div className="flex items-start justify-between gap-5"><div><Eyebrow>{partyInvitationT(state.invitationLocale, 'onList')}</Eyebrow><h2 className="mt-2 font-display text-4xl text-[#0A2E23]">{partyInvitationT(state.invitationLocale, 'acceptedTitle')}</h2><p className="mt-1 text-sm text-[#2D2421]/65">{partyInvitationT(state.invitationLocale, 'acceptedBody')}</p></div><CheckCircle2 className="shrink-0 text-[#0A2E23]" size={28} strokeWidth={1.4} /></div>
-            <div className="mt-7 flex items-center gap-3 border-t border-[#D4AF37]/35 pt-5"><InitialsAvatar /><div className="min-w-0"><p className="break-words font-semibold text-[#0A2E23]" data-testid="text-guest-name">{state.weddingGuest.name}</p><p className="break-all text-[11px] uppercase tracking-[.12em] text-[#2D2421]/55">{partyGuestCount} {partyInvitationT(state.invitationLocale, 'guest')} · {partyInvitationT(state.invitationLocale, 'token')} {token ?? 'demo'}</p></div><span className="ms-auto shrink-0 rounded-full bg-[#0A2E23]/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23]">{partyInvitationT(state.invitationLocale, 'confirmed')}</span></div>
-            {!publicReadOnly && <button onClick={() => setRsvp('pending')} data-testid="button-change-rsvp" className="focus-ring mt-7 min-h-11 text-[10px] font-bold uppercase tracking-[.18em] text-[#A98219] underline underline-offset-4">{partyInvitationT(state.invitationLocale, 'changeResponse')}</button>}
-          </SuiteCard>
-          <div className="my-16 text-center"><Eyebrow>{partyInvitationT(state.invitationLocale, 'details')}</Eyebrow><p className="mt-3 font-display text-3xl text-[#0A2E23]">{partyInvitationT(state.invitationLocale, 'detailsTitle')}</p></div>
-          {visibleBlocks.map((block, index) => <GuestBlock key={block.id} block={block} index={index} openFaq={openFaq} setOpenFaq={setOpenFaq} song={state.song} setSong={preview ? () => undefined : setSong} meal={state.meal} setMeal={preview ? () => undefined : setMeal} onSelect={onSelectBlock} />)}
-          <SuiteCard className="mt-14 p-8 text-center sm:p-12">
-            <Eyebrow>{partyInvitationT(state.invitationLocale, 'digitalPass')}</Eyebrow><h2 className="mt-3 font-display text-4xl text-[#0A2E23]">{partyInvitationT(state.invitationLocale, 'passTitle')}</h2><p className="mx-auto mt-3 max-w-xs text-sm leading-6 text-[#2D2421]/65">{partyInvitationT(state.invitationLocale, 'passBody')}</p><div className="mx-auto mt-7 w-fit"><QRMark label={partyInvitationT(state.invitationLocale, 'digitalPass')} /></div><p className="mt-4 break-all font-mono text-[10px] tracking-[.12em] text-[#2D2421]/50"><bdi>{partyEvent.title} · {state.weddingGuest.passId}</bdi></p>
-          </SuiteCard>
-        </motion.div>}
-      </AnimatePresence>
-    </main>
-    <footer className="relative z-10 pb-10 text-center"><div className="mx-auto mb-5 h-px w-20 bg-[#D4AF37]" /><p className="font-display text-xl italic text-[#2D2421]/55">{partyInvitationT(state.invitationLocale, 'madeFor')}</p></footer>
-  </div>;
+  return (
+    <PartyInvitationRenderer
+      event={partyEvent}
+      blocks={state.blocks}
+      guestName={state.weddingGuest.name}
+      passId={state.weddingGuest.passId}
+      rsvpStatus={displayedRsvp}
+      guestCount={partyGuestCount}
+      maxGuests={1 + state.weddingGuest.allowedCompanions}
+      song={state.song}
+      meal={state.meal}
+      invitationLocale={state.invitationLocale}
+      preview={preview}
+      readOnly={publicReadOnly}
+      onRsvp={(newStatus, newGuestCount) => setRsvp(newStatus, newGuestCount)}
+      onSongChange={(newSong) => !preview && setSong(newSong)}
+      onMealChange={(newMeal) => !preview && setMeal(newMeal)}
+      onSelectBlock={onSelectBlock}
+    />
+  );
 }
 
 function GuestBlock({ block, index, openFaq, setOpenFaq, song, setSong, meal, setMeal, onSelect }: { block: StudioBlock; index: number; openFaq: number | null; setOpenFaq: (n: number | null) => void; song: string; setSong: (s: string) => void; meal: string; setMeal: (s: string) => void; onSelect?: (id: string) => void }) {
@@ -769,20 +748,10 @@ function StudioHubPage() {
 }
 
 function PartyStudioPage({ embedded = false }: { embedded?: boolean }) {
-  const { state, ready, toggleBlock, reorderBlocks, updateBlock, addBlock, duplicateBlock, deleteBlock, setMode, setInvitationLocale, updatePartyEvent } = useEngine();
+  const { state, ready, setMode, setInvitationLocale, updatePartyEvent, reorderBlocks, savePartyDraft, storageAvailable } = useEngine();
   const auth = useAuth();
-  const { t, locale } = useAppLocale();
-  const [activeEditor, setActiveEditor] = useState<string | null>(null);
-  const [newBlock, setNewBlock] = useState<BlockKey>('text');
-  const [view, setView] = useState<'edit' | 'preview'>('edit');
-  const activeBlock = state.blocks.find((b) => b.id === activeEditor);
-  const moveBlock = (index: number, offset: -1 | 1) => {
-    const target = index + offset;
-    if (target < 0 || target >= state.blocks.length) return;
-    const blocks = [...state.blocks];
-    [blocks[index], blocks[target]] = [blocks[target], blocks[index]];
-    reorderBlocks(blocks);
-  };
+  const { t } = useAppLocale();
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error' | 'conflict'>('saved');
 
   useEffect(() => {
     if (ready && state.mode !== 'standard') {
@@ -792,109 +761,36 @@ function PartyStudioPage({ embedded = false }: { embedded?: boolean }) {
 
   if (!ready) return <LoadingPage />;
 
+  const handleSave = async (
+    newEvent: PartyEventData,
+    newBlocks: StudioBlock[],
+    newLocale: InvitationLocale
+  ) => {
+    setSaveStatus('saving');
+    try {
+      updatePartyEvent(newEvent);
+      reorderBlocks(newBlocks);
+      setInvitationLocale(newLocale);
+      await savePartyDraft();
+      setSaveStatus('saved');
+    } catch {
+      setSaveStatus('error');
+    }
+  };
+
   return (
-    <div className={`grain bg-[#FAF7F2] text-[#2D2421] ${embedded ? 'rounded-3xl py-6' : 'min-h-[100dvh]'}`}>
-      <div className="gold-thread" />
-      {!embedded && <QuietHeader studio anonymous={!auth.session && 'party'} />}
-      <main className={`relative z-10 mx-auto max-w-7xl px-5 sm:px-8 ${embedded ? 'pb-6' : 'pb-20 lg:px-14'}`}>
-        <FadeIn>
-          <div className="flex flex-col justify-between gap-7 border-b border-[#D4AF37]/35 pb-8 md:flex-row md:items-end">
-            <div>
-              <Eyebrow>{t('hostStudio')}</Eyebrow>
-              <h1 className="mt-3 font-display text-6xl leading-[.82] text-[#0A2E23] sm:text-7xl">
-                {t('partyStudioTitle')}
-              </h1>
-              <p className="mt-5 max-w-lg text-sm leading-6 text-[#2D2421]/65">
-                {t('partyStudioHelp')}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link href={auth.session ? '/studio' : '/design/wedding'} data-testid="link-switch-studio" className="focus-ring inline-flex min-h-11 items-center gap-1.5 rounded-full border border-[#D4AF37]/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23] hover:bg-[#D4AF37]/10">
-                <ArrowLeft size={13} /> {t('switchType')}
-              </Link>
-              <Link href={auth.session ? '/' : '/auth'} onClick={() => { if (!auth.session) requestAnonymousDesignTransfer('party'); }} data-testid="link-preview-invitation" className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-full border border-[#D4AF37]/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23]">
-                <ExternalLink size={14} /> {t('preview')}
-              </Link>
-              {auth.session && <Link href={buildProjectRoute('party', partyProject.id, 'scanner')} data-testid="link-open-scanner" className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-full bg-[#0A2E23] px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#FFFDF9]">
-                <QrCode size={14} /> {t('doorScanner')}
-              </Link>}
-            </div>
-          </div>
-        </FadeIn>
-
-        <div className="party-view-switch sticky top-16 z-20 mx-auto mt-5 grid max-w-xs grid-cols-2 rounded-full border border-[#D4AF37]/55 bg-[#FFFDF9]/95 p-1 shadow-sm backdrop-blur xl:hidden" aria-label={`${t('editView')} / ${t('previewView')}`}>
-          {(['edit', 'preview'] as const).map((item) => <button key={item} type="button" onClick={() => setView(item)} aria-pressed={view === item} className={`focus-ring min-h-11 rounded-full px-4 text-xs font-semibold ${view === item ? 'bg-[#0A2E23] text-white' : 'text-[#0A2E23]'}`}>{t(item === 'edit' ? 'editView' : 'previewView')}</button>)}
-        </div>
-
-        <div className="party-studio-layout mt-8 grid grid-cols-[minmax(0,1fr)] gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(340px,430px)]">
-          <div className={`party-editor min-w-0 space-y-8 ${view === 'preview' ? 'party-mobile-hidden' : ''}`}>
-            <section className="suite-card grommetless p-6 sm:p-8" aria-labelledby="party-event-details">
-              <Eyebrow>{t('event')}</Eyebrow><h2 id="party-event-details" className="mt-2 font-display text-4xl text-[#0A2E23]">{t('eventDetails')}</h2>
-              <div className="mt-6 grid gap-5 sm:grid-cols-2">
-                <label className="block text-xs font-semibold sm:col-span-2"><span className="mb-2 block">{t('eventTitle')}</span><input data-testid="input-party-title" value={state.partyEvent.title} onChange={(event) => updatePartyEvent({ title: event.target.value })} className="focus-ring min-h-11 w-full rounded-xl border border-[#D4AF37]/55 bg-[#FFFDF9] px-4" /></label>
-                <label className="block text-xs font-semibold sm:col-span-2"><span className="mb-2 block">{t('invitationWording')}</span><textarea data-testid="input-party-wording" rows={3} value={state.partyEvent.invitationWording} onChange={(event) => updatePartyEvent({ invitationWording: event.target.value })} className="focus-ring w-full resize-y rounded-xl border border-[#D4AF37]/55 bg-[#FFFDF9] px-4 py-3" /></label>
-                <label className="block text-xs font-semibold"><span className="mb-2 block">{t('date')}</span><input type="date" data-testid="input-party-date" value={state.partyEvent.date} onChange={(event) => updatePartyEvent({ date: event.target.value })} className="focus-ring min-h-11 w-full rounded-xl border border-[#D4AF37]/55 bg-[#FFFDF9] px-4" /></label>
-                <label className="block text-xs font-semibold"><span className="mb-2 block">{t('startTime')}</span><input type="time" data-testid="input-party-time" value={state.partyEvent.startTime} onChange={(event) => updatePartyEvent({ startTime: event.target.value })} className="focus-ring min-h-11 w-full rounded-xl border border-[#D4AF37]/55 bg-[#FFFDF9] px-4" /></label>
-                <label className="block text-xs font-semibold"><span className="mb-2 block">{t('venue')}</span><input data-testid="input-party-venue" value={state.partyEvent.venue} onChange={(event) => updatePartyEvent({ venue: event.target.value })} className="focus-ring min-h-11 w-full rounded-xl border border-[#D4AF37]/55 bg-[#FFFDF9] px-4" /></label>
-                <label className="block text-xs font-semibold"><span className="mb-2 block">{t('city')}</span><input data-testid="input-party-city" value={state.partyEvent.city} onChange={(event) => updatePartyEvent({ city: event.target.value })} className="focus-ring min-h-11 w-full rounded-xl border border-[#D4AF37]/55 bg-[#FFFDF9] px-4" /></label>
-                <label className="block text-xs font-semibold sm:col-span-2"><span className="mb-2 block">{t('rsvpDeadline')}</span><input type="date" data-testid="input-party-deadline" value={state.partyEvent.rsvpDeadline} onChange={(event) => updatePartyEvent({ rsvpDeadline: event.target.value })} className="focus-ring min-h-11 w-full rounded-xl border border-[#D4AF37]/55 bg-[#FFFDF9] px-4" /></label>
-              </div>
-            </section>
-
-            <section className="suite-card grommetless p-6 sm:p-8" aria-labelledby="party-design">
-              <Eyebrow>{t('designNav')}</Eyebrow><h2 id="party-design" className="mt-2 font-display text-4xl text-[#0A2E23]">{t('chooseTemplate')}</h2>
-              <label className="mt-6 block max-w-xs text-xs font-semibold"><span className="mb-2 block">{t('invitationLanguage')}</span><select data-testid="select-party-invitation-locale" value={state.invitationLocale} onChange={(event) => setInvitationLocale(event.target.value as InvitationLocale)} className="focus-ring min-h-11 w-full rounded-xl border border-[#D4AF37]/55 bg-[#FFFDF9] px-4"><option value="ar">{t('arabic')}</option><option value="en">{t('english')}</option></select></label>
-              <div className="party-template-grid mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{Object.values(partyTemplates).map((template) => <button key={template.id} type="button" data-testid={`button-party-template-${template.id}`} onClick={() => updatePartyEvent({ templateId: template.id })} aria-pressed={state.partyEvent.templateId === template.id} className={`focus-ring min-h-24 rounded-2xl border p-4 text-start ${state.partyEvent.templateId === template.id ? 'border-[#0A2E23] bg-[#0A2E23] text-white' : 'border-[#D4AF37]/45 bg-[#FFFDF9]/60'}`}><span className={`party-template-swatch party-template-swatch--${template.id}`} /><strong className="mt-3 block text-sm">{locale === 'ar' ? template.nameAr : template.name}</strong><span className="mt-1 block text-[10px] opacity-65">{locale === 'ar' ? template.descriptionAr : template.description}</span>{state.partyEvent.templateId === template.id && <span className="mt-2 inline-flex items-center gap-1 text-[10px]"><Check size={13} /> {t('selected')}</span>}</button>)}</div>
-              <div className="mt-6 grid gap-4 border-t border-[#D4AF37]/30 pt-6 sm:grid-cols-3"><label className="text-xs font-semibold">{t('background')}<input type="color" value={state.partyEvent.backgroundColor ?? '#faf7f2'} onChange={(event) => updatePartyEvent({ backgroundColor: event.target.value })} className="mt-2 h-11 w-full rounded-xl border p-1" /></label><label className="text-xs font-semibold">{t('primaryColor')}<input type="color" value={state.partyEvent.primaryColor ?? '#0a2e23'} onChange={(event) => updatePartyEvent({ primaryColor: event.target.value })} className="mt-2 h-11 w-full rounded-xl border p-1" /></label><label className="text-xs font-semibold">{t('accentColor')}<input type="color" value={state.partyEvent.accentColor ?? '#d4af37'} onChange={(event) => updatePartyEvent({ accentColor: event.target.value })} className="mt-2 h-11 w-full rounded-xl border p-1" /></label><label className="text-xs font-semibold">{t('typography')}<select value={state.partyEvent.typography} onChange={(event) => updatePartyEvent({ typography: event.target.value as PartyEventData['typography'] })} className="mt-2 min-h-11 w-full rounded-xl border px-3"><option value="display">{t('displayStyle')}</option><option value="modern">{t('modernStyle')}</option></select></label><label className="text-xs font-semibold">{t('layout')}<select value={state.partyEvent.layout} onChange={(event) => updatePartyEvent({ layout: event.target.value as PartyEventData['layout'] })} className="mt-2 min-h-11 w-full rounded-xl border px-3"><option value="centered">{t('centered')}</option><option value="editorial">{t('editorial')}</option></select></label><label className="text-xs font-semibold">{t('motion')}<select value={state.partyEvent.motion} onChange={(event) => updatePartyEvent({ motion: event.target.value as PartyEventData['motion'] })} className="mt-2 min-h-11 w-full rounded-xl border px-3"><option value="gentle">{t('gentle')}</option><option value="none">{t('none')}</option></select></label><label className="flex min-h-11 items-center gap-2 text-xs font-semibold sm:col-span-3"><input type="checkbox" checked={state.partyEvent.decorations} onChange={(event) => updatePartyEvent({ decorations: event.target.checked })} />{t('decorations')}</label></div>
-            </section>
-            <div className="suite-card p-6 sm:p-8">
-              <div className="flex items-end justify-between gap-4">
-                <div>
-                  <Eyebrow>{t('guestExperience')}</Eyebrow>
-                  <h2 className="mt-2 font-display text-4xl text-[#0A2E23]">{t('invitationBlocks')}</h2>
-                </div>
-                <span className="text-[10px] font-bold uppercase tracking-[.14em] text-[#2D2421]/45">
-                  {state.blocks.filter((b) => b.enabled).length} {t('visible')}
-                </span>
-              </div>
-              <p className="mt-2 text-sm text-[#2D2421]/60">
-                {t('blocksHelp')}
-              </p>
-              <div className="mt-5 flex flex-col gap-2 sm:flex-row"><select value={newBlock} onChange={(event) => setNewBlock(event.target.value as BlockKey)} className="min-h-11 flex-1 rounded-xl border border-[#D4AF37]/55 bg-[#FFFDF9] px-3">{(['text', 'venue', 'host', 'cta', 'divider', 'spacer'] as BlockKey[]).map((key) => <option key={key} value={key}>{t(key)}</option>)}</select><Button icon={Plus} onClick={() => addBlock(newBlock)}>{t('addBlock')}</Button></div>
-              <div className="mt-7 space-y-3">
-                {state.blocks.map((block, index) => (
-                  <div key={block.id} className={`party-block-row flex flex-wrap items-center gap-3 rounded-2xl border p-3 transition ${block.enabled ? 'border-[#D4AF37]/55 bg-[#FFFDF9]/50' : 'border-[#2D2421]/10 bg-[#2D2421]/[.03] opacity-55'}`}>
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0A2E23] text-[#D4AF37]">
-                      <BlockIcon block={block.key} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-[#0A2E23]">{t(block.key)}</p>
-                      <p className="truncate text-[11px] text-[#2D2421]/55">{block.content.heading}</p>
-                    </div>
-                    <div className="party-block-actions flex w-full items-center justify-end gap-2 sm:w-auto">
-                    <button onClick={() => moveBlock(index, -1)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); moveBlock(index, -1); } }} disabled={index === 0} aria-label={`${t('moveUp')} ${t(block.key)}`} className="focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-full border border-[#D4AF37]/55 text-[#0A2E23] disabled:opacity-30"><ArrowUp size={14} /></button>
-                    <button onClick={() => moveBlock(index, 1)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); moveBlock(index, 1); } }} disabled={index === state.blocks.length - 1} aria-label={`${t('moveDown')} ${t(block.key)}`} className="focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-full border border-[#D4AF37]/55 text-[#0A2E23] disabled:opacity-30"><ArrowDown size={14} /></button>
-                    <button onClick={() => setActiveEditor(block.id)} data-testid={`button-edit-${block.id}`} aria-label={`${t('edit')} ${t(block.key)}`} className="focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-full border border-[#D4AF37]/55 text-[#0A2E23] hover:bg-[#D4AF37]/10">
-                      <Edit3 size={14} />
-                    </button>
-                    <button onClick={() => duplicateBlock(block.id)} aria-label={`${t('duplicate')} ${t(block.key)}`} className="focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-full border border-[#D4AF37]/55"><Copy size={14} /></button>
-                    <button onClick={() => { if (window.confirm(t('confirmDelete'))) deleteBlock(block.id); }} aria-label={`${t('delete')} ${t(block.key)}`} className="focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-full border border-[#D4AF37]/55 text-[#8c302b]"><Trash2 size={14} /></button>
-                    <button onClick={() => toggleBlock(block.id)} data-testid={`button-toggle-${block.id}`} aria-label={`${t(block.enabled ? 'hide' : 'show')} ${t(block.key)}`} aria-pressed={block.enabled} className={`focus-ring relative h-11 w-12 shrink-0 rounded-full transition ${block.enabled ? 'bg-[#0A2E23]' : 'bg-[#2D2421]/20'}`}>
-                      <span className={`absolute top-3.5 h-4 w-4 rounded-full border border-[#D4AF37] bg-[#FFFDF9] transition-transform ${block.enabled ? 'end-2' : 'start-2'}`} />
-                    </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            {activeBlock && <EditorPanel key={activeBlock.key} block={activeBlock} close={() => setActiveEditor(null)} updateBlock={updateBlock} />}
-          </div>
-          <aside className={`party-preview-column ${view === 'edit' ? 'party-mobile-hidden' : ''}`} aria-label={t('previewView')}>
-            <div className="party-preview-frame"><GuestPage preview onSelectBlock={(id) => { setActiveEditor(id); setView('edit'); }} /></div>
-          </aside>
-        </div>
-      </main>
-    </div>
+    <PartyStudio
+      embedded={embedded}
+      initialEvent={state.partyEvent}
+      initialBlocks={state.blocks}
+      invitationLocale={state.invitationLocale}
+      saveStatus={saveStatus}
+      storageAvailable={storageAvailable}
+      onSave={handleSave}
+      backHref={auth.session ? '/planner/party' : '/'}
+      backLabel={t('projects')}
+      draftTitle={state.partyEvent.title}
+    />
   );
 }
 
