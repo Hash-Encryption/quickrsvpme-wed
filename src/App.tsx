@@ -865,7 +865,13 @@ function WeddingStudioPage({ embedded = false }: { embedded?: boolean }) {
   const { state, ready, setMode } = useEngine();
   const { activeProject, updateActiveEvent, saveStatus, storageError } = useWeddingWorkspace();
   const auth = useAuth();
-  const { t } = useAppLocale();
+  const { t, dir } = useAppLocale();
+  const [previewActive, setPreviewActive] = useState(false);
+
+  const isExistingEvent = auth.events.some((event) => event.id === activeProject.id);
+  const overviewHref = isExistingEvent ? buildProjectRoute('wedding', activeProject.id, 'overview') : undefined;
+  const backHref = isExistingEvent ? overviewHref! : '/planner/wedding';
+  const backLabel = isExistingEvent ? t('weddingOverview') : t('myWeddingsTitle');
 
   useEffect(() => {
     if (ready && state.mode !== 'wedding') {
@@ -892,13 +898,18 @@ function WeddingStudioPage({ embedded = false }: { embedded?: boolean }) {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              {auth.session && <Link href="/studio" data-testid="link-switch-studio" className="focus-ring inline-flex items-center gap-1.5 rounded-full border border-[#D4AF37]/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23] hover:bg-[#D4AF37]/10">
-                <ArrowLeft size={13} /> {t('switchType')}
+              {auth.session && <Link href={backHref} data-testid="link-switch-studio" className="focus-ring inline-flex items-center gap-1.5 rounded-full border border-[#D4AF37]/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23] hover:bg-[#D4AF37]/10">
+                <ArrowLeft className={dir === 'rtl' ? 'rotate-180' : ''} size={13} /> {backLabel}
               </Link>}
-              <Link href={auth.session ? "/" : "/auth"} onClick={() => { if (!auth.session) requestAnonymousDesignTransfer('wedding'); }} data-testid="link-preview-invitation" className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-full border border-[#D4AF37]/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23]">
+              <button
+                type="button"
+                onClick={() => setPreviewActive(true)}
+                data-testid="link-preview-invitation"
+                className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-full border border-[#D4AF37]/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23] hover:bg-[#D4AF37]/10"
+              >
                 <ExternalLink size={14} /> {t('preview')}
-              </Link>
-              {auth.session && <Link href="/scanner" data-testid="link-open-scanner" className="focus-ring inline-flex items-center gap-2 rounded-full bg-[#0A2E23] px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#FFFDF9]">
+              </button>
+              {auth.session && <Link href={isExistingEvent ? buildProjectRoute('wedding', activeProject.id, 'scanner') : '/scanner'} data-testid="link-open-scanner" className="focus-ring inline-flex items-center gap-2 rounded-full bg-[#0A2E23] px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#FFFDF9]">
                 <QrCode size={14} /> {t('doorScanner')}
               </Link>}
             </div>
@@ -913,6 +924,9 @@ function WeddingStudioPage({ embedded = false }: { embedded?: boolean }) {
           rsvpStatus={state.rsvp}
           rsvpResponse={state.weddingResponse}
           onChange={updateActiveEvent}
+          overviewHref={overviewHref}
+          externalPreviewActive={previewActive}
+          onTogglePreview={setPreviewActive}
         />
         {!embedded && auth.session && <div className="mt-8"><GuestManager /></div>}
       </main>
@@ -1114,7 +1128,7 @@ function DraftRoutePage() {
       setError(caught instanceof Error ? caught.message : t('operationFailed'));
     } finally { setPublishing(false); }
   };
-  return <div className="min-h-[100dvh] bg-[#F5F2EC] text-[#17251F]"><header className="sticky top-0 z-40 border-b border-[#D9D2C5] bg-[#FAF8F4]/95 px-5 py-4 backdrop-blur"><div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[.16em] text-[#8B7040]">{t(type)} · {t('draft')}</p><h1 className="text-lg font-semibold">{draft.title}</h1></div><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-3 py-2 text-xs ${allowed === false ? 'bg-[#8c302b]/10 text-[#8c302b]' : 'bg-[#0C2D24]/10 text-[#0C2D24]'}`}>{authorityMessage}</span><button disabled={publishing || !access || (allowed === false && !alreadyPublished)} onClick={() => void publish()} className="min-h-11 rounded-full bg-[#0C2D24] px-5 text-xs font-semibold text-white disabled:opacity-40">{publishing ? t('publishing') : t('publish')}</button><Link href="/" className="min-h-11 rounded-full border border-[#D9D2C5] px-5 py-3 text-xs font-semibold">{t('projects')}</Link></div></div></header>{error && <p className="mx-auto mt-4 max-w-7xl rounded-2xl bg-[#8c302b]/10 p-4 text-sm text-[#8c302b]" role="alert">{error}</p>}<main className="mx-auto max-w-7xl p-4 sm:p-7">{type === 'wedding' ? <WeddingStudioPage embedded /> : <PartyStudioPage embedded />}</main></div>;
+  return <div className="min-h-[100dvh] bg-[#F5F2EC] text-[#17251F]"><header className="sticky top-0 z-40 border-b border-[#D9D2C5] bg-[#FAF8F4]/95 px-5 py-4 backdrop-blur"><div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[.16em] text-[#8B7040]">{t(type)} · {t('draft')}</p><h1 className="text-lg font-semibold">{draft.title}</h1></div><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-3 py-2 text-xs ${allowed === false ? 'bg-[#8c302b]/10 text-[#8c302b]' : 'bg-[#0C2D24]/10 text-[#0C2D24]'}`}>{authorityMessage}</span><button disabled={publishing || !access || (allowed === false && !alreadyPublished)} onClick={() => void publish()} className="min-h-11 rounded-full bg-[#0C2D24] px-5 text-xs font-semibold text-white disabled:opacity-40">{publishing ? t('publishing') : t('publish')}</button><Link href={type === 'wedding' ? '/planner/wedding' : '/planner/party'} className="min-h-11 rounded-full border border-[#D9D2C5] px-5 py-3 text-xs font-semibold">{t(type === 'wedding' ? 'myWeddingsTitle' : 'myPartiesTitle')}</Link></div></div></header>{error && <p className="mx-auto mt-4 max-w-7xl rounded-2xl bg-[#8c302b]/10 p-4 text-sm text-[#8c302b]" role="alert">{error}</p>}<main className="mx-auto max-w-7xl p-4 sm:p-7">{type === 'wedding' ? <WeddingStudioPage embedded /> : <PartyStudioPage embedded />}</main></div>;
 }
 
 function ProjectRoutePage({ type }: { type: ProjectType }) {
@@ -1126,7 +1140,7 @@ function ProjectRoutePage({ type }: { type: ProjectType }) {
   const backendEvent = findAuthenticatedProjectEvent(auth.events, type, eventId);
   const weddingProject = type === 'wedding' ? workspace.projects.find((item) => item.id === eventId) : undefined;
   const project = type === 'wedding'
-    ? weddingProject && weddingProjectSummary(weddingProject)
+    ? (weddingProject ? weddingProjectSummary(weddingProject) : (backendEvent ? backendProjectSummary(backendEvent) : undefined))
     : backendEvent
       ? { ...backendProjectSummary(backendEvent), name: activePartyEventId === eventId ? state.partyEvent.title : backendEvent.title }
       : undefined;
@@ -1140,7 +1154,7 @@ function ProjectRoutePage({ type }: { type: ProjectType }) {
     if (type === 'party' && eventId !== activePartyEventId) openPartyEvent(eventId);
   }, [activePartyEventId, eventId, openPartyEvent, project, ready, setMode, state.mode, type, weddingProject, workspace]);
 
-  if (!ready || (auth.dataLoading && !backendEvent)) return <LoadingPage />;
+  if (!ready || (auth.dataLoading && !backendEvent) || (type === 'wedding' && !workspace.ready && !weddingProject)) return <LoadingPage />;
   if (!project) return <NotFoundPage />;
   if ((weddingProject && workspace.activeProject.id !== weddingProject.id) || (type === 'party' && activePartyEventId !== eventId)) return <LoadingPage />;
 

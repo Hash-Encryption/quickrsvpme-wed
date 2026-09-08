@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  Eye,
   ImagePlus,
   MapPin,
   Minus,
@@ -585,6 +586,11 @@ type WeddingStudioProps = {
   rsvpStatus: "pending" | "accepted" | "declined";
   rsvpResponse: Pick<WeddingRsvp, "guestCount" | "message">;
   onChange: (event: WeddingEventData) => void;
+  overviewHref?: string;
+  onReturnToEvent?: () => void;
+  initialPreview?: boolean;
+  onTogglePreview?: (active: boolean) => void;
+  externalPreviewActive?: boolean;
 };
 
 const builderStepIds = ["information", "artwork", "layout", "motion", "preview"] as const;
@@ -595,8 +601,19 @@ export function WeddingStudio({
   rsvpStatus,
   rsvpResponse,
   onChange,
+  overviewHref,
+  onReturnToEvent,
+  initialPreview,
+  onTogglePreview,
+  externalPreviewActive,
 }: WeddingStudioProps) {
   const { t, dir, locale } = useAppLocale();
+  const [internalPreviewActive, setInternalPreviewActive] = useState(initialPreview ?? false);
+  const isPreviewActive = externalPreviewActive !== undefined ? externalPreviewActive : internalPreviewActive;
+  const setPreviewActive = (active: boolean) => {
+    setInternalPreviewActive(active);
+    onTogglePreview?.(active);
+  };
   const w = (key: Parameters<typeof weddingBuilderT>[1]) => weddingBuilderT(locale, key);
   const builderSteps = builderStepIds.map((id) => ({ id, label: w(id) }));
   const [stepIndex, setStepIndex] = useState(0);
@@ -703,12 +720,41 @@ export function WeddingStudio({
             />
           )}
           {step.id === "preview" && (
-            <div className="wedding-preview-copy">
-              <span>{weddingBuilderT(locale, "realPreview")}</span>
-              <h2>{weddingBuilderT(locale, "previewTitle")}</h2>
-              <p>
-                {weddingBuilderT(locale, "previewHelp")}
-              </p>
+            <div className="wedding-preview-copy space-y-4">
+              <div>
+                <span>{weddingBuilderT(locale, "realPreview")}</span>
+                <h2>{weddingBuilderT(locale, "previewTitle")}</h2>
+                <p>
+                  {weddingBuilderT(locale, "previewHelp")}
+                </p>
+              </div>
+              <div className="flex flex-col gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setPreviewActive(true)}
+                  data-testid="button-preview-invitation-step"
+                  className="focus-ring flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-[#0A2E23] px-6 py-3.5 text-xs font-bold uppercase tracking-[.12em] text-white shadow-md transition hover:bg-[#124234]"
+                >
+                  <Eye size={16} />
+                  {t('previewInvitation')}
+                </button>
+                {overviewHref && (
+                  <a
+                    href={overviewHref}
+                    onClick={(e) => {
+                      if (onReturnToEvent) {
+                        e.preventDefault();
+                        onReturnToEvent();
+                      }
+                    }}
+                    data-testid="link-back-to-overview-step"
+                    className="focus-ring flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-[#D4AF37]/50 bg-white/70 px-6 py-3 text-xs font-semibold text-[#0A2E23] transition hover:bg-white"
+                  >
+                    <ArrowLeft className={dir === 'rtl' ? 'rotate-180' : ''} size={14} />
+                    {t('weddingOverview')}
+                  </a>
+                )}
+              </div>
             </div>
           )}
           <div className="wedding-editor-nav">
@@ -762,6 +808,60 @@ export function WeddingStudio({
           </div>
         </div>
       </div>
+      {isPreviewActive && (
+        <div
+          data-testid="wedding-preview-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t('previewInvitation')}
+          className="fixed inset-0 z-50 flex flex-col bg-[#0C2D24] text-white"
+        >
+          <header className="flex items-center justify-between border-b border-white/10 bg-[#0A2E23] px-5 py-3 sm:px-8">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setPreviewActive(false)}
+                data-testid="button-return-to-editor"
+                className="focus-ring inline-flex min-h-10 items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold text-white transition hover:bg-white/20"
+              >
+                <ArrowLeft className={dir === 'rtl' ? 'rotate-180' : ''} size={14} />
+                {t('returnToEditor')}
+              </button>
+              <span className="hidden text-xs text-white/60 sm:inline">
+                {event.groomName && event.brideName ? `${event.groomName} & ${event.brideName}` : t('weddingInvitation')}
+              </span>
+            </div>
+            {overviewHref && (
+              <a
+                href={overviewHref}
+                onClick={(e) => {
+                  if (onReturnToEvent) {
+                    e.preventDefault();
+                    onReturnToEvent();
+                  }
+                }}
+                data-testid="link-back-to-overview-preview"
+                className="focus-ring text-xs text-[var(--qr-gold)] hover:underline"
+              >
+                {t('weddingOverview')}
+              </a>
+            )}
+          </header>
+          <main className="relative flex flex-1 items-center justify-center overflow-auto p-4 sm:p-6">
+            <div className="w-full max-w-[420px] aspect-[9/16] max-h-[88vh] rounded-3xl overflow-hidden shadow-2xl border border-white/10 bg-black">
+              <WeddingInvitationRenderer
+                key={`modal-${event.presentation.motionPresetId}`}
+                event={previewEvent}
+                guest={guest}
+                rsvpStatus={rsvpStatus}
+                rsvpResponse={rsvpResponse}
+                preview
+                onSubmit={() => undefined}
+              />
+            </div>
+          </main>
+        </div>
+      )}
     </div>
   );
 }

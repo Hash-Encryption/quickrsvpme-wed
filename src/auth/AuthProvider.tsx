@@ -9,6 +9,7 @@ import { toBackendError, type BackendError } from '@/backend/errors';
 import { listEvents } from '@/backend/events';
 import type { BackendEvent, ClientAccount, ClientEntitlement } from '@/backend/types';
 import { accountBootstrapError, createAuthBootstrapScheduler, needsAccountBootstrap, startAccountBootstrap } from './bootstrap';
+import { resolveBuildEntitlements } from '@/app/build-entitlements';
 
 type AuthContextValue = {
   session: Session | null;
@@ -64,7 +65,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       const optional = await bootstrap.optional;
       if (request !== requestRef.current) return;
-      if (optional.entitlements) setEntitlements(optional.entitlements);
+      if (optional.entitlements) {
+        setEntitlements(resolveBuildEntitlements(optional.entitlements, bootstrap.client?.id, true));
+      }
       if (optional.events) setEvents(optional.events);
       if (optional.admin !== undefined) setAdmin(optional.admin);
       setDataLoading(false);

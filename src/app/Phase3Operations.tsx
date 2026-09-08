@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Camera, CameraOff, Check, CircleAlert, Clock3, QrCode, Search, Users, XCircle } from 'lucide-react';
+import { Camera, CameraOff, Check, CircleAlert, Clock3, Edit3, Eye, Mail, QrCode, Search, Send, UserPlus, Users, XCircle } from 'lucide-react';
+import { Link } from 'wouter';
 
 import { createGuest, listGeneralInvitationRequests, listGuests, reviewGeneralInvitationRequest, tagGuest, updateGuest } from '@/backend/phase2';
 import {
@@ -15,7 +16,7 @@ import {
 } from '@/backend/phase3';
 import type { EventGuest, GeneralInvitationRequest } from '@/backend/types';
 import { useAppLocale } from '@/i18n/app-locale';
-import type { ProjectSummary } from './projects';
+import { buildProjectRoute, type ProjectSummary } from './projects';
 
 const emptySummary: EventOperationalSummary = { guest_records: 0, invitation_not_opened: 0, opened_no_rsvp: 0, accepted: 0, declined: 0, pending: 0, confirmed_headcount: 0, checked_in_headcount: 0, remaining_expected: 0, custom_messages: 0 };
 
@@ -26,11 +27,188 @@ export function EventOperationsOverview({ project, rsvpDeadline }: { project: Pr
   useEffect(() => { setError(''); void getEventOperationalSummary(project.id).then(setSummary).catch(() => setError(t('operationFailed'))); }, [project.id, t]);
   const ledger = [[t('confirmedHeadcount'), summary.confirmed_headcount], [t('checkedInHeadcount'), summary.checked_in_headcount], [t('remainingExpected'), summary.remaining_expected]] as const;
   const states = [[t('guestRecords'), summary.guest_records], [t('notOpened'), summary.invitation_not_opened], [t('openedNoRsvp'), summary.opened_no_rsvp], [t('accepted'), summary.accepted], [t('declined'), summary.declined], [t('pending'), summary.pending], [t('customMessages'), summary.custom_messages]] as const;
+
   return <div>
-    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs font-bold uppercase tracking-[.16em] text-[#8B7040]">{t('eventOperations')}</p><h1 className="mt-2 text-3xl font-semibold tracking-[-.04em] sm:text-5xl">{project.name}</h1><p className="mt-2 text-sm text-[#756F66]"><bdi>{project.date} · {project.venue}</bdi>{rsvpDeadline && <> · {t('rsvpDeadline')}: <bdi>{rsvpDeadline}</bdi></>}</p></div><span className="w-fit rounded-full bg-[#0C2D24] px-4 py-2 text-[10px] font-bold uppercase tracking-[.12em] text-white">{t('backendAuthoritative')}</span></div>
+    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+      <div>
+        <p className="text-xs font-bold uppercase tracking-[.16em] text-[#8B7040]">{t('weddingOverview')}</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-[-.04em] sm:text-5xl">{project.name}</h1>
+        <p className="mt-2 text-sm text-[#756F66]">
+          <bdi>{project.date} · {project.venue}</bdi>
+          {rsvpDeadline && <> · {t('rsvpDeadline')}: <bdi>{rsvpDeadline}</bdi></>}
+        </p>
+      </div>
+      <span className="w-fit rounded-full bg-[#0C2D24] px-4 py-2 text-[10px] font-bold uppercase tracking-[.12em] text-white">
+        {t('backendAuthoritative')}
+      </span>
+    </div>
     {error && <p className="mt-5 rounded-2xl bg-[#8c302b]/10 p-4 text-sm text-[#8c302b]" role="alert">{error}</p>}
-    <section className="mt-7 overflow-hidden rounded-3xl bg-[#0C2D24] text-white"><div className="grid sm:grid-cols-3">{ledger.map(([label, value], index) => <div key={label} className={`p-6 sm:p-8 ${index ? 'border-t border-white/10 sm:border-s' : ''}`}><p className="text-[10px] font-bold uppercase tracking-[.14em] text-[#D4B363]">{label}</p><p className="mt-3 text-5xl font-semibold tracking-[-.06em]">{value}</p></div>)}</div></section>
-    <section className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{states.map(([label, value]) => <div key={label} className="qr-card p-5"><p className="text-xs text-[#756F66]">{label}</p><p className="mt-2 text-2xl font-bold text-[var(--qr-primary)]">{value}</p></div>)}</section>
+
+    {/* 4 Core Operational Action Cards (Mobile-first Wedding Home) */}
+    <section className="mt-6 grid gap-4 sm:grid-cols-2" aria-label={t('quickActions')}>
+      {/* 1. INVITATION CARD */}
+      <article className="qr-card flex flex-col justify-between p-5 sm:p-6 border border-[#E6DFD3] hover:border-[var(--qr-primary)] transition">
+        <div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#0C2D24] text-[#D4B363]">
+              <Mail size={18} aria-hidden="true" />
+            </span>
+            <span className="rounded-full bg-[#EBF5F0] px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-[#1B6344]">
+              {t('live')}
+            </span>
+          </div>
+          <h2 className="qr-card-title mt-4 text-lg font-bold text-[var(--qr-primary)]">
+            {t('invitation')}
+          </h2>
+          <p className="mt-1 text-xs text-[#756F66]">
+            {t('localInvitationReady')}
+          </p>
+        </div>
+        <div className="mt-5 flex flex-wrap gap-2 pt-4 border-t border-[var(--qr-divider)]">
+          <Link
+            href={buildProjectRoute(project.type, project.id, 'invitation')}
+            data-testid="button-overview-edit-invitation"
+            className="qr-button qr-button--primary min-h-11 flex-1 justify-center text-xs"
+          >
+            <Edit3 size={14} aria-hidden="true" />
+            {t('editInvitation')}
+          </Link>
+          <Link
+            href={buildProjectRoute(project.type, project.id, 'invitation')}
+            data-testid="button-overview-preview-invitation"
+            className="qr-button qr-button--secondary min-h-11 justify-center text-xs"
+          >
+            <Eye size={14} aria-hidden="true" />
+            {t('preview')}
+          </Link>
+        </div>
+      </article>
+
+      {/* 2. GUESTS CARD (with Guided Discoverability) */}
+      <article className="qr-card flex flex-col justify-between p-5 sm:p-6 border border-[#E6DFD3] hover:border-[var(--qr-primary)] transition">
+        <div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#0C2D24] text-[#D4B363]">
+              <Users size={18} aria-hidden="true" />
+            </span>
+            <span className="text-xs font-semibold text-[#756F66]">
+              {summary.guest_records} {t('guestRecords')}
+            </span>
+          </div>
+          <h2 className="qr-card-title mt-4 text-lg font-bold text-[var(--qr-primary)]">
+            {summary.guest_records === 0 ? t('nextAddGuests') : t('guests')}
+          </h2>
+          <p className="mt-1 text-xs text-[#756F66]">
+            {summary.guest_records === 0
+              ? t('noGuestsYet')
+              : `${summary.accepted} ${t('accepted')} · ${summary.pending} ${t('pending')}`}
+          </p>
+        </div>
+        <div className="mt-5 pt-4 border-t border-[var(--qr-divider)]">
+          {summary.guest_records === 0 ? (
+            <Link
+              href={buildProjectRoute(project.type, project.id, 'guests')}
+              data-testid="button-overview-add-guests"
+              className="qr-button qr-button--primary min-h-11 w-full justify-center text-xs font-bold"
+            >
+              <UserPlus size={15} aria-hidden="true" />
+              {t('addGuests')}
+            </Link>
+          ) : (
+            <Link
+              href={buildProjectRoute(project.type, project.id, 'guests')}
+              data-testid="button-overview-manage-guests"
+              className="qr-button qr-button--secondary min-h-11 w-full justify-center text-xs font-bold"
+            >
+              <Users size={15} aria-hidden="true" />
+              {t('manageGuests')}
+            </Link>
+          )}
+        </div>
+      </article>
+
+      {/* 3. SEND CARD */}
+      <article className="qr-card flex flex-col justify-between p-5 sm:p-6 border border-[#E6DFD3] hover:border-[var(--qr-primary)] transition">
+        <div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#0C2D24] text-[#D4B363]">
+              <Send size={18} aria-hidden="true" />
+            </span>
+            <span className="text-xs font-semibold text-[#756F66]">
+              {t('sendTitle')}
+            </span>
+          </div>
+          <h2 className="qr-card-title mt-4 text-lg font-bold text-[var(--qr-primary)]">
+            {t('sendInvitations')}
+          </h2>
+          <p className="mt-1 text-xs text-[#756F66]">
+            {t('sendHelp')}
+          </p>
+        </div>
+        <div className="mt-5 pt-4 border-t border-[var(--qr-divider)]">
+          <Link
+            href={buildProjectRoute(project.type, project.id, 'send')}
+            data-testid="button-overview-send"
+            className="qr-button qr-button--secondary min-h-11 w-full justify-center text-xs font-bold"
+          >
+            <Send size={14} aria-hidden="true" />
+            {t('sendInvitations')}
+          </Link>
+        </div>
+      </article>
+
+      {/* 4. EVENT DAY / SCANNER CARD */}
+      <article className="qr-card flex flex-col justify-between p-5 sm:p-6 border border-[#E6DFD3] hover:border-[var(--qr-primary)] transition">
+        <div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#0C2D24] text-[#D4B363]">
+              <QrCode size={18} aria-hidden="true" />
+            </span>
+            <span className="text-xs font-semibold text-[#756F66]">
+              {summary.checked_in_headcount} / {summary.confirmed_headcount || '0'} {t('checkedIn')}
+            </span>
+          </div>
+          <h2 className="qr-card-title mt-4 text-lg font-bold text-[var(--qr-primary)]">
+            {t('eventDay')}
+          </h2>
+          <p className="mt-1 text-xs text-[#756F66]">
+            {t('scannerHelp')} {project.name}
+          </p>
+        </div>
+        <div className="mt-5 pt-4 border-t border-[var(--qr-divider)]">
+          <Link
+            href={buildProjectRoute(project.type, project.id, 'scanner')}
+            data-testid="button-overview-scanner"
+            className="qr-button qr-button--secondary min-h-11 w-full justify-center text-xs font-bold"
+          >
+            <QrCode size={14} aria-hidden="true" />
+            {t('doorScanner')}
+          </Link>
+        </div>
+      </article>
+    </section>
+
+    {/* Operational Summary Ledger */}
+    <section className="mt-7 overflow-hidden rounded-3xl bg-[#0C2D24] text-white">
+      <div className="grid sm:grid-cols-3">
+        {ledger.map(([label, value], index) => (
+          <div key={label} className={`p-6 sm:p-8 ${index ? 'border-t border-white/10 sm:border-s' : ''}`}>
+            <p className="text-[10px] font-bold uppercase tracking-[.14em] text-[#D4B363]">{label}</p>
+            <p className="mt-3 text-5xl font-semibold tracking-[-.06em]">{value}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    {/* Detailed Counts Breakdown */}
+    <section className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {states.map(([label, value]) => (
+        <div key={label} className="qr-card p-5">
+          <p className="text-xs text-[#756F66]">{label}</p>
+          <p className="mt-2 text-2xl font-bold text-[var(--qr-primary)]">{value}</p>
+        </div>
+      ))}
+    </section>
   </div>;
 }
 

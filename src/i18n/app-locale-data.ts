@@ -106,6 +106,17 @@ const en = {
   templateFamily: 'Template family',
   customBadgeText: 'Badge text',
   customBadgePlaceholder: 'e.g. EXCLUSIVE INVITATION',
+  weddingOverview: 'Wedding Overview',
+  editInvitation: 'Edit Invitation',
+  previewInvitation: 'Preview Invitation',
+  returnToEditor: 'Return to Editor',
+  addGuests: 'Add Guests',
+  manageGuests: 'Manage Guests',
+  sendInvitations: 'Send Invitations',
+  eventDay: 'Event Day',
+  nextAddGuests: 'Next: Add your guests',
+  noGuestsYet: 'No guests added yet',
+  backToOverview: 'Back to Wedding Overview',
 } as const;
 
 export type AppTranslationKey = keyof typeof en;
@@ -215,6 +226,17 @@ const ar: Record<AppTranslationKey, string> = {
   templateFamily: 'عائلة القالب',
   customBadgeText: 'نص الشارة',
   customBadgePlaceholder: 'مثال: دعوة خاصة ومميزة',
+  weddingOverview: 'نظرة عامة على الزفاف',
+  editInvitation: 'تعديل الدعوة',
+  previewInvitation: 'معاينة الدعوة',
+  returnToEditor: 'العودة إلى المحرر',
+  addGuests: 'إضافة ضيوف',
+  manageGuests: 'إدارة الضيوف',
+  sendInvitations: 'إرسال الدعوات',
+  eventDay: 'يوم المناسبة',
+  nextAddGuests: 'الخطوة التالية: أضف ضيوفك',
+  noGuestsYet: 'لم تتم إضافة ضيوف بعد',
+  backToOverview: 'العودة إلى نظرة عامة',
 };
 
 export const appTranslations = { ar, en } satisfies Record<AppLocale, Record<AppTranslationKey, string>>;

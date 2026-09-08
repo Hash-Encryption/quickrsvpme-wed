@@ -164,9 +164,14 @@ export function WeddingPlannerPage() {
                         {event.city || event.venue_name || '—'}
                       </span>
                     </div>
-                    <h3 className="qr-card-title mt-3 text-lg font-bold text-[var(--qr-primary)] break-words">
-                      {event.title}
-                    </h3>
+                    <Link
+                      href={buildProjectRoute('wedding', event.id, 'overview')}
+                      className="focus-ring block mt-3"
+                    >
+                      <h3 className="qr-card-title text-lg font-bold text-[var(--qr-primary)] hover:underline break-words">
+                        {event.title}
+                      </h3>
+                    </Link>
                     <p className="mt-2 flex items-center gap-2 text-xs text-[var(--qr-secondary)]">
                       <CalendarDays size={14} className="shrink-0 qr-gold-text" aria-hidden="true" />
                       <span>{formatDate(event.starts_at)}</span>
