@@ -32,7 +32,7 @@ export function DashboardPage({ projects, drafts, account, commercial, product, 
   const shownDrafts = product ? drafts.filter((item) => item.type === product) : drafts;
   const current = shownProjects.filter((item) => item.lifecycleStatus === 'planning' || item.lifecycleStatus === 'active');
   const history = shownProjects.filter((item) => item.lifecycleStatus !== 'planning' && item.lifecycleStatus !== 'active');
-  const run = async (key: string, operation: Promise<void>) => { setBusy(key); setError(''); try { await operation; } catch { setError(t('operationFailed')); } finally { setBusy(''); } };
+  const run = async (key: string, operation: Promise<void>) => { setBusy(key); setError(''); try { await operation; } catch (caught) { const message = caught instanceof Error ? caught.message : ''; if (/linked|published|event/i.test(message)) { setError(t('cannotDeletePublishedDraft')); } else { setError(t('operationFailed')); } } finally { setBusy(''); } };
   const formatDate = (value?: string | null) => value ? new Date(value).toLocaleDateString(locale === 'ar' ? 'ar-SA' : 'en') : '—';
 
   const eventCards = (items: DashboardProject[], empty: string) => items.length === 0 ? <div className="mt-4"><EmptyState title={empty} /></div> : <div className="mt-4 grid gap-4 md:grid-cols-2">{items.map((item) => {

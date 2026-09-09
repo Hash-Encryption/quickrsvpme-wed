@@ -90,9 +90,41 @@ export async function uploadDraftArtwork(draftId: string, dataUrl: string, mimeT
   return asset.id;
 }
 
+export type DeleteDraftPlanAsset = {
+  asset_id: string;
+  bucket_id: string;
+  object_path: string;
+};
+
 export async function deleteDesignDraft(id: string): Promise<void> {
-  const { error } = await getSupabase().from('design_drafts').delete().eq('id', id);
-  if (error) fail(error);
+  const supabase = getSupabase();
+
+  // 1. Authoritative preflight: verifies auth, ownership, unpublished status, and returns assets
+  const { data: plan, error: planError } = await supabase.rpc('get_design_draft_delete_plan', { p_draft_id: id });
+  if (planError) fail(planError);
+
+  const assets = (plan ?? []) as DeleteDraftPlanAsset[];
+
+  // 2. Storage API removal only after successful preflight
+  if (assets.length > 0) {
+    const byBucket = new Map<string, string[]>();
+    for (const asset of assets) {
+      if (asset.bucket_id && asset.object_path) {
+        const list = byBucket.get(asset.bucket_id) ?? [];
+        list.push(asset.object_path);
+        byBucket.set(asset.bucket_id, list);
+      }
+    }
+
+    for (const [bucketId, paths] of byBucket.entries()) {
+      const { error: removeError } = await supabase.storage.from(bucketId).remove(paths);
+      if (removeError) fail(removeError);
+    }
+  }
+
+  // 3. Authoritative database RPC: rechecks conditions, cleans metadata rows, and deletes draft
+  const { error: rpcError } = await supabase.rpc('delete_design_draft', { p_draft_id: id });
+  if (rpcError) fail(rpcError);
 }
 
 async function templateVersion(product: ProductId, rendererKey: string): Promise<{ id: string; render_snapshot: Record<string, unknown> } | null> {

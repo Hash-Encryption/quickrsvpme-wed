@@ -132,10 +132,10 @@ test('Temporary Build Entitlements: A through G validation', () => {
   setBuildAccessPolicyOverride(null);
   assert.equal(isBuildAccessPolicyEnabled(), true);
 
-  // F: Bounded allowance strictly equals 5 events per product
-  assert.equal(TEMPORARY_BUILD_EVENT_ALLOWANCE, 5);
+  // F: Bounded allowance strictly equals 20 events per product
+  assert.equal(TEMPORARY_BUILD_EVENT_ALLOWANCE, 20);
 
-  // G: commercialSummary correctly calculates 5 limit and 5 remaining for provisional entitlements
+  // G: commercialSummary correctly calculates 20 limit and 20 remaining for provisional entitlements
   const source: CommercialSource = {
     products: [{ id: 'wedding', enabled: true }, { id: 'party', enabled: true }],
     policies: [
@@ -148,26 +148,26 @@ test('Temporary Build Entitlements: A through G validation', () => {
 
   const weddingSummary = commercialSummary('wedding', resolved, source, events);
   assert.equal(weddingSummary.status, 'active');
-  assert.equal(weddingSummary.limit, 5);
+  assert.equal(weddingSummary.limit, 20);
   assert.equal(weddingSummary.used, 0);
-  assert.equal(weddingSummary.remaining, 5);
+  assert.equal(weddingSummary.remaining, 20);
 
   const partySummary = commercialSummary('party', resolved, source, events);
   assert.equal(partySummary.status, 'active');
-  assert.equal(partySummary.limit, 5);
+  assert.equal(partySummary.limit, 20);
   assert.equal(partySummary.used, 0);
-  assert.equal(partySummary.remaining, 5);
+  assert.equal(partySummary.remaining, 20);
 
-  // When 2 events exist, remaining is 3
+  // When 2 events exist, remaining is 18
   const activeEvents: BackendEvent[] = [
     { id: 'ev-1', product_id: 'wedding' } as BackendEvent,
     { id: 'ev-2', product_id: 'wedding' } as BackendEvent,
   ];
   const publicationsWithEvents = [{ product_id: 'wedding' as const, event_id: 'ev-1' }, { product_id: 'wedding' as const, event_id: 'ev-2' }];
   const usedSummary = commercialSummary('wedding', resolved, { ...source, publications: publicationsWithEvents }, activeEvents);
-  assert.equal(usedSummary.limit, 5);
+  assert.equal(usedSummary.limit, 20);
   assert.equal(usedSummary.used, 2);
-  assert.equal(usedSummary.remaining, 3);
+  assert.equal(usedSummary.remaining, 18);
 });
 
 test('Localization Completeness: new strings exist in both Arabic and English', () => {
@@ -183,6 +183,7 @@ test('Localization Completeness: new strings exist in both Arabic and English', 
     'nextAddGuests',
     'noGuestsYet',
     'backToOverview',
+    'cannotDeletePublishedDraft',
   ] as const;
 
   for (const key of requiredKeys) {

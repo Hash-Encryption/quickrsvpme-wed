@@ -1,6 +1,6 @@
 import type { ClientEntitlement, ProductId } from '@/backend/types';
 
-export const TEMPORARY_BUILD_EVENT_ALLOWANCE = 5;
+export const TEMPORARY_BUILD_EVENT_ALLOWANCE = 20;
 
 let runtimeOverrideEnabled: boolean | null = null;
 

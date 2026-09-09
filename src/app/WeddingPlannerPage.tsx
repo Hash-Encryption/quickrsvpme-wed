@@ -4,7 +4,7 @@ import { Link } from 'wouter';
 import { CustomerBottomNav, EmptyState, ErrorState, LoadingState, MobileHeader, PageShell, StatusPill } from '@/components/customer-ui';
 import { AppLanguageControl, useAppLocale } from '@/i18n/app-locale';
 import { useAuth } from '@/auth/AuthProvider';
-import { listDesignDrafts, type DesignDraft } from '@/backend/phase2';
+import { deleteDesignDraft, listDesignDrafts, type DesignDraft } from '@/backend/phase2';
 import { buildProjectRoute } from './projects';
 
 export function WeddingPlannerPage() {
@@ -12,7 +12,27 @@ export function WeddingPlannerPage() {
   const auth = useAuth();
   const [drafts, setDrafts] = useState<DesignDraft<Record<string, unknown>>[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
+
+  const handleDeleteDraft = async (id: string) => {
+    if (!window.confirm(t('confirmDelete'))) return;
+    setDeletingId(id);
+    setError('');
+    try {
+      await deleteDesignDraft(id);
+      await loadData();
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : '';
+      if (/linked|published|event/i.test(message)) {
+        setError(t('cannotDeletePublishedDraft'));
+      } else {
+        setError(t('operationFailed'));
+      }
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -137,14 +157,23 @@ export function WeddingPlannerPage() {
                       </p>
                     </div>
 
-                    <div className="mt-6 pt-4 border-t border-[var(--qr-divider)] flex items-center justify-between">
+                    <div className="mt-6 pt-4 border-t border-[var(--qr-divider)] flex items-center justify-between gap-2">
                       <Link
                         href={`/drafts/wedding/${draft.id}`}
                         data-testid={`link-continue-wedding-${draft.id}`}
-                        className="qr-button qr-button--primary text-xs w-full justify-center"
+                        className="qr-button qr-button--primary text-xs flex-1 justify-center"
                       >
                         {t('continueInvitation')}
                       </Link>
+                      <button
+                        type="button"
+                        data-testid={`button-delete-wedding-draft-${draft.id}`}
+                        onClick={() => void handleDeleteDraft(draft.id)}
+                        disabled={deletingId === draft.id}
+                        className="qr-button qr-button--danger text-xs"
+                      >
+                        {deletingId === draft.id ? t('loading') : t('delete')}
+                      </button>
                     </div>
                   </article>
                 );
