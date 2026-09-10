@@ -9,11 +9,16 @@ import {
   ArrowRight,
   ArrowUp,
   Eye,
+  FileText,
   ImagePlus,
   MapPin,
   Minus,
   Music2,
+  Palette,
   Plus,
+  RotateCcw,
+  Sliders,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
@@ -61,6 +66,11 @@ import {
   normalizeWeddingBackground,
   normalizeWeddingPoint,
 } from "./upload";
+import {
+  WeddingContextualSheet,
+  type WeddingEditorTab,
+  type WeddingDirectEditTarget,
+} from "./WeddingContextualSheet";
 import { invitationT } from "../i18n/invitation";
 import { localeDirection, type InvitationLocale } from "../i18n/locale";
 import { useAppLocale } from "../i18n/app-locale";
@@ -79,6 +89,7 @@ type WeddingRendererProps = {
   onSelectBlock?: (id: WeddingTransformBlockId) => void;
   onMoveBlock?: (id: WeddingTransformBlockId, x: number, y: number) => void;
   onMoveGlobal?: (x: number, y: number) => void;
+  forceSettled?: boolean;
 };
 
 type WeddingStyleProperties = CSSProperties & {
@@ -106,6 +117,7 @@ export function WeddingInvitationRenderer({
   onSelectBlock,
   onMoveBlock,
   onMoveGlobal,
+  forceSettled,
 }: WeddingRendererProps) {
   const template =
     WeddingTemplateRegistry[event.templateId as WeddingVisualTemplateId] ??
@@ -154,6 +166,7 @@ export function WeddingInvitationRenderer({
       backgroundMediaUrl={event.backgroundMediaUrl}
       preview={preview}
       style={style}
+      forceSettled={forceSettled}
       renderScene={(_scene, playback) => (
         <WeddingInvitationSceneRenderer
           blocks={semanticBlocks}
@@ -591,6 +604,7 @@ type WeddingStudioProps = {
   initialPreview?: boolean;
   onTogglePreview?: (active: boolean) => void;
   externalPreviewActive?: boolean;
+  onSave?: () => void;
 };
 
 const builderStepIds = ["information", "artwork", "layout", "motion", "preview"] as const;
@@ -606,6 +620,7 @@ export function WeddingStudio({
   initialPreview,
   onTogglePreview,
   externalPreviewActive,
+  onSave,
 }: WeddingStudioProps) {
   const { t, dir, locale } = useAppLocale();
   const [internalPreviewActive, setInternalPreviewActive] = useState(initialPreview ?? false);
@@ -615,10 +630,15 @@ export function WeddingStudio({
     onTogglePreview?.(active);
   };
   const w = (key: Parameters<typeof weddingBuilderT>[1]) => weddingBuilderT(locale, key);
-  const builderSteps = builderStepIds.map((id) => ({ id, label: w(id) }));
-  const [stepIndex, setStepIndex] = useState(0);
+
+  const [activeTab, setActiveTab] = useState<WeddingEditorTab>("information");
+  const [directTarget, setDirectTarget] = useState<WeddingDirectEditTarget>(null);
+  const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [selectedBlock, setSelectedBlock] = useState<WeddingTransformBlockId>("principals");
+  const [replayKey, setReplayKey] = useState(0);
+  const [isSettled, setIsSettled] = useState(false);
   const [transientVisual, setTransientVisual] = useState<WeddingEventData["visual"] | null>(null);
+
   const dragRef = useRef<{
     pointerId: number;
     x: number;
@@ -626,18 +646,33 @@ export function WeddingStudio({
     start: { x: number; y: number };
     position: { x: number; y: number };
   } | null>(null);
-  const step = builderSteps[stepIndex];
+
   const update = (patch: Partial<WeddingEventData>) =>
     onChange({ ...event, ...patch });
-  const updateStyle = (patch: Partial<WeddingEventData["style"]>) =>
-    update({ style: { ...event.style, ...patch } });
   const updatePresentation = (
     patch: Partial<WeddingEventData["presentation"]>,
   ) => update({ presentation: { ...event.presentation, ...patch } });
-  const moveContent = (x: number, y: number) => updatePresentation({ transforms: { ...event.presentation.transforms, global: { ...event.presentation.transforms.global, x, y } } });
-  const moveBlock = (id: WeddingTransformBlockId, x: number, y: number) => updatePresentation({ transforms: { ...event.presentation.transforms, blocks: { ...event.presentation.transforms.blocks, [id]: { ...(event.presentation.transforms.blocks[id] ?? defaultWeddingTransform), x, y } } } });
-  const positioning = step.id === "artwork" && event.visual.source === "uploaded-background" && event.visual.fitMode === "fill";
+  const moveContent = (x: number, y: number) =>
+    updatePresentation({
+      transforms: {
+        ...event.presentation.transforms,
+        global: { ...event.presentation.transforms.global, x, y },
+      },
+    });
+  const moveBlock = (id: WeddingTransformBlockId, x: number, y: number) =>
+    updatePresentation({
+      transforms: {
+        ...event.presentation.transforms,
+        blocks: {
+          ...event.presentation.transforms.blocks,
+          [id]: { ...(event.presentation.transforms.blocks[id] ?? defaultWeddingTransform), x, y },
+        },
+      },
+    });
+
+  const positioning = event.visual.source === "uploaded-background" && event.visual.fitMode === "fill";
   const previewEvent = transientVisual ? { ...event, visual: transientVisual } : event;
+
   const startPosition = (pointerEvent: ReactPointerEvent<HTMLDivElement>) => {
     if (!positioning || pointerEvent.button !== 0 || event.visual.source !== "uploaded-background") return;
     pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
@@ -649,6 +684,7 @@ export function WeddingStudio({
       position: event.visual.backgroundPosition,
     };
   };
+
   const movePosition = (pointerEvent: ReactPointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== pointerEvent.pointerId || event.visual.source !== "uploaded-background") return;
@@ -663,6 +699,7 @@ export function WeddingStudio({
     drag.position = position;
     setTransientVisual({ ...event.visual, backgroundPosition: position, focalPoint: position });
   };
+
   const finishPosition = (pointerId: number) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== pointerId || event.visual.source !== "uploaded-background") return;
@@ -670,144 +707,239 @@ export function WeddingStudio({
     setTransientVisual(null);
     update({ visual: { ...event.visual, backgroundPosition: drag.position, focalPoint: drag.position } });
   };
+
+  const handleSelectBlock = (blockId: WeddingTransformBlockId) => {
+    setSelectedBlock(blockId);
+    const targetMap: Record<WeddingTransformBlockId, WeddingDirectEditTarget> = {
+      principals: "principals",
+      "date-time": "date-time",
+      venue: "venue",
+      occasion: "occasion",
+      hosts: "hosts",
+      opening: "opening",
+      rsvp: "rsvp",
+    };
+    setDirectTarget(targetMap[blockId] ?? "principals");
+    setActiveTab("information");
+    setIsSheetOpen(true);
+  };
+
+  const handleSelectArtwork = () => {
+    setActiveTab("design");
+    setDirectTarget("artwork");
+    setIsSheetOpen(true);
+  };
+
+  const handleTabClick = (tab: WeddingEditorTab) => {
+    if (isSheetOpen && activeTab === tab && directTarget === null) {
+      setIsSheetOpen(false);
+      onSave?.();
+    } else {
+      setActiveTab(tab);
+      setDirectTarget(null);
+      setIsSheetOpen(true);
+    }
+  };
+
+  const handleCloseSheet = () => {
+    setIsSheetOpen(false);
+    setDirectTarget(null);
+    onSave?.();
+  };
+
+  const handleReplay = () => {
+    setIsSettled(false);
+    setReplayKey((k) => k + 1);
+  };
+
   return (
-    <div className="wedding-studio">
-      <nav className="wedding-stepper" aria-label={w("builderSteps")}>
-        {builderSteps.map((item, index) => (
-          <button
-            key={item.id}
-            onClick={() => setStepIndex(index)}
-            className={index === stepIndex ? "is-active" : ""}
-            aria-current={index === stepIndex ? "step" : undefined}
-          >
-            <span>{index + 1}</span>
-            {item.label}
-          </button>
-        ))}
-      </nav>
-      <div className="wedding-studio-grid">
-        <div className="wedding-editor-panel">
-          {step.id === "information" && (
-            <>
-              <StepHeading kicker={w("informationKicker")} title={w("informationTitle")} description={w("informationHelp")} />
-              <label className="wedding-locale-field">
-                <span>{t("invitationLanguage")}</span>
-                <select data-testid="select-wedding-invitation-locale" value={event.invitationLocale} onChange={(changeEvent) => update({ invitationLocale: changeEvent.target.value as InvitationLocale })}>
-                  <option value="ar">{t("arabic")}</option><option value="en">{t("english")}</option>
-                </select>
-              </label>
-              <DetailsStep event={event} update={update} />
-            </>
-          )}
-          {step.id === "artwork" && (
-            <>
-              <TemplateStep event={event} update={update} />
-              <ArtworkControls event={event} update={update} />
-              <details className="wedding-fine-tune">
-                <summary>{w("fineTune")}</summary>
-                <SafeZoneControls event={event} updatePresentation={updatePresentation} />
-                <StyleStep event={event} update={update} updateStyle={updateStyle} />
-              </details>
-            </>
-          )}
-          {(step.id === "layout" || step.id === "motion") && (
-            <PresentationStep
-              event={event}
-              updatePresentation={updatePresentation}
-              kind={step.id}
-              selectedBlock={selectedBlock}
-              onSelectBlock={setSelectedBlock}
-            />
-          )}
-          {step.id === "preview" && (
-            <div className="wedding-preview-copy space-y-4">
-              <div>
-                <span>{weddingBuilderT(locale, "realPreview")}</span>
-                <h2>{weddingBuilderT(locale, "previewTitle")}</h2>
-                <p>
-                  {weddingBuilderT(locale, "previewHelp")}
-                </p>
-              </div>
-              <div className="flex flex-col gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setPreviewActive(true)}
-                  data-testid="button-preview-invitation-step"
-                  className="focus-ring flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-[#0A2E23] px-6 py-3.5 text-xs font-bold uppercase tracking-[.12em] text-white shadow-md transition hover:bg-[#124234]"
-                >
-                  <Eye size={16} />
-                  {t('previewInvitation')}
-                </button>
-                {overviewHref && (
-                  <a
-                    href={overviewHref}
-                    onClick={(e) => {
-                      if (onReturnToEvent) {
-                        e.preventDefault();
-                        onReturnToEvent();
-                      }
-                    }}
-                    data-testid="link-back-to-overview-step"
-                    className="focus-ring flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-[#D4AF37]/50 bg-white/70 px-6 py-3 text-xs font-semibold text-[#0A2E23] transition hover:bg-white"
-                  >
-                    <ArrowLeft className={dir === 'rtl' ? 'rotate-180' : ''} size={14} />
-                    {t('weddingOverview')}
-                  </a>
-                )}
-              </div>
-            </div>
-          )}
-          <div className="wedding-editor-nav">
-            <button
-              onClick={() => setStepIndex((value) => Math.max(0, value - 1))}
-              disabled={stepIndex === 0}
+    <div className="wedding-studio wedding-studio--modern">
+      {/* Top Banner / Toolbar */}
+      <div className="wedding-studio-header">
+        <div className="wedding-studio-toolbar-left">
+          {overviewHref && (
+            <a
+              href={overviewHref}
+              onClick={(e) => {
+                if (onReturnToEvent) {
+                  e.preventDefault();
+                  onReturnToEvent();
+                }
+              }}
+              data-testid="link-back-to-overview-step"
+              className="focus-ring wedding-back-btn"
             >
-              {dir === "rtl" ? <ChevronRight /> : <ChevronLeft />} {t("previous")}
-            </button>
-            <button
-              className="is-primary"
-              onClick={() =>
-                setStepIndex((value) =>
-                  Math.min(builderSteps.length - 1, value + 1),
-                )
-              }
-              disabled={stepIndex === builderSteps.length - 1}
-            >
-              {t("next")} {dir === "rtl" ? <ChevronLeft /> : <ChevronRight />}
-            </button>
-          </div>
+              <ArrowLeft className={dir === 'rtl' ? 'rotate-180' : ''} size={14} />
+              <span>{t('weddingOverview')}</span>
+            </a>
+          )}
+          <span className="wedding-pill-badge">9:16</span>
+          <span className="wedding-hint-text">{w("tapToEdit")}</span>
         </div>
-        <div className="wedding-live-preview">
-          <div className="wedding-phone-label">
-            <span>9:16</span>
-            <b>{t("guestPreview")}</b>
-          </div>
-          <div className="wedding-preview-canvas">
+        <div className="wedding-studio-toolbar-right">
+          <button
+            type="button"
+            onClick={handleReplay}
+            data-testid="button-replay-invitation"
+            aria-label={w("replay")}
+            className="focus-ring wedding-toolbar-btn"
+            title={w("replay")}
+          >
+            <RotateCcw size={14} />
+            <span>{w("replay")}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setPreviewActive(true)}
+            data-testid="button-preview-invitation-canvas"
+            aria-label={t("previewInvitation")}
+            className="focus-ring wedding-toolbar-btn is-primary"
+            title={t("previewInvitation")}
+          >
+            <Eye size={14} />
+            <span>{t("preview")}</span>
+          </button>
+          {/* Backwards-compatibility hook for button-preview-invitation-step */}
+          <button
+            type="button"
+            onClick={() => setPreviewActive(true)}
+            data-testid="button-preview-invitation-step"
+            className="sr-only"
+            aria-hidden="true"
+            tabIndex={-1}
+          >
+            {t('previewInvitation')}
+          </button>
+        </div>
+      </div>
+
+      {/* Main Studio View: Centered 9:16 Preview Canvas */}
+      <div className="wedding-studio-main">
+        <div className="wedding-live-preview wedding-live-preview--dominant">
+          <div
+            className="wedding-preview-canvas wedding-preview-canvas--interactive"
+            onClick={(e) => {
+              const target = e.target as HTMLElement;
+              if (
+                !target.closest(".wedding-custom-block") &&
+                !target.closest(".wedding-global-drag-handle") &&
+                !target.closest(".wedding-position-surface")
+              ) {
+                handleSelectArtwork();
+              }
+            }}
+          >
             <WeddingInvitationRenderer
-              key={event.presentation.motionPresetId}
+              key={`${event.presentation.motionPresetId}-${replayKey}`}
               event={previewEvent}
               guest={guest}
               rsvpStatus={rsvpStatus}
               rsvpResponse={rsvpResponse}
               preview
               onSubmit={() => undefined}
-              selectedBlock={step.id === "layout" ? selectedBlock : undefined}
-              onSelectBlock={step.id === "layout" ? setSelectedBlock : undefined}
-              onMoveBlock={step.id === "layout" ? moveBlock : undefined}
-              onMoveGlobal={step.id === "layout" ? moveContent : undefined}
+              selectedBlock={selectedBlock}
+              onSelectBlock={handleSelectBlock}
+              onMoveBlock={moveBlock}
+              onMoveGlobal={moveContent}
+              forceSettled={isSettled}
             />
-            {positioning && <div
-              className="wedding-position-surface"
-              onPointerDown={startPosition}
-              onPointerMove={movePosition}
-              onPointerUp={(pointerEvent) => finishPosition(pointerEvent.pointerId)}
-              onPointerCancel={(pointerEvent) => finishPosition(pointerEvent.pointerId)}
-              onLostPointerCapture={(pointerEvent) => finishPosition(pointerEvent.pointerId)}
-              aria-label={w("dragArtwork")}
-            ><span>{w("dragArtwork")}</span></div>}
+            {positioning && (
+              <div
+                className="wedding-position-surface"
+                onPointerDown={startPosition}
+                onPointerMove={movePosition}
+                onPointerUp={(pointerEvent) => finishPosition(pointerEvent.pointerId)}
+                onPointerCancel={(pointerEvent) => finishPosition(pointerEvent.pointerId)}
+                onLostPointerCapture={(pointerEvent) => finishPosition(pointerEvent.pointerId)}
+                aria-label={w("dragArtwork")}
+              >
+                <span>{w("dragArtwork")}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Floating Bottom Navigation Bar: 4 Tabs */}
+      <nav
+        className="wedding-bottom-tabs"
+        role="tablist"
+        aria-label={t("weddingStudio")}
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={isSheetOpen && activeTab === "information"}
+          data-testid="tab-information"
+          className={`wedding-tab-btn ${isSheetOpen && activeTab === "information" ? "is-active" : ""}`}
+          onClick={() => handleTabClick("information")}
+        >
+          <FileText size={18} />
+          <span>{w("information")}</span>
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          aria-selected={isSheetOpen && activeTab === "design"}
+          data-testid="tab-design"
+          className={`wedding-tab-btn ${isSheetOpen && activeTab === "design" ? "is-active" : ""}`}
+          onClick={() => handleTabClick("design")}
+        >
+          <Palette size={18} />
+          <span>{w("design")}</span>
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          aria-selected={isSheetOpen && activeTab === "motion"}
+          data-testid="tab-motion"
+          className={`wedding-tab-btn ${isSheetOpen && activeTab === "motion" ? "is-active" : ""}`}
+          onClick={() => handleTabClick("motion")}
+        >
+          <Sparkles size={18} />
+          <span>{w("motion")}</span>
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          aria-selected={isSheetOpen && activeTab === "more"}
+          data-testid="tab-more"
+          className={`wedding-tab-btn ${isSheetOpen && activeTab === "more" ? "is-active" : ""}`}
+          onClick={() => handleTabClick("more")}
+        >
+          <Sliders size={18} />
+          <span>{w("more")}</span>
+        </button>
+      </nav>
+
+      {/* Contextual Bottom Sheet with Backdrop */}
+      {isSheetOpen && (
+        <div
+          className="wedding-sheet-backdrop"
+          onClick={handleCloseSheet}
+          aria-hidden="true"
+        />
+      )}
+      <WeddingContextualSheet
+        isOpen={isSheetOpen}
+        activeTab={activeTab}
+        directTarget={directTarget}
+        event={event}
+        onUpdate={(patch) => {
+          update(patch);
+        }}
+        onClose={handleCloseSheet}
+        onReplay={handleReplay}
+        isSettled={isSettled}
+        onToggleSettled={setIsSettled}
+        selectedBlock={selectedBlock}
+        onSelectBlock={setSelectedBlock}
+      />
+
+      {/* Existing Full Preview Modal Dialog — Preserved intact */}
       {isPreviewActive && (
         <div
           data-testid="wedding-preview-modal"

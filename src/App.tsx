@@ -863,7 +863,7 @@ function WeddingWorkspaceControls() {
 
 function WeddingStudioPage({ embedded = false }: { embedded?: boolean }) {
   const { state, ready, setMode } = useEngine();
-  const { activeProject, updateActiveEvent, saveStatus, storageError } = useWeddingWorkspace();
+  const { activeProject, updateActiveEvent, saveStatus, storageError, saveNow } = useWeddingWorkspace();
   const auth = useAuth();
   const { t, dir } = useAppLocale();
   const [previewActive, setPreviewActive] = useState(false);
@@ -897,7 +897,7 @@ function WeddingStudioPage({ embedded = false }: { embedded?: boolean }) {
                 {t('weddingStudioHelp')}
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-3">
               {auth.session && <Link href={backHref} data-testid="link-switch-studio" className="focus-ring inline-flex items-center gap-1.5 rounded-full border border-[#D4AF37]/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#0A2E23] hover:bg-[#D4AF37]/10">
                 <ArrowLeft className={dir === 'rtl' ? 'rotate-180' : ''} size={13} /> {backLabel}
               </Link>}
@@ -927,8 +927,8 @@ function WeddingStudioPage({ embedded = false }: { embedded?: boolean }) {
           overviewHref={overviewHref}
           externalPreviewActive={previewActive}
           onTogglePreview={setPreviewActive}
+          onSave={saveNow}
         />
-        {!embedded && auth.session && <div className="mt-8"><GuestManager /></div>}
       </main>
     </div>
   );

@@ -1924,3 +1924,311 @@
   56% { transform: scale(1.012); }
   78% { transform: scale(1.006); }
 }
+
+/* ==========================================================================
+   PRODUCT UX V2 PHASE 4 — WEDDING STUDIO MODERNIZATION
+   ========================================================================== */
+
+.wedding-studio--modern {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  max-width: 100%;
+  margin-top: 16px;
+  padding-bottom: 96px;
+}
+
+.wedding-studio-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  max-width: 520px;
+  padding: 8px 12px;
+  border-radius: 20px;
+  background: rgba(255, 253, 249, 0.7);
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  box-shadow: 0 4px 16px rgba(12, 45, 36, 0.05);
+}
+
+.wedding-studio-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.wedding-studio-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wedding-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(212, 175, 55, 0.5);
+  background: white;
+  color: #0c2d24;
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+.wedding-back-btn:hover {
+  background: #fbf8f2;
+}
+
+.wedding-pill-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(12, 45, 36, 0.08);
+  color: #0c2d24;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.wedding-hint-text {
+  font-size: 11px;
+  color: #71685f;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wedding-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 36px;
+  padding: 6px 13px;
+  border-radius: 999px;
+  border: 1px solid rgba(212, 175, 55, 0.4);
+  background: white;
+  color: #0c2d24;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.wedding-toolbar-btn:hover {
+  background: #fbf8f2;
+}
+
+.wedding-toolbar-btn.is-primary {
+  background: #0c2d24;
+  color: white;
+  border-color: #0c2d24;
+  box-shadow: 0 2px 8px rgba(12, 45, 36, 0.2);
+}
+.wedding-toolbar-btn.is-primary:hover {
+  background: #174839;
+}
+
+.wedding-studio-main {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.wedding-live-preview--dominant {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  max-height: min(78vh, 680px);
+  aspect-ratio: 9 / 16;
+  border-radius: 28px;
+  padding: 6px;
+  background: #0c2d24;
+  border: 2px solid rgba(212, 175, 55, 0.5);
+  box-shadow: 0 24px 60px rgba(12, 45, 36, 0.25), 0 4px 12px rgba(212, 175, 55, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.wedding-live-preview--dominant .wedding-preview-canvas {
+  width: 100%;
+  height: 100%;
+  border-radius: 22px;
+  overflow: hidden;
+}
+
+.wedding-live-preview--dominant .wedding-stage {
+  width: 100%;
+  height: 100%;
+  border-radius: 22px;
+}
+
+/* Interactive Canvas Elements */
+.wedding-preview-canvas--interactive .wedding-paper {
+  cursor: pointer;
+}
+
+.wedding-preview-canvas--interactive .wedding-custom-block {
+  cursor: pointer;
+  border-radius: 12px;
+  position: relative;
+  transition: outline 0.15s ease, box-shadow 0.15s ease;
+}
+
+.wedding-preview-canvas--interactive .wedding-custom-block:hover {
+  outline: 2px dashed rgba(212, 175, 55, 0.7);
+  outline-offset: 4px;
+}
+
+.wedding-preview-canvas--interactive .wedding-custom-block.is-selected {
+  outline: 2px solid #D4AF37;
+  outline-offset: 4px;
+  box-shadow: 0 0 16px rgba(212, 175, 55, 0.45);
+}
+
+/* Floating Bottom Navigation Bar */
+.wedding-bottom-tabs {
+  position: fixed;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  gap: 6px;
+  width: calc(100% - 24px);
+  max-width: 440px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(12, 45, 36, 0.94);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1.5px solid rgba(212, 175, 55, 0.45);
+  box-shadow: 0 14px 40px rgba(12, 45, 36, 0.35), 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.wedding-tab-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 48px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 253, 249, 0.72);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  touch-action: manipulation;
+}
+
+.wedding-tab-btn:hover {
+  color: #fffdf9;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.wedding-tab-btn.is-active {
+  color: #0c2d24;
+  background: #d4af37;
+  box-shadow: 0 2px 10px rgba(212, 175, 55, 0.4);
+}
+
+/* Bottom Sheet Overlay & Drawer */
+.wedding-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 48;
+  background: rgba(12, 45, 36, 0.45);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: wedding-fade-in 0.2s ease;
+}
+
+.wedding-sheet-wrapper {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 520px;
+  max-height: 82vh;
+  z-index: 49;
+  display: flex;
+  flex-direction: column;
+  background: #FAF7F2;
+  border-top-left-radius: 28px;
+  border-top-right-radius: 28px;
+  border-top: 2px solid rgba(212, 175, 55, 0.55);
+  box-shadow: 0 -18px 50px rgba(12, 45, 36, 0.28);
+  overflow: hidden;
+  animation: wedding-sheet-slide-up 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.wedding-sheet-header {
+  flex-shrink: 0;
+  background: #FAF7F2;
+}
+
+.wedding-sheet-handle {
+  width: 42px;
+  height: 4px;
+  margin: 10px auto 4px;
+  border-radius: 999px;
+  background: rgba(139, 112, 64, 0.35);
+}
+
+.wedding-sheet-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 80px;
+}
+
+@keyframes wedding-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes wedding-sheet-slide-up {
+  from { transform: translate(-50%, 100%); }
+  to { transform: translate(-50%, 0); }
+}
+
+/* Mobile Screens (390px and 430px) */
+@media (max-width: 480px) {
+  .wedding-studio-header {
+    max-width: 100%;
+    padding: 6px 10px;
+  }
+  .wedding-hint-text {
+    display: none;
+  }
+  .wedding-live-preview--dominant {
+    max-width: 340px;
+    max-height: min(72vh, 600px);
+  }
+  .wedding-bottom-tabs {
+    bottom: 8px;
+    width: calc(100% - 16px);
+  }
+  .wedding-sheet-wrapper {
+    max-height: 84vh;
+  }
+}

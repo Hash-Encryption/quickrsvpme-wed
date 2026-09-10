@@ -36,6 +36,7 @@ type WeddingSceneEngineProps = {
     },
   ) => ReactNode;
   locale: InvitationLocale;
+  forceSettled?: boolean;
 };
 
 export function WeddingSceneEngine({
@@ -50,15 +51,16 @@ export function WeddingSceneEngine({
   overlay,
   renderScene,
   locale,
+  forceSettled = false,
 }: WeddingSceneEngineProps) {
   const reduceMotion = Boolean(useReducedMotion());
   const audioRef = useRef<HTMLAudioElement>(null);
-  const elapsedRef = useRef(reduceMotion ? timelineEnd : 0);
+  const elapsedRef = useRef(reduceMotion || forceSettled ? timelineEnd : 0);
   const startedAtRef = useRef(performance.now());
-  const [elapsed, setElapsed] = useState(reduceMotion ? timelineEnd : 0);
-  const [isPlaying, setIsPlaying] = useState(!reduceMotion);
+  const [elapsed, setElapsed] = useState(reduceMotion || forceSettled ? timelineEnd : 0);
+  const [isPlaying, setIsPlaying] = useState(!reduceMotion && !forceSettled);
   const [isMuted, setIsMuted] = useState(true);
-  const [settleScene, setSettleScene] = useState(reduceMotion);
+  const [settleScene, setSettleScene] = useState(reduceMotion || forceSettled);
   const [replayKey, setReplayKey] = useState(0);
   const activeSceneIndex = getWeddingSceneIndex(timings, elapsed);
   const activeScene = scenes[activeSceneIndex] ?? scenes[0];
@@ -69,11 +71,12 @@ export function WeddingSceneEngine({
   };
 
   useEffect(() => {
-    if (!reduceMotion) return;
-    setPosition(timelineEnd);
-    setIsPlaying(false);
-    setSettleScene(true);
-  }, [reduceMotion, timelineEnd]);
+    if (reduceMotion || forceSettled) {
+      setPosition(timelineEnd);
+      setIsPlaying(false);
+      setSettleScene(true);
+    }
+  }, [reduceMotion, forceSettled, timelineEnd]);
 
   useEffect(() => {
     if (reduceMotion || !isPlaying) return;
