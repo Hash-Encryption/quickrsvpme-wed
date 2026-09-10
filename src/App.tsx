@@ -32,7 +32,7 @@ import { DashboardPage } from '@/app/DashboardPage';
 import { commercialSummary, normalizePublicationPolicy, type CommercialSource } from '@/app/commercial';
 import { allowedEventTransitions, isTerminalEvent } from '@/app/lifecycle';
 import { EmptyProjectSection, ProjectShell } from '@/app/ProjectShell';
-import { BackendGuestManager, BackendScanner, EventOperationsOverview } from '@/app/Phase3Operations';
+import { BackendGuestManager, BackendScanner, EventOperationsOverview, EventSend, EventSettings } from '@/app/Phase3Operations';
 import {
   buildProjectRoute,
   findAuthenticatedProjectEvent,
@@ -994,23 +994,7 @@ function GuestManager({ project }: { project?: ProjectSummary } = {}) {
 }
 
 function SendPage({ project }: { project: ProjectSummary }) {
-  const { state } = useEngine();
-  const auth = useAuth();
-  const { t } = useAppLocale();
-  const [backendGuests, setBackendGuests] = useState<EventGuest[]>([]);
-  const [tokens, setTokens] = useState<Record<string, string>>({});
-  useEffect(() => { if (auth.session) void listGuests(project.id).then(setBackendGuests); }, [auth.session, project.id]);
-  const guests = auth.session ? backendGuests.map((guest) => ({ id: guest.id, name: guest.name, phone: guest.phone ?? '', token: tokens[guest.id] ?? '', allowedCompanions: guest.allowed_companions, invitationVariantOverride: guest.invitation_variant_override ?? undefined, rsvp: guest.rsvp_status, guestCount: guest.confirmed_party_size, message: guest.custom_message ?? '', checkedIn: false })) : guestsForProject(state.operations, projectKey(project.type, project.id));
-  const [selectedId, setSelectedId] = useState(guests[0]?.id ?? '');
-  const [status, setStatus] = useState('');
-  const guest = guests.find((item) => item.id === selectedId) ?? guests[0];
-  const ensureUrl = async () => { if (!guest) return ''; const token = guest.token || await rotatePersonalInvitation(guest.id); setTokens((current) => ({ ...current, [guest.id]: token })); return invitationUrl(window.location.origin, import.meta.env.BASE_URL, token); };
-  const copy = async () => { const url = await ensureUrl(); if (!url) return; await navigator.clipboard.writeText(url); setStatus(t('linkCopied')); };
-  const openInvitation = async () => { const url = await ensureUrl(); if (!url) return; if (!window.open(url, '_blank', 'noopener,noreferrer')) window.location.assign(url); setStatus(t('invitationOpened')); };
-  const openWhatsApp = async () => { const url = await ensureUrl(); if (!guest || !url) return; window.open(getWhatsAppShareUrl(project.type === 'wedding' ? 'wedding' : 'standard', project.name, guest.phone, url), '_blank', 'noopener,noreferrer'); setStatus(t('whatsappOpened')); };
-  const copyGeneral = async () => { const token = await createGeneralInvitation(project.id); await navigator.clipboard.writeText(invitationUrl(window.location.origin, import.meta.env.BASE_URL, token)); setStatus(t('linkCopied')); };
-  const openGeneral = async () => { const token = await createGeneralInvitation(project.id); const url = invitationUrl(window.location.origin, import.meta.env.BASE_URL, token); if (!window.open(url, '_blank', 'noopener,noreferrer')) window.location.assign(url); };
-  return <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]"><section className="rounded-3xl border border-[#D9D2C5] bg-white p-6 sm:p-8"><Eyebrow>{t('send')}</Eyebrow><h1 className="mt-2 text-3xl font-semibold tracking-[-.04em]">{t('sendTitle')}</h1><p className="mt-3 max-w-xl text-sm leading-6 text-[#756F66]">{t('sendLocalHelp')}</p>{guests.length ? <div className="mt-7"><label className="text-xs font-semibold" htmlFor="send-recipient">{t('recipient')}</label><select id="send-recipient" value={guest?.id} onChange={(event) => { setSelectedId(event.target.value); setStatus(''); }} className="qr-field-inline mt-2 min-h-12 w-full rounded-xl px-4 text-sm font-medium">{guests.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.phone || t('missingPhone')}</option>)}</select><div className="mt-5 flex flex-wrap gap-2"><Button onClick={() => void copy()}>{t('copyLink')}</Button><Button variant="ivory" icon={ExternalLink} onClick={() => void openInvitation()}>{t('openInvitation')}</Button><Button variant="ivory" icon={MessageCircle} onClick={() => void openWhatsApp()}>{t('prepareWhatsApp')}</Button><Button variant="ivory" icon={Link2} onClick={() => void copyGeneral()}>General link</Button><Button variant="ivory" icon={ExternalLink} onClick={() => void openGeneral()}>{t('openGeneralInvitation')}</Button></div>{status && <p className="mt-4 text-xs font-semibold text-[#0A2E23]" role="status">{status}</p>}</div> : <div className="mt-7"><p className="rounded-2xl border border-dashed border-[#D9D2C5] p-6 text-sm text-[#756F66]">{t('noGuests')}</p><div className="mt-3 flex flex-wrap gap-2"><Button variant="ivory" icon={Link2} onClick={() => void copyGeneral()}>General link</Button><Button variant="ivory" icon={ExternalLink} onClick={() => void openGeneral()}>{t('openGeneralInvitation')}</Button></div></div>}</section><aside className="rounded-3xl border border-[#D9D2C5] bg-[#0C2D24] p-6 text-white"><QrCode className="text-[#D4B363]" /><h2 className="mt-5 text-xl font-semibold">{t('preparedNotDelivered')}</h2><p className="mt-3 text-sm leading-6 text-white/60">{t('sendBoundary')}</p><Link href={buildProjectRoute(project.type, project.id, 'invitation')} className="focus-ring mt-6 inline-flex min-h-11 items-center rounded-full border border-white/20 px-4 text-xs font-semibold">{t('preview')}</Link></aside></div>;
+  return <EventSend project={project} />;
 }
 
 function weddingProjectSummary(project: WeddingProject): ProjectSummary {
@@ -1167,20 +1151,10 @@ function ProjectRoutePage({ type }: { type: ProjectType }) {
   else if (section === 'invitation') content = type === 'wedding' ? <WeddingStudioPage embedded /> : <PartyStudioPage embedded />;
   else if (section === 'guests') content = <BackendGuestManager project={project} />;
   else if (section === 'scanner') content = <BackendScanner project={project} />;
-  else if (section === 'send') content = <SendPage project={project} />;
-  else content = <div className="space-y-4"><EmptyProjectSection title={t('settingsTitle')}>{t('settingsHelp')}</EmptyProjectSection>{backendEvent && <EventLifecycleControl event={backendEvent} onSave={async (lifecycle_status) => { await updateEvent(backendEvent.id, { lifecycle_status }); await auth.refresh(); }} />}<section className="mx-auto max-w-2xl rounded-3xl border border-[#D9D2C5] bg-white p-7"><h2 className="font-semibold">{t('appLanguage')}</h2><p className="mt-2 text-sm text-[#756F66]">{t('appLanguageHelp')}</p><div className="mt-4"><AppLanguageControl /></div></section></div>;
+  else if (section === 'send') content = <EventSend project={project} />;
+  else content = <EventSettings project={project} event={backendEvent} onRefresh={auth.refresh} />;
 
   return <ProjectShell project={project} section={section}>{!storageAvailable && <p className="mb-4 rounded-2xl border border-[#A98219]/35 bg-[#FFF8E5] p-4 text-sm text-[#6B5518]" role="status">{t('sessionOnlyData')}</p>}{content}</ProjectShell>;
-}
-
-function EventLifecycleControl({ event, onSave }: { event: BackendEvent; onSave: (status: EventLifecycle) => Promise<void> }) {
-  const { t } = useAppLocale();
-  const [status, setStatus] = useState(event.lifecycle_status);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(false);
-  const labels = { planning: 'lifecyclePlanning', active: 'lifecycleActive', ended: 'lifecycleEnded', archived: 'lifecycleArchived', cancelled: 'lifecycleCancelled' } as const;
-  const allowed = allowedEventTransitions(event.lifecycle_status);
-  return <section className="mx-auto max-w-2xl rounded-3xl border border-[#D9D2C5] bg-white p-7"><h2 className="font-semibold">{t('eventStatus')}</h2><div className="mt-4 flex flex-col gap-3 sm:flex-row"><select aria-label={t('eventStatus')} value={status} disabled={allowed.length === 1} onChange={(change) => setStatus(change.target.value as EventLifecycle)} className="qr-field-inline min-h-11 flex-1 rounded-xl px-3 text-sm disabled:opacity-60">{allowed.map((value) => <option key={value} value={value}>{t(labels[value])}</option>)}</select><button disabled={busy || status === event.lifecycle_status || allowed.length === 1} onClick={() => { setBusy(true); setError(false); void onSave(status).catch(() => setError(true)).finally(() => setBusy(false)); }} className="min-h-11 rounded-xl bg-[#0C2D24] px-5 text-xs font-bold text-white transition hover:bg-[#174839] disabled:opacity-40">{t('saveChanges')}</button></div>{error && <p className="mt-3 text-sm text-[#8c302b]" role="alert">{t('operationFailed')}</p>}</section>;
 }
 
 function WeddingProjectRoute() { return <ProjectRoutePage type="wedding" />; }
