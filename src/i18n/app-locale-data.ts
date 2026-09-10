@@ -161,6 +161,8 @@ const en = {
   archiveEvent: 'Archive event',
   eventLifecycleExplanation: 'Manage whether your event is in planning, active on event day, or completed.',
   independentLanguageNotice: 'This setting changes the QuickRSVP dashboard language only. The invitation language is configured independently within the invitation studio.',
+  eventsLoadFailed: 'Unable to load events at this moment.',
+  entitlementsLoadFailed: 'Unable to verify subscription access at this moment.',
 } as const;
 
 export type AppTranslationKey = keyof typeof en;
@@ -325,6 +327,8 @@ const ar: Record<AppTranslationKey, string> = {
   archiveEvent: 'أرشفة المناسبة',
   eventLifecycleExplanation: 'إدارة حالة المناسبة سواء كانت قيد الإعداد، أو نشطة في يوم الحفل، أو منتهية.',
   independentLanguageNotice: 'يغيّر هذا الخيار لغة واجهة QuickRSVP فقط. يتم تحديد لغة الدعوة بشكل مستقل من داخل استوديو الدعوة.',
+  eventsLoadFailed: 'تعذر تحميل المناسبات في الوقت الحالي.',
+  entitlementsLoadFailed: 'تعذر التحقق من صلاحيات الاشتراك في الوقت الحالي.',
 };
 
 export const appTranslations = { ar, en } satisfies Record<AppLocale, Record<AppTranslationKey, string>>;

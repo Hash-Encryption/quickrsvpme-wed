@@ -99,6 +99,14 @@ export function WeddingPlannerPage() {
 
         {/* Weddings List Section */}
         <section>
+          {auth.degraded?.events && (
+            <div className="mb-6 qr-notice qr-notice--warning flex items-center justify-between gap-3" role="status">
+              <span>{t('eventsLoadFailed')}</span>
+              <button type="button" onClick={() => void auth.refresh()} className="font-semibold underline text-xs">
+                {t('retry')}
+              </button>
+            </div>
+          )}
           <div className="flex items-center justify-between mb-4">
             <h2 className="qr-section-title text-lg font-bold text-[var(--qr-text)] flex items-center gap-2">
               <span>{t('myWeddingsCount')}</span>

@@ -19,9 +19,10 @@ type Props = {
   onSignOut: () => void; onCreate: (type: ProjectSummary['type'], title: string) => Promise<void>;
   onRename: (id: string, title: string) => Promise<void>; onArchive: (id: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>; onDeleteDraft: (id: string) => Promise<void>;
+  degradedEvents?: boolean; onRefresh?: () => Promise<void>;
 };
 
-export function DashboardPage({ projects, drafts, account, commercial, product, onSignOut, onCreate, onRename, onArchive, onDelete, onDeleteDraft }: Props) {
+export function DashboardPage({ projects, drafts, account, commercial, product, onSignOut, onCreate, onRename, onArchive, onDelete, onDeleteDraft, degradedEvents, onRefresh }: Props) {
   const { t, dir, locale } = useAppLocale();
   const [type, setType] = useState<ProjectSummary['type']>(product ?? 'wedding');
   const [title, setTitle] = useState('');
@@ -50,6 +51,16 @@ export function DashboardPage({ projects, drafts, account, commercial, product, 
       <section className={`mt-5 grid gap-3 qr-card ${product ? 'sm:grid-cols-[minmax(0,1fr)_auto]' : 'sm:grid-cols-[150px_minmax(0,1fr)_auto]'}`}>{!product && <select aria-label={t('switchType')} value={type} onChange={(event) => setType(event.target.value as ProjectSummary['type'])} className="qr-field"><option value="wedding">{t('wedding')}</option><option value="party">{t('party')}</option></select>}<label className="qr-label"><span className="sr-only">{t('operationName')}</span><input value={title} onChange={(event) => setTitle(event.target.value)} placeholder={t((product ?? type) === 'wedding' ? 'newWedding' : 'newParty')} className="qr-field" /></label><Button loading={busy === 'create'} disabled={!title.trim() || busy === 'create'} onClick={() => void run('create', onCreate(product ?? type, title.trim()).then(() => setTitle('')))}>{t('startDraft')}</Button></section>
       {error && <p className="qr-notice qr-notice--error mt-3" role="alert">{error}</p>}
       <section className="mt-10"><h2 className="qr-section-title">{t('designDrafts')}</h2><p className="mt-2 text-sm text-[var(--qr-secondary)]">{t('plannerWorkspace')}</p>{shownDrafts.length === 0 && <div className="mt-4"><EmptyState title={t('noDrafts')} /></div>}<div className="mt-4 grid gap-4 md:grid-cols-2">{shownDrafts.map((draft) => { const Icon = draft.type === 'wedding' ? Heart : PartyPopper; return <article key={draft.id} className="qr-card"><Link href={`/drafts/${draft.type}/${encodeURIComponent(draft.id)}`} className="focus-ring block"><Icon className="qr-gold-text" /><p className="mt-5 qr-caption qr-gold-text">{t(draft.type)} · <StatusPill>{t('draft')}</StatusPill></p><h3 className="mt-2 qr-card-title">{draft.name}</h3><p className="mt-3 text-xs text-[var(--qr-secondary)]">{formatDate(draft.updatedAt)}</p></Link><button onClick={() => { if (window.confirm(t('confirmDelete'))) void run(draft.id, onDeleteDraft(draft.id)); }} className="qr-button qr-button--danger mt-4">{t('delete')}</button></article>; })}</div></section>
+      {degradedEvents && (
+        <div className="mt-8 qr-notice qr-notice--warning flex items-center justify-between gap-3" role="status">
+          <span>{t('eventsLoadFailed')}</span>
+          {onRefresh && (
+            <button onClick={() => void onRefresh()} className="font-semibold underline text-xs">
+              {t('retry')}
+            </button>
+          )}
+        </div>
+      )}
       <section className="mt-10"><h2 className="flex items-center gap-2 qr-section-title"><CalendarDays size={20} />{t('activeEvents')}</h2>{eventCards(current, t('noActiveEvents'))}</section>
       <section className="mt-10"><h2 className="flex items-center gap-2 qr-section-title"><History size={20} />{t('eventHistory')}</h2>{eventCards(history, t('noHistoricalEvents'))}</section>
     </main>

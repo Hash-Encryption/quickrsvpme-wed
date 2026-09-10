@@ -1038,6 +1038,8 @@ function DashboardRoute({ product }: { product?: ProductId }) {
     } : {}}
     product={product}
     onSignOut={() => void auth.signOut()}
+    degradedEvents={auth.degraded.events}
+    onRefresh={() => auth.refresh()}
     onCreate={async (type, title) => {
       const configuration = type === 'wedding'
         ? structuredClone(defaultWeddingEvent) as WeddingEventData & Record<string, unknown>
@@ -1055,13 +1057,29 @@ function DashboardRoute({ product }: { product?: ProductId }) {
 function AccountRoute() {
   const auth = useAuth();
   const [source, setSource] = useState<CommercialSource | null>(null);
-  useEffect(() => { void loadCommercialSource().then(setSource).catch(() => setSource(null)); }, []);
+  const loadSource = () => loadCommercialSource().then(setSource).catch(() => setSource(null));
+  useEffect(() => { void loadSource(); }, []);
   if (!auth.client) return <LoadingPage />;
   const commercial = source ? {
     wedding: commercialSummary('wedding', auth.entitlements, source, auth.events),
     party: commercialSummary('party', auth.entitlements, source, auth.events),
   } : {};
-  return <AccountPage name={auth.client.display_name} email={auth.session?.user.email ?? ''} commercial={commercial} onSave={async (name) => { await updateCurrentClientDisplayName(auth.client!.id, name); await auth.refresh(); }} />;
+  return (
+    <AccountPage
+      name={auth.client.display_name}
+      email={auth.session?.user.email ?? ''}
+      commercial={commercial}
+      onSave={async (name) => {
+        await updateCurrentClientDisplayName(auth.client!.id, name);
+        await auth.refresh();
+      }}
+      onSignOut={() => void auth.signOut()}
+      degraded={auth.degraded.entitlements || source === null}
+      onRefresh={async () => {
+        await Promise.all([loadSource(), auth.refresh()]);
+      }}
+    />
+  );
 }
 
 function DraftRoutePage() {

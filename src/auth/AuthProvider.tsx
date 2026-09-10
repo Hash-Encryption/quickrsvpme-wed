@@ -11,6 +11,11 @@ import type { BackendEvent, ClientAccount, ClientEntitlement } from '@/backend/t
 import { accountBootstrapError, createAuthBootstrapScheduler, needsAccountBootstrap, startAccountBootstrap } from './bootstrap';
 import { resolveBuildEntitlements } from '@/app/build-entitlements';
 
+export type DegradedState = {
+  entitlements: boolean;
+  events: boolean;
+};
+
 type AuthContextValue = {
   session: Session | null;
   client: ClientAccount | null;
@@ -20,6 +25,7 @@ type AuthContextValue = {
   loading: boolean;
   dataLoading: boolean;
   error: BackendError | null;
+  degraded: DegradedState;
   refresh: () => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -36,6 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [dataLoading, setDataLoading] = useState(true);
   const [error, setError] = useState<BackendError | null>(null);
+  const [degraded, setDegraded] = useState<DegradedState>({ entitlements: false, events: false });
   const requestRef = useRef(0);
   const activeUserRef = useRef<string | null>(null);
   const locationRef = useRef(location);
@@ -50,11 +57,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!nextSession) {
       activeUserRef.current = null;
       setClient(null); setEntitlements([]); setEvents([]); setAdmin(false); setLoading(false); setDataLoading(false);
+      setDegraded({ entitlements: false, events: false });
       return;
     }
     if (!needsAccountBootstrap(locationRef.current)) {
       activeUserRef.current = null;
       setClient(null); setEntitlements([]); setEvents([]); setAdmin(false); setLoading(false); setDataLoading(false);
+      setDegraded({ entitlements: false, events: false });
       return;
     }
     activeUserRef.current = nextSession.user.id;
@@ -65,6 +74,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       const optional = await bootstrap.optional;
       if (request !== requestRef.current) return;
+      const entitlementsDegraded = optional.entitlements === undefined && optional.errors.length > 0;
+      const eventsDegraded = optional.events === undefined && optional.errors.length > 0;
+      setDegraded({ entitlements: entitlementsDegraded, events: eventsDegraded });
       if (optional.entitlements) {
         setEntitlements(resolveBuildEntitlements(optional.entitlements, bootstrap.client?.id, true));
       }
@@ -112,7 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try { await endSession(); }
     catch (caught) { setError(toBackendError(caught)); }
   }, []);
-  const value = useMemo(() => ({ session, client, entitlements, events, admin, loading, dataLoading, error, refresh, signOut }), [session, client, entitlements, events, admin, loading, dataLoading, error, refresh, signOut]);
+  const value = useMemo(() => ({ session, client, entitlements, events, admin, loading, dataLoading, error, degraded, refresh, signOut }), [session, client, entitlements, events, admin, loading, dataLoading, error, degraded, refresh, signOut]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

@@ -45,6 +45,53 @@ try {
       assert.ok(markup.includes(appTranslations[locale].guests));
     }
   }
+
+  // Certify AccountPage in both AR and EN, including normal and degraded states
+  const { AccountPage } = await server.ssrLoadModule('/src/app/AccountPage.tsx');
+  for (const locale of ['ar', 'en']) {
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: () => locale } });
+    const normalHtml = renderToStaticMarkup(
+      h(AppLocaleProvider, null,
+        h(Router, { ssrPath: '/account' },
+          h(AccountPage, {
+            name: 'Sara Al-Mansoor',
+            email: 'sara@example.com',
+            commercial: {
+              wedding: { product: 'wedding', enabled: true, status: 'active', startsAt: '2026-01-01', endsAt: null, limit: 20, used: 2, remaining: 18, unlimited: false, draftLimit: 20, archiveReplayDays: null },
+              party: { product: 'party', enabled: true, status: 'none', startsAt: null, endsAt: null, limit: null, used: null, remaining: null, unlimited: false, draftLimit: null, archiveReplayDays: null },
+            },
+            onSave: async () => {},
+            onSignOut: () => {},
+          })
+        )
+      )
+    );
+    assert.ok(normalHtml.includes('sara@example.com'));
+    assert.ok(normalHtml.includes('Sara Al-Mansoor'));
+    assert.ok(normalHtml.includes(appTranslations[locale].account));
+    assert.ok(normalHtml.includes(appTranslations[locale].weddingAccess));
+    assert.ok(normalHtml.includes(appTranslations[locale].signOut));
+    assert.ok(normalHtml.includes('href="/account"'));
+
+    // Degraded state certification
+    const degradedHtml = renderToStaticMarkup(
+      h(AppLocaleProvider, null,
+        h(Router, { ssrPath: '/account' },
+          h(AccountPage, {
+            name: 'Sara Al-Mansoor',
+            email: 'sara@example.com',
+            commercial: {},
+            onSave: async () => {},
+            onSignOut: () => {},
+            degraded: true,
+            onRefresh: async () => {},
+          })
+        )
+      )
+    );
+    assert.ok(degradedHtml.includes(appTranslations[locale].entitlementsLoadFailed));
+    assert.ok(degradedHtml.includes(appTranslations[locale].retry));
+  }
   // Check actual semantic text/background pairs, including muted and status text.
   const css = await readFile(new URL('../src/customer-ui.css', import.meta.url), 'utf8');
   const tokens = Object.fromEntries([...css.matchAll(/--qr-([\w-]+): (#[\da-f]{6});/g)].map(m => [m[1], m[2]]));
