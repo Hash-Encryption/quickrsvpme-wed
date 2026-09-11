@@ -204,26 +204,70 @@ export async function staffCheckInPartyMembers(
   arrivingCount: number
 ): Promise<StaffCheckinResolution> {
   const token = extractScanToken(guestToken);
-  const { data, error } = await getSupabase().rpc('staff_check_in_party_members', {
-    p_staff_token: staffToken.trim(),
-    p_pin: pin.trim(),
-    p_guest_token: token,
-    p_arriving_count: arrivingCount,
-  });
+  try {
+    const { data, error } = await getSupabase().rpc('staff_check_in_party_members', {
+      p_staff_token: staffToken.trim(),
+      p_pin: pin.trim(),
+      p_guest_token: token,
+      p_arriving_count: arrivingCount,
+    });
 
-  if (error) fail(error);
-  return data as StaffCheckinResolution;
+    if (error) {
+      if (error.code === '42501' || error.message?.includes('42501') || error.message?.includes('not_authorized')) {
+        return { status: 'not_authorized' };
+      }
+      fail(error);
+    }
+
+    return data as StaffCheckinResolution;
+  } catch (caught) {
+    const err = toBackendError(caught);
+    if (err.code === 'unauthorized') {
+      return { status: 'not_authorized' };
+    }
+    throw err;
+  }
+}
+
+export interface StaffGuestListResult {
+  status: 'authorized' | 'not_authorized';
+  guests: StaffGuestRecord[];
 }
 
 export async function listStaffGuests(
   staffToken: string,
   pin: string
-): Promise<StaffGuestRecord[]> {
-  const { data, error } = await getSupabase().rpc('list_staff_guests', {
-    p_staff_token: staffToken.trim(),
-    p_pin: pin.trim(),
-  });
+): Promise<StaffGuestListResult> {
+  try {
+    const { data, error } = await getSupabase().rpc('list_staff_guests', {
+      p_staff_token: staffToken.trim(),
+      p_pin: pin.trim(),
+    });
 
-  if (error) fail(error);
-  return (data ?? []) as StaffGuestRecord[];
+    if (error) {
+      if (error.code === '42501' || error.message?.includes('42501') || error.message?.includes('not_authorized')) {
+        return { status: 'not_authorized', guests: [] };
+      }
+      fail(error);
+    }
+
+    if (data && typeof data === 'object' && !Array.isArray(data)) {
+      const payload = data as { status?: string; guests?: StaffGuestRecord[] };
+      return {
+        status: payload.status === 'not_authorized' ? 'not_authorized' : 'authorized',
+        guests: (payload.guests ?? []) as StaffGuestRecord[],
+      };
+    }
+
+    return {
+      status: 'authorized',
+      guests: (data ?? []) as StaffGuestRecord[],
+    };
+  } catch (caught) {
+    const err = toBackendError(caught);
+    if (err.code === 'unauthorized') {
+      return { status: 'not_authorized', guests: [] };
+    }
+    throw err;
+  }
 }

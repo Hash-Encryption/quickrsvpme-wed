@@ -61,9 +61,13 @@ export function EventScanner({
   useEffect(() => {
     if (isStaffMode && staffToken) {
       listStaffGuests(staffToken, staffPin || '')
-        .then((items) => {
+        .then((res) => {
+          if (res.status === 'not_authorized') {
+            onStaffRevokedOrExpired?.();
+            return;
+          }
           setGuests(
-            items.map((g) => ({
+            res.guests.map((g) => ({
               id: g.id,
               event_id: '',
               name: g.name,
@@ -132,6 +136,11 @@ export function EventScanner({
     try {
       if (isStaffMode && staffToken) {
         const updated = await staffCheckInPartyMembers(staffToken, staffPin || '', value.trim(), arriving);
+        if (updated.status === 'not_authorized') {
+          setError(t('accessExpired'));
+          onStaffRevokedOrExpired?.();
+          return;
+        }
         setResult(updated);
       } else if (project.id) {
         const updated = await checkInPartyMembers(value.trim(), project.id, arriving);

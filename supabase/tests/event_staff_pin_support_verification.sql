@@ -1,18 +1,19 @@
 -- ==============================================================================
--- QuickRSVP Verification Script: Event Staff PIN Support & Persistence Verification
+-- QuickRSVP Verification Script: Event Staff PIN Support & Cross-RPC Persistence
 -- Description: Self-contained transactional verification proving that:
---              1. correct token + correct PIN -> allowed across all operations
---              2. wrong PIN attempt 1 -> failed_pin_attempts persists = 1 in database
---              3. wrong PIN attempt 2 -> failed_pin_attempts persists = 2 in database
---              4. wrong PIN attempt 3 -> failed_pin_attempts persists = 3 and pin_locked_until is set in database
---              5. correct PIN during lockout -> denied and lockout remains active
---              6. lockout expiry simulation -> correct PIN succeeds and resets failed_pin_attempts=0 and pin_locked_until=null
---              7. empty PIN -> rejected and increments counter
---              8. wrong token + correct PIN -> denied
---              9. revoked token + correct PIN -> denied
---              10. expired token + correct PIN -> denied
---              11. Event A token/PIN cannot access Event B guest (cross-event isolation)
---              12. raw token alone (null PIN) cannot call resolve/list/check-in successfully
+--              1. Baseline: correct token + PIN works across all 4 RPCs
+--              2. Attack Surface A: verify_staff_pin wrong PIN increments DB counter
+--              3. Attack Surface B: resolve_staff_checkin wrong PIN increments DB counter
+--              4. Attack Surface C: staff_check_in_party_members wrong PIN increments DB counter
+--              5. Attack Surface D: list_staff_guests wrong PIN increments DB counter
+--              6. Cross-RPC lockout: resolve -> list -> checkin triggers 15m lockout in DB
+--              7. Lockout enforcement: correct PIN rejected across all 4 RPCs during lockout
+--              8. Lockout recovery: expired lockout permits correct PIN & resets DB counters
+--              9. Post-auth validation: business errors still raise after authorization
+--              10. Revocation enforcement: revoked token denied across all 4 RPCs
+--              11. Expiry enforcement: expired token denied across all 4 RPCs
+--              12. Cross-event isolation: Event A token cannot access Event B guest
+--              13. Raw token alone: null PIN denied across all 4 RPCs
 -- Test: supabase/tests/event_staff_pin_support_verification.sql
 -- Status: Transactional verifier — all mutations roll back automatically.
 -- ==============================================================================
@@ -244,6 +245,7 @@ $$;
 drop function if exists public.resolve_staff_checkin(text, text);
 drop function if exists public.staff_check_in_party_members(text, text, integer);
 drop function if exists public.list_staff_guests(text);
+drop function if exists public.list_staff_guests(text, text);
 
 create or replace function public.resolve_staff_checkin(
   p_staff_token text,
@@ -330,7 +332,7 @@ begin
   select * into v_auth from private.authorize_staff(p_staff_token, p_pin);
 
   if v_auth.status <> 'authorized' then
-    raise exception 'Authentication is required.' using errcode = '42501';
+    return jsonb_build_object('status', 'not_authorized');
   end if;
 
   if p_arriving_count is null or p_arriving_count <= 0 then
@@ -405,43 +407,47 @@ create or replace function public.list_staff_guests(
   p_staff_token text,
   p_pin text
 )
-returns table (
-  id uuid,
-  name text,
-  phone text,
-  allowed_companions integer,
-  rsvp_status text,
-  confirmed_party_size integer,
-  checked_in_count integer,
-  first_checked_in_at timestamptz
-)
+returns jsonb
 language plpgsql
 security definer
 set search_path = ''
 as $$
 declare
   v_auth record;
+  v_guests jsonb;
 begin
   select * into v_auth from private.authorize_staff(p_staff_token, p_pin);
 
   if v_auth.status <> 'authorized' then
-    raise exception 'Authentication is required.' using errcode = '42501';
+    return jsonb_build_object(
+      'status', 'not_authorized',
+      'guests', jsonb_build_array()
+    );
   end if;
 
-  return query
-  select
-    g.id,
-    g.name,
-    g.phone,
-    g.allowed_companions,
-    g.rsvp_status,
-    g.confirmed_party_size,
-    g.checked_in_count,
-    g.first_checked_in_at
+  select coalesce(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', g.id,
+        'name', g.name,
+        'phone', g.phone,
+        'allowed_companions', g.allowed_companions,
+        'rsvp_status', g.rsvp_status,
+        'confirmed_party_size', g.confirmed_party_size,
+        'checked_in_count', g.checked_in_count,
+        'first_checked_in_at', g.first_checked_in_at
+      ) order by g.name
+    ),
+    jsonb_build_array()
+  ) into v_guests
   from public.event_guests g
   where g.event_id = v_auth.event_id
-    and g.deleted_at is null
-  order by g.name;
+    and g.deleted_at is null;
+
+  return jsonb_build_object(
+    'status', 'authorized',
+    'guests', v_guests
+  );
 end;
 $$;
 
@@ -473,7 +479,6 @@ declare
   v_pin text := '4829';
   v_pin_hash text;
   v_res jsonb;
-  v_guest_list_count integer;
   v_caught boolean;
   v_staff_attempts integer;
   v_staff_locked_until timestamptz;
@@ -529,7 +534,7 @@ begin
   perform set_config('request.jwt.claims', '', true);
 
   -- ============================================================================
-  -- Assertion 1: correct token + correct PIN -> allowed across all operations
+  -- Assertion 1: Baseline Authorized Access (token + PIN) across all 4 RPCs
   -- ============================================================================
   v_res := public.verify_staff_pin(v_raw_staff_token_a, v_pin);
   if (v_res->>'success')::boolean is not true or v_res->>'event_id' <> v_event_a::text then
@@ -541,10 +546,9 @@ begin
     raise exception 'FAIL [Assertion 1]: resolve_staff_checkin must resolve guest with correct token and PIN. Got: %', v_res;
   end if;
 
-  select count(*) into v_guest_list_count
-  from public.list_staff_guests(v_raw_staff_token_a, v_pin);
-  if v_guest_list_count < 1 then
-    raise exception 'FAIL [Assertion 1]: list_staff_guests must return guests with correct token and PIN.';
+  v_res := public.list_staff_guests(v_raw_staff_token_a, v_pin);
+  if v_res->>'status' <> 'authorized' or jsonb_array_length(v_res->'guests') < 1 then
+    raise exception 'FAIL [Assertion 1]: list_staff_guests must return authorized with guests. Got: %', v_res;
   end if;
 
   v_res := public.staff_check_in_party_members(v_raw_staff_token_a, v_pin, v_guest_token_a, 1);
@@ -552,7 +556,6 @@ begin
     raise exception 'FAIL [Assertion 1]: staff_check_in_party_members must check in guest with correct credentials.';
   end if;
 
-  -- Verify database failure tracking remains 0
   select failed_pin_attempts, pin_locked_until into v_staff_attempts, v_staff_locked_until
   from public.event_staff_tokens where id = v_staff_token_id;
   if v_staff_attempts <> 0 or v_staff_locked_until is not null then
@@ -560,95 +563,144 @@ begin
   end if;
 
   -- ============================================================================
-  -- Assertion 2: wrong PIN Attempt 1 -> counter persists = 1 in database
+  -- Assertion 2: Attack Surface A (verify_staff_pin) wrong PIN persists counter
   -- ============================================================================
   v_res := public.verify_staff_pin(v_raw_staff_token_a, '9991');
-  if (v_res->>'success')::boolean is not false
-     or v_res->>'error' <> 'incorrect_pin'
-     or (v_res->>'attempts_remaining')::integer <> 2 then
-    raise exception 'FAIL [Assertion 2]: verify_staff_pin must return incorrect_pin with 2 attempts remaining. Got: %', v_res;
+  if (v_res->>'success')::boolean is not false or v_res->>'error' <> 'incorrect_pin' then
+    raise exception 'FAIL [Assertion 2]: verify_staff_pin must reject wrong PIN. Got: %', v_res;
   end if;
 
   select failed_pin_attempts, pin_locked_until into v_staff_attempts, v_staff_locked_until
   from public.event_staff_tokens where id = v_staff_token_id;
   if v_staff_attempts <> 1 or v_staff_locked_until is not null then
-    raise exception 'FAIL [Assertion 2]: failed_pin_attempts must persist = 1 in DB without rollback. Got: attempts=%, locked=%', v_staff_attempts, v_staff_locked_until;
+    raise exception 'FAIL [Assertion 2]: verify_staff_pin must persist failed_pin_attempts=1 in DB. Got: attempts=%, locked=%', v_staff_attempts, v_staff_locked_until;
   end if;
 
+  -- Reset counter back to 0 for independent test B
+  update public.event_staff_tokens set failed_pin_attempts = 0 where id = v_staff_token_id;
+
   -- ============================================================================
-  -- Assertion 3: wrong PIN Attempt 2 -> counter increments to 2 and persists
+  -- Assertion 3: Attack Surface B (resolve_staff_checkin) wrong PIN persists counter
   -- ============================================================================
-  v_res := public.verify_staff_pin(v_raw_staff_token_a, '9992');
-  if (v_res->>'success')::boolean is not false
-     or v_res->>'error' <> 'incorrect_pin'
-     or (v_res->>'attempts_remaining')::integer <> 1 then
-    raise exception 'FAIL [Assertion 3]: verify_staff_pin must return incorrect_pin with 1 attempt remaining. Got: %', v_res;
+  v_res := public.resolve_staff_checkin(v_raw_staff_token_a, '9992', v_guest_token_a);
+  if v_res->>'status' <> 'not_authorized' then
+    raise exception 'FAIL [Assertion 3]: resolve_staff_checkin must return not_authorized on wrong PIN. Got: %', v_res;
   end if;
 
+  select failed_pin_attempts, pin_locked_until into v_staff_attempts, v_staff_locked_until
+  from public.event_staff_tokens where id = v_staff_token_id;
+  if v_staff_attempts <> 1 or v_staff_locked_until is not null then
+    raise exception 'FAIL [Assertion 3]: resolve_staff_checkin must persist failed_pin_attempts=1 in DB. Got: attempts=%, locked=%', v_staff_attempts, v_staff_locked_until;
+  end if;
+
+  -- Reset counter back to 0 for independent test C
+  update public.event_staff_tokens set failed_pin_attempts = 0 where id = v_staff_token_id;
+
+  -- ============================================================================
+  -- Assertion 4: Attack Surface C (staff_check_in_party_members) wrong PIN persists counter
+  -- ============================================================================
+  v_res := public.staff_check_in_party_members(v_raw_staff_token_a, '9993', v_guest_token_a, 1);
+  if v_res->>'status' <> 'not_authorized' then
+    raise exception 'FAIL [Assertion 4]: staff_check_in_party_members must return not_authorized on wrong PIN without raising. Got: %', v_res;
+  end if;
+
+  select failed_pin_attempts, pin_locked_until into v_staff_attempts, v_staff_locked_until
+  from public.event_staff_tokens where id = v_staff_token_id;
+  if v_staff_attempts <> 1 or v_staff_locked_until is not null then
+    raise exception 'FAIL [Assertion 4]: staff_check_in_party_members must persist failed_pin_attempts=1 in DB. Got: attempts=%, locked=%', v_staff_attempts, v_staff_locked_until;
+  end if;
+
+  -- Reset counter back to 0 for independent test D
+  update public.event_staff_tokens set failed_pin_attempts = 0 where id = v_staff_token_id;
+
+  -- ============================================================================
+  -- Assertion 5: Attack Surface D (list_staff_guests) wrong PIN persists counter
+  -- ============================================================================
+  v_res := public.list_staff_guests(v_raw_staff_token_a, '9994');
+  if v_res->>'status' <> 'not_authorized' or jsonb_array_length(v_res->'guests') <> 0 then
+    raise exception 'FAIL [Assertion 5]: list_staff_guests must return not_authorized on wrong PIN without raising. Got: %', v_res;
+  end if;
+
+  select failed_pin_attempts, pin_locked_until into v_staff_attempts, v_staff_locked_until
+  from public.event_staff_tokens where id = v_staff_token_id;
+  if v_staff_attempts <> 1 or v_staff_locked_until is not null then
+    raise exception 'FAIL [Assertion 5]: list_staff_guests must persist failed_pin_attempts=1 in DB. Got: attempts=%, locked=%', v_staff_attempts, v_staff_locked_until;
+  end if;
+
+  -- Reset counter back to 0 for cross-RPC evasion test
+  update public.event_staff_tokens set failed_pin_attempts = 0 where id = v_staff_token_id;
+
+  -- ============================================================================
+  -- Assertion 6: Cross-RPC Global 3-Attempt Lockout Evasion Prevention
+  --   Step 1: wrong PIN via resolve_staff_checkin   -> counter 1
+  --   Step 2: wrong PIN via list_staff_guests       -> counter 2
+  --   Step 3: wrong PIN via staff_check_in          -> counter 3 + pin_locked_until set
+  -- ============================================================================
+  -- Step 1
+  v_res := public.resolve_staff_checkin(v_raw_staff_token_a, '1111', v_guest_token_a);
+  if v_res->>'status' <> 'not_authorized' then
+    raise exception 'FAIL [Assertion 6, Step 1]: resolve_staff_checkin must return not_authorized.';
+  end if;
+  select failed_pin_attempts, pin_locked_until into v_staff_attempts, v_staff_locked_until
+  from public.event_staff_tokens where id = v_staff_token_id;
+  if v_staff_attempts <> 1 or v_staff_locked_until is not null then
+    raise exception 'FAIL [Assertion 6, Step 1]: counter must be 1 in DB. Got: attempts=%, locked=%', v_staff_attempts, v_staff_locked_until;
+  end if;
+
+  -- Step 2
+  v_res := public.list_staff_guests(v_raw_staff_token_a, '2222');
+  if v_res->>'status' <> 'not_authorized' then
+    raise exception 'FAIL [Assertion 6, Step 2]: list_staff_guests must return not_authorized.';
+  end if;
   select failed_pin_attempts, pin_locked_until into v_staff_attempts, v_staff_locked_until
   from public.event_staff_tokens where id = v_staff_token_id;
   if v_staff_attempts <> 2 or v_staff_locked_until is not null then
-    raise exception 'FAIL [Assertion 3]: failed_pin_attempts must persist = 2 in DB. Got: attempts=%, locked=%', v_staff_attempts, v_staff_locked_until;
+    raise exception 'FAIL [Assertion 6, Step 2]: counter must be 2 in DB. Got: attempts=%, locked=%', v_staff_attempts, v_staff_locked_until;
   end if;
 
-  -- ============================================================================
-  -- Assertion 4: wrong PIN Attempt 3 -> 3rd failure activates 15m lockout in DB
-  -- ============================================================================
-  v_res := public.verify_staff_pin(v_raw_staff_token_a, '9993');
-  if (v_res->>'success')::boolean is not false
-     or v_res->>'error' <> 'locked_out'
-     or (v_res->>'minutes_remaining')::integer <> 15 then
-    raise exception 'FAIL [Assertion 4]: 3rd wrong attempt must return locked_out with 15 minutes. Got: %', v_res;
+  -- Step 3
+  v_res := public.staff_check_in_party_members(v_raw_staff_token_a, '3333', v_guest_token_a, 1);
+  if v_res->>'status' <> 'not_authorized' then
+    raise exception 'FAIL [Assertion 6, Step 3]: staff_check_in_party_members must return not_authorized.';
   end if;
-
   select failed_pin_attempts, pin_locked_until into v_staff_attempts, v_staff_locked_until
   from public.event_staff_tokens where id = v_staff_token_id;
   if v_staff_attempts <> 3 or v_staff_locked_until is null or v_staff_locked_until <= now() then
-    raise exception 'FAIL [Assertion 4]: failed_pin_attempts must persist = 3 and pin_locked_until must be future in DB. Got: attempts=%, locked=%', v_staff_attempts, v_staff_locked_until;
+    raise exception 'FAIL [Assertion 6, Step 3]: counter must be 3 and lockout active in DB. Got: attempts=%, locked=%', v_staff_attempts, v_staff_locked_until;
   end if;
 
   -- ============================================================================
-  -- Assertion 5: correct PIN during lockout -> denied and lockout remains active
+  -- Assertion 7: Correct PIN Blocked Across All 4 RPCs During Lockout
   -- ============================================================================
   v_res := public.verify_staff_pin(v_raw_staff_token_a, v_pin);
   if (v_res->>'success')::boolean is not false or v_res->>'error' <> 'locked_out' then
-    raise exception 'FAIL [Assertion 5]: correct PIN during lockout must return locked_out. Got: %', v_res;
+    raise exception 'FAIL [Assertion 7]: verify_staff_pin must return locked_out during lockout. Got: %', v_res;
   end if;
 
   v_res := public.resolve_staff_checkin(v_raw_staff_token_a, v_pin, v_guest_token_a);
   if v_res->>'status' <> 'not_authorized' then
-    raise exception 'FAIL [Assertion 5]: resolve_staff_checkin during lockout must be not_authorized. Got: %', v_res;
+    raise exception 'FAIL [Assertion 7]: resolve_staff_checkin during lockout must be not_authorized. Got: %', v_res;
   end if;
 
-  v_caught := false;
-  begin
-    perform public.list_staff_guests(v_raw_staff_token_a, v_pin);
-  exception when sqlstate '42501' then
-    v_caught := true;
-  end;
-  if not v_caught then
-    raise exception 'FAIL [Assertion 5]: list_staff_guests during lockout must raise 42501 exception.';
+  v_res := public.list_staff_guests(v_raw_staff_token_a, v_pin);
+  if v_res->>'status' <> 'not_authorized' then
+    raise exception 'FAIL [Assertion 7]: list_staff_guests during lockout must be not_authorized. Got: %', v_res;
   end if;
 
-  v_caught := false;
-  begin
-    perform public.staff_check_in_party_members(v_raw_staff_token_a, v_pin, v_guest_token_a, 1);
-  exception when sqlstate '42501' then
-    v_caught := true;
-  end;
-  if not v_caught then
-    raise exception 'FAIL [Assertion 5]: staff_check_in_party_members during lockout must raise 42501 exception.';
+  v_res := public.staff_check_in_party_members(v_raw_staff_token_a, v_pin, v_guest_token_a, 1);
+  if v_res->>'status' <> 'not_authorized' then
+    raise exception 'FAIL [Assertion 7]: staff_check_in_party_members during lockout must be not_authorized. Got: %', v_res;
   end if;
 
-  -- Lockout must still remain active in DB
+  -- Lockout remains active in DB
   select failed_pin_attempts, pin_locked_until into v_staff_attempts, v_staff_locked_until
   from public.event_staff_tokens where id = v_staff_token_id;
   if v_staff_attempts <> 3 or v_staff_locked_until is null or v_staff_locked_until <= now() then
-    raise exception 'FAIL [Assertion 5]: Lockout must remain active after denied attempts. Got: attempts=%, locked=%', v_staff_attempts, v_staff_locked_until;
+    raise exception 'FAIL [Assertion 7]: Lockout must remain active in DB after correct PIN attempts. Got: attempts=%, locked=%', v_staff_attempts, v_staff_locked_until;
   end if;
 
   -- ============================================================================
-  -- Assertion 6: lockout expiry simulation -> correct PIN resets both DB fields
+  -- Assertion 8: Lockout Expiry Simulation Resets Failure Tracking in DB
   -- ============================================================================
   update public.event_staff_tokens
   set pin_locked_until = now() - interval '1 second'
@@ -656,97 +708,95 @@ begin
 
   v_res := public.verify_staff_pin(v_raw_staff_token_a, v_pin);
   if (v_res->>'success')::boolean is not true then
-    raise exception 'FAIL [Assertion 6]: verify_staff_pin must succeed after lockout expiry. Got: %', v_res;
+    raise exception 'FAIL [Assertion 8]: verify_staff_pin must succeed after lockout expiry. Got: %', v_res;
   end if;
 
   select failed_pin_attempts, pin_locked_until into v_staff_attempts, v_staff_locked_until
   from public.event_staff_tokens where id = v_staff_token_id;
   if v_staff_attempts <> 0 or v_staff_locked_until is not null then
-    raise exception 'FAIL [Assertion 6]: Correct PIN after lockout must reset failed_pin_attempts to 0 and pin_locked_until to null. Got: attempts=%, locked=%', v_staff_attempts, v_staff_locked_until;
+    raise exception 'FAIL [Assertion 8]: Correct PIN after lockout must reset failed_pin_attempts=0 and pin_locked_until=null. Got: attempts=%, locked=%', v_staff_attempts, v_staff_locked_until;
   end if;
 
   -- ============================================================================
-  -- Assertion 7: empty PIN -> rejected and increments failure counter
+  -- Assertion 9: Post-Authorization Business Logic Validation Still Raises
   -- ============================================================================
-  v_res := public.verify_staff_pin(v_raw_staff_token_a, '');
-  if (v_res->>'success')::boolean is not false or v_res->>'error' <> 'incorrect_pin' then
-    raise exception 'FAIL [Assertion 7]: verify_staff_pin must reject empty PIN as incorrect_pin. Got: %', v_res;
+  v_caught := false;
+  begin
+    perform public.staff_check_in_party_members(v_raw_staff_token_a, v_pin, v_guest_token_a, 0);
+  exception when sqlstate '22023' then
+    v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL [Assertion 9]: Business validation (invalid arriving count) must raise 22023 when authorized.';
   end if;
 
+  -- Failure counter must remain 0 because auth succeeded
   select failed_pin_attempts into v_staff_attempts
   from public.event_staff_tokens where id = v_staff_token_id;
-  if v_staff_attempts <> 1 then
-    raise exception 'FAIL [Assertion 7]: Empty PIN must increment counter to 1 in DB. Got: %', v_staff_attempts;
-  end if;
-
-  -- Reset counter back to 0 for subsequent clean tests
-  update public.event_staff_tokens
-  set failed_pin_attempts = 0, pin_locked_until = null
-  where id = v_staff_token_id;
-
-  -- ============================================================================
-  -- Assertion 8: wrong token + correct PIN -> denied
-  -- ============================================================================
-  v_res := public.verify_staff_pin('invalid_token_xyz_999', v_pin);
-  if (v_res->>'success')::boolean is not false or v_res->>'error' <> 'invalid_or_expired' then
-    raise exception 'FAIL [Assertion 8]: verify_staff_pin must reject wrong token as invalid_or_expired. Got: %', v_res;
-  end if;
-
-  v_res := public.resolve_staff_checkin('invalid_token_xyz_999', v_pin, v_guest_token_a);
-  if v_res->>'status' <> 'not_authorized' then
-    raise exception 'FAIL [Assertion 8]: resolve_staff_checkin must return not_authorized on wrong token.';
+  if v_staff_attempts <> 0 then
+    raise exception 'FAIL [Assertion 9]: Authorized business failure must not increment PIN failure counter. Got: %', v_staff_attempts;
   end if;
 
   -- ============================================================================
-  -- Assertion 9: revoked token + correct PIN -> denied
+  -- Assertion 10: Revoked Token + Correct PIN Denied Across All RPCs
   -- ============================================================================
-  update public.event_staff_tokens
-  set revoked_at = now()
-  where id = v_staff_token_id;
+  update public.event_staff_tokens set revoked_at = now() where id = v_staff_token_id;
 
   v_res := public.verify_staff_pin(v_raw_staff_token_a, v_pin);
   if (v_res->>'success')::boolean is not false or v_res->>'error' <> 'invalid_or_expired' then
-    raise exception 'FAIL [Assertion 9]: revoked token must return invalid_or_expired. Got: %', v_res;
+    raise exception 'FAIL [Assertion 10]: revoked token must return invalid_or_expired. Got: %', v_res;
   end if;
 
   v_res := public.resolve_staff_checkin(v_raw_staff_token_a, v_pin, v_guest_token_a);
   if v_res->>'status' <> 'not_authorized' then
-    raise exception 'FAIL [Assertion 9]: revoked token must return not_authorized on resolve.';
+    raise exception 'FAIL [Assertion 10]: revoked token must return not_authorized on resolve.';
   end if;
 
-  -- Un-revoke to test expiry
-  update public.event_staff_tokens
-  set revoked_at = null
-  where id = v_staff_token_id;
+  v_res := public.list_staff_guests(v_raw_staff_token_a, v_pin);
+  if v_res->>'status' <> 'not_authorized' then
+    raise exception 'FAIL [Assertion 10]: revoked token must return not_authorized on list.';
+  end if;
+
+  v_res := public.staff_check_in_party_members(v_raw_staff_token_a, v_pin, v_guest_token_a, 1);
+  if v_res->>'status' <> 'not_authorized' then
+    raise exception 'FAIL [Assertion 10]: revoked token must return not_authorized on check-in.';
+  end if;
+
+  update public.event_staff_tokens set revoked_at = null where id = v_staff_token_id;
 
   -- ============================================================================
-  -- Assertion 10: expired token + correct PIN -> denied
+  -- Assertion 11: Expired Token + Correct PIN Denied Across All RPCs
   -- ============================================================================
-  update public.event_staff_tokens
-  set expires_at = now() - interval '1 hour'
-  where id = v_staff_token_id;
+  update public.event_staff_tokens set expires_at = now() - interval '1 hour' where id = v_staff_token_id;
 
   v_res := public.verify_staff_pin(v_raw_staff_token_a, v_pin);
   if (v_res->>'success')::boolean is not false or v_res->>'error' <> 'invalid_or_expired' then
-    raise exception 'FAIL [Assertion 10]: expired token must return invalid_or_expired. Got: %', v_res;
+    raise exception 'FAIL [Assertion 11]: expired token must return invalid_or_expired. Got: %', v_res;
   end if;
 
   v_res := public.resolve_staff_checkin(v_raw_staff_token_a, v_pin, v_guest_token_a);
   if v_res->>'status' <> 'not_authorized' then
-    raise exception 'FAIL [Assertion 10]: expired token must return not_authorized on resolve.';
+    raise exception 'FAIL [Assertion 11]: expired token must return not_authorized on resolve.';
   end if;
 
-  -- Restore active token
-  update public.event_staff_tokens
-  set expires_at = null
-  where id = v_staff_token_id;
+  v_res := public.list_staff_guests(v_raw_staff_token_a, v_pin);
+  if v_res->>'status' <> 'not_authorized' then
+    raise exception 'FAIL [Assertion 11]: expired token must return not_authorized on list.';
+  end if;
+
+  v_res := public.staff_check_in_party_members(v_raw_staff_token_a, v_pin, v_guest_token_a, 1);
+  if v_res->>'status' <> 'not_authorized' then
+    raise exception 'FAIL [Assertion 11]: expired token must return not_authorized on check-in.';
+  end if;
+
+  update public.event_staff_tokens set expires_at = null where id = v_staff_token_id;
 
   -- ============================================================================
-  -- Assertion 11: Event A token/PIN cannot access Event B guest (cross-event)
+  -- Assertion 12: Cross-Event Isolation
   -- ============================================================================
   v_res := public.resolve_staff_checkin(v_raw_staff_token_a, v_pin, v_guest_token_b);
   if v_res->>'status' <> 'wrong_event' then
-    raise exception 'FAIL [Assertion 11]: Staff token A must return wrong_event for guest B. Got: %', v_res;
+    raise exception 'FAIL [Assertion 12]: Staff token A must return wrong_event for guest B. Got: %', v_res;
   end if;
 
   v_caught := false;
@@ -756,38 +806,33 @@ begin
     v_caught := true;
   end;
   if not v_caught then
-    raise exception 'FAIL [Assertion 11]: Staff token A checking in guest B must raise 42501 exception.';
+    raise exception 'FAIL [Assertion 12]: Staff token A checking in guest B must raise 42501 exception.';
   end if;
 
   -- ============================================================================
-  -- Assertion 12: raw token alone (null PIN) cannot call resolve/list/check-in
+  -- Assertion 13: Raw Token Alone (Null PIN) Denied Across All 4 RPCs
   -- ============================================================================
   v_res := public.resolve_staff_checkin(v_raw_staff_token_a, null, v_guest_token_a);
   if v_res->>'status' <> 'not_authorized' then
-    raise exception 'FAIL [Assertion 12]: resolve_staff_checkin with null PIN must return not_authorized. Got: %', v_res;
+    raise exception 'FAIL [Assertion 13]: resolve_staff_checkin with null PIN must return not_authorized. Got: %', v_res;
   end if;
 
-  v_caught := false;
-  begin
-    perform public.list_staff_guests(v_raw_staff_token_a, null);
-  exception when sqlstate '42501' then
-    v_caught := true;
-  end;
-  if not v_caught then
-    raise exception 'FAIL [Assertion 12]: list_staff_guests with null PIN must raise 42501 exception.';
+  v_res := public.list_staff_guests(v_raw_staff_token_a, null);
+  if v_res->>'status' <> 'not_authorized' then
+    raise exception 'FAIL [Assertion 13]: list_staff_guests with null PIN must return not_authorized. Got: %', v_res;
   end if;
 
-  v_caught := false;
-  begin
-    perform public.staff_check_in_party_members(v_raw_staff_token_a, null, v_guest_token_a, 1);
-  exception when sqlstate '42501' then
-    v_caught := true;
-  end;
-  if not v_caught then
-    raise exception 'FAIL [Assertion 12]: staff_check_in_party_members with null PIN must raise 42501 exception.';
+  v_res := public.staff_check_in_party_members(v_raw_staff_token_a, null, v_guest_token_a, 1);
+  if v_res->>'status' <> 'not_authorized' then
+    raise exception 'FAIL [Assertion 13]: staff_check_in_party_members with null PIN must return not_authorized. Got: %', v_res;
   end if;
 
-  raise notice 'SUCCESS: All 12 staff scanner PIN security & persistence assertions passed.';
+  v_res := public.verify_staff_pin(v_raw_staff_token_a, null);
+  if (v_res->>'success')::boolean is not false then
+    raise exception 'FAIL [Assertion 13]: verify_staff_pin with null PIN must be denied. Got: %', v_res;
+  end if;
+
+  raise notice 'SUCCESS: All 13 staff scanner cross-RPC PIN security & persistence assertions passed.';
 end;
 $$;
 

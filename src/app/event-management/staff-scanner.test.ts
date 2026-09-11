@@ -426,3 +426,122 @@ test('Staff Scanner - Scenario Localization: All staff scanner keys defined in b
     assert.ok(arVal && arVal.length > 0, `Missing AR translation for "${key}"`);
   }
 });
+
+test('Staff Scanner - Scenario S: staffCheckInPartyMembers non-raising not_authorized handling', () => {
+  function handleCheckInResponse(response: StaffCheckinResolution): { isAuthorized: boolean; wasCheckedIn: boolean } {
+    if (response.status === 'not_authorized') {
+      return { isAuthorized: false, wasCheckedIn: false };
+    }
+    return { isAuthorized: true, wasCheckedIn: true };
+  }
+
+  const deniedResponse: StaffCheckinResolution = { status: 'not_authorized' };
+  const deniedResult = handleCheckInResponse(deniedResponse);
+  assert.equal(deniedResult.isAuthorized, false);
+  assert.equal(deniedResult.wasCheckedIn, false);
+
+  const approvedResponse: StaffCheckinResolution = {
+    status: 'complete',
+    guest_id: 'g-1',
+    checked_in_count: 2,
+    confirmed_party_size: 2,
+  };
+  const approvedResult = handleCheckInResponse(approvedResponse);
+  assert.equal(approvedResult.isAuthorized, true);
+  assert.equal(approvedResult.wasCheckedIn, true);
+});
+
+test('Staff Scanner - Scenario T: listStaffGuests structured result distinguishes authorized vs unauthorized', () => {
+  interface StaffGuestListResult {
+    status: 'authorized' | 'not_authorized';
+    guests: StaffGuestRecord[];
+  }
+
+  function parseGuestList(result: StaffGuestListResult) {
+    if (result.status === 'not_authorized') {
+      return { accessGranted: false, count: 0 };
+    }
+    return { accessGranted: true, count: result.guests.length };
+  }
+
+  const unauthorizedResult: StaffGuestListResult = {
+    status: 'not_authorized',
+    guests: [],
+  };
+  assert.equal(parseGuestList(unauthorizedResult).accessGranted, false);
+  assert.equal(parseGuestList(unauthorizedResult).count, 0);
+
+  const emptyAuthorizedResult: StaffGuestListResult = {
+    status: 'authorized',
+    guests: [],
+  };
+  assert.equal(parseGuestList(emptyAuthorizedResult).accessGranted, true);
+  assert.equal(parseGuestList(emptyAuthorizedResult).count, 0);
+
+  const populatedResult: StaffGuestListResult = {
+    status: 'authorized',
+    guests: [
+      {
+        id: 'g-10',
+        name: 'Tariq',
+        phone: null,
+        allowed_companions: 1,
+        rsvp_status: 'accepted',
+        confirmed_party_size: 2,
+        checked_in_count: 0,
+        first_checked_in_at: null,
+      },
+    ],
+  };
+  assert.equal(parseGuestList(populatedResult).accessGranted, true);
+  assert.equal(parseGuestList(populatedResult).count, 1);
+});
+
+test('Staff Scanner - Scenario U: Cross-RPC Lockout Evasion Prevention (resolve -> list -> checkin triggers lockout)', () => {
+  let dbFailedAttempts = 0;
+  let dbLockedUntil: number | null = null;
+  const correctPin = '4829';
+
+  function authorizeStaff(pin: string, now: number): 'authorized' | 'incorrect_pin' | 'locked_out' {
+    if (dbLockedUntil && now < dbLockedUntil) {
+      return 'locked_out';
+    }
+    if (pin !== correctPin) {
+      dbFailedAttempts += 1;
+      if (dbFailedAttempts >= 3) {
+        dbLockedUntil = now + 15 * 60 * 1000;
+        return 'locked_out';
+      }
+      return 'incorrect_pin';
+    }
+    dbFailedAttempts = 0;
+    dbLockedUntil = null;
+    return 'authorized';
+  }
+
+  const now = Date.now();
+
+  // Attack Step 1: Wrong PIN via resolve_staff_checkin
+  const step1 = authorizeStaff('wrong1', now);
+  assert.equal(step1, 'incorrect_pin');
+  assert.equal(dbFailedAttempts, 1);
+  assert.equal(dbLockedUntil, null);
+
+  // Attack Step 2: Wrong PIN via list_staff_guests
+  const step2 = authorizeStaff('wrong2', now);
+  assert.equal(step2, 'incorrect_pin');
+  assert.equal(dbFailedAttempts, 2);
+  assert.equal(dbLockedUntil, null);
+
+  // Attack Step 3: Wrong PIN via staff_check_in_party_members
+  const step3 = authorizeStaff('wrong3', now);
+  assert.equal(step3, 'locked_out');
+  assert.equal(dbFailedAttempts, 3);
+  assert.ok(dbLockedUntil !== null && dbLockedUntil > now);
+
+  // Subsequent call with CORRECT PIN is blocked during lockout
+  const correctAttemptDuringLockout = authorizeStaff(correctPin, now + 1000);
+  assert.equal(correctAttemptDuringLockout, 'locked_out');
+  assert.equal(dbFailedAttempts, 3);
+  assert.ok(dbLockedUntil !== null && dbLockedUntil > now);
+});

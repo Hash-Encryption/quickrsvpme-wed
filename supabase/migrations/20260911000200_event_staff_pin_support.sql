@@ -241,6 +241,7 @@ $$;
 drop function if exists public.resolve_staff_checkin(text, text);
 drop function if exists public.staff_check_in_party_members(text, text, integer);
 drop function if exists public.list_staff_guests(text);
+drop function if exists public.list_staff_guests(text, text);
 
 -- ------------------------------------------------------------------------------
 -- 5. Staff Check-in Token Resolution (Requires Token + PIN)
@@ -333,7 +334,7 @@ begin
   select * into v_auth from private.authorize_staff(p_staff_token, p_pin);
 
   if v_auth.status <> 'authorized' then
-    raise exception 'Authentication is required.' using errcode = '42501';
+    return jsonb_build_object('status', 'not_authorized');
   end if;
 
   if p_arriving_count is null or p_arriving_count <= 0 then
@@ -411,43 +412,47 @@ create or replace function public.list_staff_guests(
   p_staff_token text,
   p_pin text
 )
-returns table (
-  id uuid,
-  name text,
-  phone text,
-  allowed_companions integer,
-  rsvp_status text,
-  confirmed_party_size integer,
-  checked_in_count integer,
-  first_checked_in_at timestamptz
-)
+returns jsonb
 language plpgsql
 security definer
 set search_path = ''
 as $$
 declare
   v_auth record;
+  v_guests jsonb;
 begin
   select * into v_auth from private.authorize_staff(p_staff_token, p_pin);
 
   if v_auth.status <> 'authorized' then
-    raise exception 'Authentication is required.' using errcode = '42501';
+    return jsonb_build_object(
+      'status', 'not_authorized',
+      'guests', jsonb_build_array()
+    );
   end if;
 
-  return query
-  select
-    g.id,
-    g.name,
-    g.phone,
-    g.allowed_companions,
-    g.rsvp_status,
-    g.confirmed_party_size,
-    g.checked_in_count,
-    g.first_checked_in_at
+  select coalesce(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', g.id,
+        'name', g.name,
+        'phone', g.phone,
+        'allowed_companions', g.allowed_companions,
+        'rsvp_status', g.rsvp_status,
+        'confirmed_party_size', g.confirmed_party_size,
+        'checked_in_count', g.checked_in_count,
+        'first_checked_in_at', g.first_checked_in_at
+      ) order by g.name
+    ),
+    jsonb_build_array()
+  ) into v_guests
   from public.event_guests g
   where g.event_id = v_auth.event_id
-    and g.deleted_at is null
-  order by g.name;
+    and g.deleted_at is null;
+
+  return jsonb_build_object(
+    'status', 'authorized',
+    'guests', v_guests
+  );
 end;
 $$;
 
