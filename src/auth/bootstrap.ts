@@ -3,7 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 import { BackendError, toBackendError } from '../backend/errors.ts';
 
 export const accountBootstrapTimeoutMs = 8_000;
-export const needsAccountBootstrap = (pathname: string) => !pathname.startsWith('/i/');
+export const needsAccountBootstrap = (pathname: string) => !pathname.startsWith('/i/') && !pathname.startsWith('/staff');
 
 type BootstrapLoaders<Client, Entitlements, Events> = {
   client: (signal?: AbortSignal) => Promise<Client>;

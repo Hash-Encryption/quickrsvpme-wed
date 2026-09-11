@@ -8,6 +8,7 @@ const client = { id: 'client-1', display_name: 'Client' };
 
 test('public invitation routes do not load authenticated account data', () => {
   assert.equal(needsAccountBootstrap('/i/public-token'), false);
+  assert.equal(needsAccountBootstrap('/staff/secret-staff-token'), false);
   assert.equal(needsAccountBootstrap('/'), true);
   assert.equal(needsAccountBootstrap('/weddings/event-1/overview'), true);
 });

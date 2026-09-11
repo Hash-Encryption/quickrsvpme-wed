@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertCircle, Camera, CameraOff, CheckCircle2,
-  Clock, QrCode, RefreshCw, Search, UserCheck, Users, XCircle
+  AlertCircle, Camera, CameraOff, Check, CheckCircle2,
+  Clock, Copy, Eye, EyeOff, KeyRound, Lock, Plus, QrCode, RefreshCw, Search, ShieldCheck, Sparkles, UserCheck, Users, X, XCircle
 } from 'lucide-react';
 
 import { listGuests } from '@/backend/phase2';
@@ -9,17 +9,40 @@ import {
   checkInPartyMembers, resolveCheckin, scannerCameraFailure,
   type CheckinResolution
 } from '@/backend/phase3';
+import {
+  computeClientPinHash,
+  createEventStaffToken,
+  formatStaffToken,
+  listEventStaffTokens,
+  listStaffGuests,
+  resolveStaffCheckin,
+  revokeEventStaffToken,
+  staffCheckInPartyMembers,
+  type EventStaffToken,
+  type StaffCheckinResolution
+} from '@/backend/staff-scanner';
 import type { EventGuest } from '@/backend/types';
 import { useAppLocale } from '@/i18n/app-locale';
-import type { ProjectSummary } from '../projects';
 
-export function EventScanner({ project }: { project: ProjectSummary }) {
+export interface EventScannerProps {
+  project: { id?: string; name: string };
+  isStaffMode?: boolean;
+  staffToken?: string;
+  onStaffRevokedOrExpired?: () => void;
+}
+
+export function EventScanner({
+  project,
+  isStaffMode = false,
+  staffToken,
+  onStaffRevokedOrExpired,
+}: EventScannerProps) {
   const { t } = useAppLocale();
   const [activeTab, setActiveTab] = useState<'scan' | 'manual'>('scan');
   const [manualQuery, setManualQuery] = useState('');
   const [guests, setGuests] = useState<EventGuest[]>([]);
   const [value, setValue] = useState('');
-  const [result, setResult] = useState<CheckinResolution | null>(null);
+  const [result, setResult] = useState<CheckinResolution | StaffCheckinResolution | null>(null);
   const [arriving, setArriving] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -36,8 +59,32 @@ export function EventScanner({ project }: { project: ProjectSummary }) {
 
   // Load guests for manual lookup fallback
   useEffect(() => {
-    listGuests(project.id).then(setGuests).catch(() => []);
-  }, [project.id]);
+    if (isStaffMode && staffToken) {
+      listStaffGuests(staffToken)
+        .then((items) => {
+          setGuests(
+            items.map((g) => ({
+              id: g.id,
+              event_id: '',
+              name: g.name,
+              phone: g.phone,
+              allowed_companions: g.allowed_companions,
+              rsvp_status: g.rsvp_status,
+              confirmed_party_size: g.confirmed_party_size,
+              checked_in_count: g.checked_in_count,
+              first_checked_in_at: g.first_checked_in_at,
+            } as EventGuest))
+          );
+        })
+        .catch((err) => {
+          if (err instanceof Error && (err.message.includes('42501') || err.message.toLowerCase().includes('expired') || err.message.toLowerCase().includes('invalid'))) {
+            onStaffRevokedOrExpired?.();
+          }
+        });
+    } else if (project.id) {
+      listGuests(project.id).then(setGuests).catch(() => []);
+    }
+  }, [isStaffMode, staffToken, project.id, onStaffRevokedOrExpired]);
 
   // Strict verification step (NO AUTOMATIC CHECK-IN)
   const verifyToken = useCallback(
@@ -48,16 +95,32 @@ export function EventScanner({ project }: { project: ProjectSummary }) {
       setBusy(true);
       setError('');
       try {
-        const res = await resolveCheckin(trimmed, project.id);
-        setResult(res);
-        setArriving(Math.min(1, res.remaining_expected ?? 1));
-      } catch {
-        setError(t('networkError') || t('operationFailed'));
+        if (isStaffMode && staffToken) {
+          const res = await resolveStaffCheckin(staffToken, trimmed);
+          if (res.status === 'not_authorized') {
+            setError(t('accessExpired'));
+            onStaffRevokedOrExpired?.();
+            return;
+          }
+          setResult(res);
+          setArriving(Math.min(1, res.remaining_expected ?? 1));
+        } else if (project.id) {
+          const res = await resolveCheckin(trimmed, project.id);
+          setResult(res);
+          setArriving(Math.min(1, res.remaining_expected ?? 1));
+        }
+      } catch (caught) {
+        if (isStaffMode && caught instanceof Error && (caught.message.includes('42501') || caught.message.toLowerCase().includes('expired') || caught.message.toLowerCase().includes('invalid'))) {
+          setError(t('accessExpired'));
+          onStaffRevokedOrExpired?.();
+        } else {
+          setError(t('networkError') || t('operationFailed'));
+        }
       } finally {
         setBusy(false);
       }
     },
-    [project.id, t]
+    [isStaffMode, staffToken, project.id, t, onStaffRevokedOrExpired]
   );
 
   // Explicit check-in step
@@ -67,10 +130,20 @@ export function EventScanner({ project }: { project: ProjectSummary }) {
     setBusy(true);
     setError('');
     try {
-      const updated = await checkInPartyMembers(value.trim(), project.id, arriving);
-      setResult(updated);
-    } catch {
-      setError(t('checkinRejected'));
+      if (isStaffMode && staffToken) {
+        const updated = await staffCheckInPartyMembers(staffToken, value.trim(), arriving);
+        setResult(updated);
+      } else if (project.id) {
+        const updated = await checkInPartyMembers(value.trim(), project.id, arriving);
+        setResult(updated);
+      }
+    } catch (caught) {
+      if (isStaffMode && caught instanceof Error && (caught.message.includes('42501') || caught.message.toLowerCase().includes('expired') || caught.message.toLowerCase().includes('invalid'))) {
+        setError(t('accessExpired'));
+        onStaffRevokedOrExpired?.();
+      } else {
+        setError(t('checkinRejected'));
+      }
     } finally {
       setBusy(false);
     }
@@ -503,6 +576,392 @@ export function EventScanner({ project }: { project: ProjectSummary }) {
           {t('scannerBoundary')}
         </p>
       )}
+
+      {/* 5. Host Staff Access Management Card */}
+      {!isStaffMode && project.id && (
+        <StaffAccessSection projectId={project.id} projectName={project.name} />
+      )}
     </div>
+  );
+}
+
+function StaffAccessSection({ projectId, projectName }: { projectId: string; projectName: string }) {
+  const { t } = useAppLocale();
+  const [tokens, setTokens] = useState<EventStaffToken[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [label, setLabel] = useState('Main Entrance');
+  const [pin, setPin] = useState('');
+  const [expiryOption, setExpiryOption] = useState<'24h' | '48h' | '7d' | 'none'>('24h');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [showPin, setShowPin] = useState(false);
+
+  // Latest created token in this browser session
+  const [latestCreated, setLatestCreated] = useState<{
+    id: string;
+    label: string;
+    pin: string;
+    expiresAt: string | null;
+    link: string;
+  } | null>(null);
+
+  const loadTokens = useCallback(async () => {
+    try {
+      const data = await listEventStaffTokens(projectId);
+      setTokens(data);
+    } catch {
+      // Ignored
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    void loadTokens();
+  }, [loadTokens]);
+
+  const handleCreate = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    setBusy(true);
+    setError('');
+
+    let expiresAt: string | null = null;
+    if (expiryOption === '24h') expiresAt = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+    else if (expiryOption === '48h') expiresAt = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
+    else if (expiryOption === '7d') expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+
+    try {
+      const res = await createEventStaffToken(projectId, label, expiresAt, pin);
+
+      let salt: string | undefined;
+      let pinHash: string | undefined;
+      if (pin.trim()) {
+        salt = Array.from(crypto.getRandomValues(new Uint8Array(6)))
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join('');
+        pinHash = await computeClientPinHash(pin.trim(), salt);
+      }
+
+      const formatted = formatStaffToken({
+        rawToken: res.token,
+        pinHash,
+        salt,
+        eventName: projectName,
+      });
+
+      const fullLink = `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}/staff/${formatted}`;
+
+      setLatestCreated({
+        id: res.id,
+        label: res.label,
+        pin: pin.trim(),
+        expiresAt,
+        link: fullLink,
+      });
+
+      setShowForm(false);
+      setPin('');
+      await loadTokens();
+    } catch {
+      setError(t('operationFailed'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRevoke = async (tokenId: string) => {
+    try {
+      await revokeEventStaffToken(tokenId);
+      if (latestCreated?.id === tokenId) {
+        setLatestCreated(null);
+      }
+      await loadTokens();
+    } catch {
+      setError(t('operationFailed'));
+    }
+  };
+
+  const copyLink = async () => {
+    if (!latestCreated) return;
+    try {
+      await navigator.clipboard.writeText(latestCreated.link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 3000);
+    } catch {
+      // Fallback
+    }
+  };
+
+  const generatePin = () => {
+    const num = Math.floor(1000 + Math.random() * 9000).toString();
+    setPin(num);
+  };
+
+  return (
+    <section
+      aria-label={t('staffAccess')}
+      className="rounded-3xl border border-[#E8E2D8] bg-white p-5 sm:p-6 shadow-xs space-y-4"
+    >
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-[#E8E2D8] pb-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0C2D24]/10 text-[#0C2D24]">
+            <KeyRound size={20} />
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-[#17251F]">{t('staffAccess')}</h2>
+            <p className="text-xs text-[#756F66]">{t('staffAccessSubtitle')}</p>
+          </div>
+        </div>
+
+        {!showForm && !latestCreated && (
+          <button
+            type="button"
+            data-testid="button-create-staff-access"
+            onClick={() => setShowForm(true)}
+            className="qr-button qr-button--primary min-h-10 text-xs font-bold px-4 self-start sm:self-auto"
+          >
+            <Plus size={14} aria-hidden="true" />
+            <span>{t('createAccess')}</span>
+          </button>
+        )}
+      </div>
+
+      {/* 1. Newly created token card */}
+      {latestCreated && (
+        <div className="rounded-2xl border border-[#D5EADF] bg-[#FAFDFB] p-4 sm:p-5 space-y-3">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <span className="rounded-full bg-[#EBF5F0] px-2.5 py-0.5 text-[10px] font-bold text-[#1B6344]">
+                {t('active')}
+              </span>
+              <h3 className="mt-1 text-sm font-bold text-[#17251F]">{latestCreated.label}</h3>
+              {latestCreated.expiresAt && (
+                <p className="text-[11px] text-[#756F66]">
+                  {t('expires')}: {new Date(latestCreated.expiresAt).toLocaleDateString()}
+                </p>
+              )}
+            </div>
+
+            {latestCreated.pin && (
+              <div className="flex items-center gap-1.5 rounded-xl bg-white px-3 py-1.5 border border-[#D5EADF] text-xs">
+                <span className="text-[#756F66] font-semibold">{t('pin')}:</span>
+                <span className="font-mono font-bold text-[#17251F]">
+                  {showPin ? latestCreated.pin : '••••'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowPin(!showPin)}
+                  className="ms-1 text-[#756F66] hover:text-[#17251F]"
+                  aria-label={showPin ? 'Hide PIN' : 'Show PIN'}
+                >
+                  {showPin ? <EyeOff size={13} /> : <Eye size={13} />}
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-2">
+            <input
+              type="text"
+              readOnly
+              dir="ltr"
+              value={latestCreated.link}
+              className="qr-field-inline min-h-11 flex-1 rounded-xl px-3 text-xs bg-white border border-[#D5EADF] text-[#17251F]"
+            />
+            <button
+              type="button"
+              data-testid="button-copy-staff-link"
+              onClick={() => void copyLink()}
+              className="qr-button qr-button--primary min-h-11 px-4 text-xs font-bold"
+            >
+              {copied ? <Check size={14} /> : <Copy size={14} />}
+              <span>{copied ? t('linkCopied') : t('copyStaffLink')}</span>
+            </button>
+          </div>
+
+          <p className="text-[11px] font-semibold text-[#8B7040]">
+            {t('copyLinkNowWarning')}
+          </p>
+
+          <div className="flex justify-between items-center pt-2 border-t border-[#D5EADF]">
+            <button
+              type="button"
+              data-testid="button-revoke-staff-access"
+              onClick={() => void handleRevoke(latestCreated.id)}
+              className="text-xs font-bold text-[#9C382A] hover:underline"
+            >
+              {t('revokeAccess')}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setLatestCreated(null);
+                setShowForm(true);
+              }}
+              className="text-xs font-bold text-[#0C2D24] hover:underline"
+            >
+              {t('regenerateAccess')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 2. Create staff access form */}
+      {showForm && (
+        <form onSubmit={handleCreate} className="rounded-2xl border border-[#E8E2D8] bg-[#FAF8F4] p-4 sm:p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold text-[#17251F] uppercase tracking-wider">{t('createAccess')}</h3>
+            <button
+              type="button"
+              onClick={() => setShowForm(false)}
+              className="text-[#756F66] hover:text-[#17251F]"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          {/* Label field & suggestion chips */}
+          <div>
+            <label className="block text-xs font-bold text-[#17251F] mb-1">{t('staffLabel')}</label>
+            <input
+              type="text"
+              required
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="e.g. Main Entrance"
+              className="qr-field-inline min-h-11 w-full rounded-xl px-3 text-xs bg-white border border-[#D9D2C5]"
+            />
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {['Main Entrance', 'Reception Desk', 'Door Team'].map((suggested) => (
+                <button
+                  key={suggested}
+                  type="button"
+                  onClick={() => setLabel(suggested)}
+                  className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold border transition ${
+                    label === suggested
+                      ? 'bg-[#0C2D24] text-white border-[#0C2D24]'
+                      : 'bg-white text-[#564F46] border-[#D9D2C5] hover:bg-white/80'
+                  }`}
+                >
+                  {suggested}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* PIN field + Generator */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-bold text-[#17251F]">{t('pin')}</label>
+              <button
+                type="button"
+                onClick={generatePin}
+                className="text-[11px] font-bold text-[#8B7040] hover:underline flex items-center gap-1"
+              >
+                <Sparkles size={12} />
+                <span>{t('generatePin')}</span>
+              </button>
+            </div>
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={8}
+              dir="ltr"
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              placeholder={t('pinPlaceholder')}
+              className="qr-field-inline min-h-11 w-full rounded-xl px-3 text-xs bg-white border border-[#D9D2C5] font-mono"
+            />
+          </div>
+
+          {/* Expiry selector */}
+          <div>
+            <label className="block text-xs font-bold text-[#17251F] mb-1">{t('expires')}</label>
+            <select
+              value={expiryOption}
+              onChange={(e) => setExpiryOption(e.target.value as typeof expiryOption)}
+              className="qr-field-inline min-h-11 w-full rounded-xl px-3 text-xs bg-white border border-[#D9D2C5]"
+            >
+              <option value="24h">{t('hours24')}</option>
+              <option value="48h">{t('hours48')}</option>
+              <option value="7d">{t('days7')}</option>
+              <option value="none">{t('noExpiry')}</option>
+            </select>
+          </div>
+
+          {error && (
+            <p className="text-xs text-[#9C382A] font-semibold">{error}</p>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button
+              type="submit"
+              data-testid="button-submit-create-staff"
+              disabled={busy || !label.trim()}
+              className="qr-button qr-button--primary min-h-11 flex-1 justify-center text-xs font-bold rounded-xl"
+            >
+              {busy ? t('loading') : t('createAccess')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowForm(false)}
+              className="qr-button qr-button--secondary min-h-11 px-4 text-xs font-bold rounded-xl"
+            >
+              {t('cancel')}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* 3. Existing tokens list */}
+      {tokens.length > 0 && (
+        <div className="space-y-2 pt-2">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-[#756F66]">
+            {t('staffAccess')} ({tokens.length})
+          </p>
+          <div className="divide-y divide-[#E8E2D8] rounded-xl border border-[#E8E2D8] bg-white overflow-hidden">
+            {tokens.map((tk) => {
+              const isRevoked = Boolean(tk.revoked_at);
+              const isExpired = tk.expires_at ? new Date(tk.expires_at) < new Date() : false;
+              const isActive = !isRevoked && !isExpired;
+
+              return (
+                <div key={tk.id} className="flex items-center justify-between p-3 text-xs">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-[#17251F]">{tk.label}</span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${
+                          isActive
+                            ? 'bg-[#EBF5F0] text-[#1B6344]'
+                            : 'bg-[#F5F2EC] text-[#756F66]'
+                        }`}
+                      >
+                        {isActive ? t('active') : t('revoked')}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-[#756F66] mt-0.5">
+                      {new Date(tk.created_at).toLocaleDateString()}
+                      {tk.expires_at && ` · ${t('expires')}: ${new Date(tk.expires_at).toLocaleDateString()}`}
+                    </p>
+                  </div>
+
+                  {isActive && (
+                    <button
+                      type="button"
+                      onClick={() => void handleRevoke(tk.id)}
+                      className="text-[11px] font-bold text-[#9C382A] hover:underline"
+                    >
+                      {t('revokeAccess')}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }

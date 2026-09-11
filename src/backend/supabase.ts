@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-import { BackendError } from './errors';
+import { BackendError } from './errors.ts';
 
 let browserClient: SupabaseClient | undefined;
 const expectedSupabaseHost = 'dfmfdlfamjgzfztupngm.supabase.co';

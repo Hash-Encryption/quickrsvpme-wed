@@ -33,6 +33,7 @@ import { commercialSummary, normalizePublicationPolicy, type CommercialSource } 
 import { allowedEventTransitions, isTerminalEvent } from '@/app/lifecycle';
 import { EmptyProjectSection, ProjectShell } from '@/app/ProjectShell';
 import { BackendGuestManager, BackendScanner, EventOperationsOverview, EventSend, EventSettings } from '@/app/Phase3Operations';
+import { StaffScannerPage } from '@/app/event-management/StaffScannerPage';
 import {
   buildProjectRoute,
   findAuthenticatedProjectEvent,
@@ -1240,6 +1241,8 @@ function Router() {
         <Route path="/design/wedding">{() => <WeddingStudioPage />}</Route>
         <Route path="/design/party">{() => <PartyStudioPage />}</Route>
         <Route path="/i/:token" component={GuestRoute} />
+        <Route path="/staff/:token" component={StaffScannerPage} />
+        <Route path="/staff" component={StaffScannerPage} />
         <Route path="/">{() => <RequireAuth><ChoosePlannerPage /></RequireAuth>}</Route>
         <Route path="/planner/wedding/new">{() => <RequireAuth><CreateWeddingPage /></RequireAuth>}</Route>
         <Route path="/planner/wedding">{() => <RequireAuth><WeddingPlannerPage /></RequireAuth>}</Route>
