@@ -199,6 +199,7 @@ const en = {
   lockedOutNotice: 'Too many attempts. Access is locked for 15 minutes.',
   active: 'Active',
   revoked: 'Revoked',
+  staffBackendPending: 'Staff PIN backend unavailable / activation pending',
 } as const;
 
 export type AppTranslationKey = keyof typeof en;
@@ -401,6 +402,7 @@ const ar: Record<AppTranslationKey, string> = {
   lockedOutNotice: 'تم قفل الوصول مؤقتاً لمدة 15 دقيقة بسبب المحاولات الخاطئة.',
   active: 'نشط',
   revoked: 'ملغي',
+  staffBackendPending: 'خدمة رمز المنظمين بانتظار التفعيل في الخادم',
 };
 
 export const appTranslations = { ar, en } satisfies Record<AppLocale, Record<AppTranslationKey, string>>;

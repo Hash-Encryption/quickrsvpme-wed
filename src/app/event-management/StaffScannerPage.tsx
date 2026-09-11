@@ -1,36 +1,19 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useState } from 'react';
 import { useParams } from 'wouter';
 import { Lock, QrCode, ShieldAlert } from 'lucide-react';
 import { AppLanguageControl, useAppLocale } from '@/i18n/app-locale';
-import {
-  clearStaffSession,
-  getStaffSession,
-  parseStaffToken,
-  setStaffSession,
-  verifyStaffPin,
-} from '@/backend/staff-scanner';
+import { verifyStaffPin } from '@/backend/staff-scanner';
 import { EventScanner } from './EventScanner';
 
 export function StaffScannerPage() {
-  const { token: rawParam = '' } = useParams<{ token?: string }>();
+  const { token: rawToken = '' } = useParams<{ token?: string }>();
   const { t } = useAppLocale();
-
-  const parsed = parseStaffToken(rawParam);
-  const rawToken = parsed.rawToken;
 
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [eventTitle, setEventTitle] = useState(parsed.eventName || '');
-
-  // Check if session was already unlocked in this browser tab
-  useEffect(() => {
-    if (!rawToken) return;
-    if (getStaffSession(rawToken)) {
-      setIsUnlocked(true);
-    }
-  }, [rawToken]);
+  const [eventTitle, setEventTitle] = useState('');
 
   const handlePinSubmit = async (e?: FormEvent) => {
     e?.preventDefault();
@@ -40,14 +23,9 @@ export function StaffScannerPage() {
     setError('');
 
     try {
-      const res = await verifyStaffPin(rawToken, pin, {
-        pinHash: parsed.pinHash,
-        salt: parsed.salt,
-        eventName: parsed.eventName,
-      });
+      const res = await verifyStaffPin(rawToken, pin);
 
       if (res.success) {
-        setStaffSession(rawToken);
         setIsUnlocked(true);
         if (res.event_title) {
           setEventTitle(res.event_title);
@@ -61,6 +39,8 @@ export function StaffScannerPage() {
           ? `${t('incorrectPin')} (${t('attemptsRemaining').replace('{n}', String(remaining))})`
           : t('incorrectPin');
         setError(msg);
+      } else if (res.error === 'backend_pending') {
+        setError(t('staffBackendPending'));
       } else {
         setError(t('invalidOrExpiredStaffLink'));
       }
@@ -72,7 +52,7 @@ export function StaffScannerPage() {
   };
 
   const handleRevokedOrExpired = () => {
-    clearStaffSession(rawToken);
+    setPin('');
     setIsUnlocked(false);
     setError(t('accessExpired'));
   };
@@ -173,11 +153,12 @@ export function StaffScannerPage() {
             </form>
           </div>
         ) : (
-          /* Unlocked Scanner View */
+          /* Unlocked Scanner View - PIN retained in runtime memory only */
           <EventScanner
             project={{ name: eventTitle }}
             isStaffMode={true}
             staffToken={rawToken}
+            staffPin={pin}
             onStaffRevokedOrExpired={handleRevokedOrExpired}
           />
         )}

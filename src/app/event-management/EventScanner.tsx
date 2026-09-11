@@ -10,9 +10,7 @@ import {
   type CheckinResolution
 } from '@/backend/phase3';
 import {
-  computeClientPinHash,
   createEventStaffToken,
-  formatStaffToken,
   listEventStaffTokens,
   listStaffGuests,
   resolveStaffCheckin,
@@ -28,6 +26,7 @@ export interface EventScannerProps {
   project: { id?: string; name: string };
   isStaffMode?: boolean;
   staffToken?: string;
+  staffPin?: string;
   onStaffRevokedOrExpired?: () => void;
 }
 
@@ -35,6 +34,7 @@ export function EventScanner({
   project,
   isStaffMode = false,
   staffToken,
+  staffPin,
   onStaffRevokedOrExpired,
 }: EventScannerProps) {
   const { t } = useAppLocale();
@@ -60,7 +60,7 @@ export function EventScanner({
   // Load guests for manual lookup fallback
   useEffect(() => {
     if (isStaffMode && staffToken) {
-      listStaffGuests(staffToken)
+      listStaffGuests(staffToken, staffPin || '')
         .then((items) => {
           setGuests(
             items.map((g) => ({
@@ -77,14 +77,14 @@ export function EventScanner({
           );
         })
         .catch((err) => {
-          if (err instanceof Error && (err.message.includes('42501') || err.message.toLowerCase().includes('expired') || err.message.toLowerCase().includes('invalid'))) {
+          if (err instanceof Error && (err.message.includes('42501') || err.message.toLowerCase().includes('expired') || err.message.toLowerCase().includes('invalid') || err.message.toLowerCase().includes('not_authorized'))) {
             onStaffRevokedOrExpired?.();
           }
         });
     } else if (project.id) {
       listGuests(project.id).then(setGuests).catch(() => []);
     }
-  }, [isStaffMode, staffToken, project.id, onStaffRevokedOrExpired]);
+  }, [isStaffMode, staffToken, staffPin, project.id, onStaffRevokedOrExpired]);
 
   // Strict verification step (NO AUTOMATIC CHECK-IN)
   const verifyToken = useCallback(
@@ -96,7 +96,7 @@ export function EventScanner({
       setError('');
       try {
         if (isStaffMode && staffToken) {
-          const res = await resolveStaffCheckin(staffToken, trimmed);
+          const res = await resolveStaffCheckin(staffToken, staffPin || '', trimmed);
           if (res.status === 'not_authorized') {
             setError(t('accessExpired'));
             onStaffRevokedOrExpired?.();
@@ -110,7 +110,7 @@ export function EventScanner({
           setArriving(Math.min(1, res.remaining_expected ?? 1));
         }
       } catch (caught) {
-        if (isStaffMode && caught instanceof Error && (caught.message.includes('42501') || caught.message.toLowerCase().includes('expired') || caught.message.toLowerCase().includes('invalid'))) {
+        if (isStaffMode && caught instanceof Error && (caught.message.includes('42501') || caught.message.toLowerCase().includes('expired') || caught.message.toLowerCase().includes('invalid') || caught.message.toLowerCase().includes('not_authorized'))) {
           setError(t('accessExpired'));
           onStaffRevokedOrExpired?.();
         } else {
@@ -120,7 +120,7 @@ export function EventScanner({
         setBusy(false);
       }
     },
-    [isStaffMode, staffToken, project.id, t, onStaffRevokedOrExpired]
+    [isStaffMode, staffToken, staffPin, project.id, t, onStaffRevokedOrExpired]
   );
 
   // Explicit check-in step
@@ -131,14 +131,14 @@ export function EventScanner({
     setError('');
     try {
       if (isStaffMode && staffToken) {
-        const updated = await staffCheckInPartyMembers(staffToken, value.trim(), arriving);
+        const updated = await staffCheckInPartyMembers(staffToken, staffPin || '', value.trim(), arriving);
         setResult(updated);
       } else if (project.id) {
         const updated = await checkInPartyMembers(value.trim(), project.id, arriving);
         setResult(updated);
       }
     } catch (caught) {
-      if (isStaffMode && caught instanceof Error && (caught.message.includes('42501') || caught.message.toLowerCase().includes('expired') || caught.message.toLowerCase().includes('invalid'))) {
+      if (isStaffMode && caught instanceof Error && (caught.message.includes('42501') || caught.message.toLowerCase().includes('expired') || caught.message.toLowerCase().includes('invalid') || caught.message.toLowerCase().includes('not_authorized'))) {
         setError(t('accessExpired'));
         onStaffRevokedOrExpired?.();
       } else {
@@ -632,23 +632,7 @@ function StaffAccessSection({ projectId, projectName }: { projectId: string; pro
     try {
       const res = await createEventStaffToken(projectId, label, expiresAt, pin);
 
-      let salt: string | undefined;
-      let pinHash: string | undefined;
-      if (pin.trim()) {
-        salt = Array.from(crypto.getRandomValues(new Uint8Array(6)))
-          .map((b) => b.toString(16).padStart(2, '0'))
-          .join('');
-        pinHash = await computeClientPinHash(pin.trim(), salt);
-      }
-
-      const formatted = formatStaffToken({
-        rawToken: res.token,
-        pinHash,
-        salt,
-        eventName: projectName,
-      });
-
-      const fullLink = `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}/staff/${formatted}`;
+      const fullLink = `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}/staff/${res.token}`;
 
       setLatestCreated({
         id: res.id,
