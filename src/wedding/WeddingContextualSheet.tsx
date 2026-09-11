@@ -1,5 +1,6 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  AlertCircle,
   ArrowDown,
   ArrowLeft,
   ArrowRight,
@@ -8,6 +9,7 @@ import {
   ChevronDown,
   ChevronUp,
   ImagePlus,
+  Pause,
   Play,
   RotateCcw,
   Sparkles,
@@ -71,6 +73,39 @@ type WeddingContextualSheetProps = {
   onSelectBlock?: (id: WeddingTransformBlockId) => void;
 };
 
+function isStreamingMusicLink(url: string): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    return (
+      host.includes("spotify.com") ||
+      host.includes("youtube.com") ||
+      host.includes("youtu.be") ||
+      host.includes("apple.com") ||
+      host.includes("soundcloud.com")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isStreamingVideoLink(url: string): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    return (
+      host.includes("youtube.com") ||
+      host.includes("youtu.be") ||
+      host.includes("vimeo.com") ||
+      host.includes("tiktok.com")
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function WeddingContextualSheet({
   isOpen,
   activeTab,
@@ -93,6 +128,42 @@ export function WeddingContextualSheet({
   const [showOptionalWording, setShowOptionalWording] = useState(
     Boolean(event.customWording || event.mapUrl)
   );
+
+  const [audioTesting, setAudioTesting] = useState(false);
+  const audioPreviewRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (audioPreviewRef.current) {
+        audioPreviewRef.current.pause();
+        audioPreviewRef.current = null;
+      }
+    };
+  }, []);
+
+  const toggleAudioPreview = () => {
+    if (!event.musicUrl) return;
+    if (audioTesting && audioPreviewRef.current) {
+      audioPreviewRef.current.pause();
+      setAudioTesting(false);
+      return;
+    }
+    try {
+      if (!audioPreviewRef.current) {
+        audioPreviewRef.current = new Audio(event.musicUrl);
+        audioPreviewRef.current.onended = () => setAudioTesting(false);
+        audioPreviewRef.current.onerror = () => setAudioTesting(false);
+      } else {
+        audioPreviewRef.current.src = event.musicUrl;
+      }
+      audioPreviewRef.current
+        .play()
+        .then(() => setAudioTesting(true))
+        .catch(() => setAudioTesting(false));
+    } catch {
+      setAudioTesting(false);
+    }
+  };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -843,7 +914,7 @@ export function WeddingContextualSheet({
                     <button
                       key={id}
                       type="button"
-                      className={`flex items-start gap-3 p-3 rounded-2xl border text-start transition ${
+                      className={`flex flex-col sm:flex-row items-stretch sm:items-start gap-3 p-3 rounded-2xl border text-start transition min-h-[44px] ${
                         selected
                           ? "border-[#0C2D24] bg-[#0C2D24]/5 shadow-sm"
                           : "border-[#D4AF37]/30 bg-white hover:border-[#0C2D24]"
@@ -853,19 +924,19 @@ export function WeddingContextualSheet({
                       }
                       aria-pressed={selected}
                     >
-                      <span className={`wedding-layout-diagram wedding-layout-diagram--${id} w-16 h-12 shrink-0`}>
+                      <span className={`wedding-layout-diagram wedding-layout-diagram--${id} w-16 h-12 shrink-0 self-center sm:self-start`}>
                         <i />
                         <i />
                         <i />
                       </span>
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between">
-                          <strong className="text-xs font-bold text-[#0C2D24]">
+                        <div className="flex items-center justify-between gap-2">
+                          <strong className="text-xs font-bold text-[#0C2D24] break-words">
                             {locale === "ar" ? preset.nameAr : preset.name}
                           </strong>
-                          {selected && <Check size={16} className="text-[#0C2D24]" />}
+                          {selected && <Check size={16} className="text-[#0C2D24] shrink-0" />}
                         </div>
-                        <p className="mt-1 text-[10px] text-[#756F66]">
+                        <p className="mt-1 text-[10px] text-[#756F66] break-words">
                           {locale === "ar" ? preset.descriptionAr : preset.name}
                         </p>
                       </div>
@@ -875,13 +946,27 @@ export function WeddingContextualSheet({
               </div>
             </div>
 
-            {/* Optional Media */}
-            <div className="rounded-2xl border border-[#D4AF37]/30 bg-white/70 p-4 shadow-2xs space-y-3">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-[#8B7040]">
-                {w("refinedStyle")}
-              </h4>
-              <label className="block text-xs font-semibold text-[#68615a]">
-                <span className="block mb-1">{w("music")}</span>
+            {/* Music & Video */}
+            <div className="rounded-2xl border border-[#D4AF37]/30 bg-white/70 p-4 shadow-2xs space-y-4">
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-[#8B7040]">
+                  {w("musicAndVideo")}
+                </h4>
+                <p className="mt-1 text-xs text-[#756F66]">
+                  {w("musicAndVideoDesc")}
+                </p>
+              </div>
+
+              {/* Background Music */}
+              <div className="space-y-2 pt-1 border-t border-[#F0EBE1]">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-[#68615a]">{w("musicUrlLabel")}</span>
+                  <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${event.musicUrl ? "text-[#0C2D24]" : "text-[#756F66]"}`}>
+                    <span className={`h-2 w-2 rounded-full ${event.musicUrl ? "bg-[#0C2D24]" : "bg-[#D1C7B7]"}`} />
+                    {event.musicUrl ? w("audioConfigured") : w("noAudioConfigured")}
+                  </span>
+                </div>
+
                 <input
                   value={event.musicUrl}
                   onChange={(e) => onUpdate({ musicUrl: e.target.value })}
@@ -889,10 +974,50 @@ export function WeddingContextualSheet({
                   dir="ltr"
                   className="qr-field-inline min-h-11 w-full rounded-xl px-3 text-xs"
                 />
-              </label>
 
-              <label className="block text-xs font-semibold text-[#68615a]">
-                <span className="block mb-1">{w("video")}</span>
+                {isStreamingMusicLink(event.musicUrl) && (
+                  <div className="flex items-start gap-2 rounded-xl bg-[#b4534b]/10 p-2.5 text-xs text-[#8c302b]" role="alert">
+                    <AlertCircle size={15} className="shrink-0 mt-0.5 text-[#8c302b]" />
+                    <span>{w("streamingWarning")}</span>
+                  </div>
+                )}
+
+                {event.musicUrl && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={toggleAudioPreview}
+                      className="qr-button qr-button--secondary text-xs inline-flex items-center gap-1.5"
+                    >
+                      {audioTesting ? <Pause size={13} /> : <Play size={13} />}
+                      <span>{audioTesting ? w("pauseAudio") : w("previewAudio")}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (audioPreviewRef.current) audioPreviewRef.current.pause();
+                        setAudioTesting(false);
+                        onUpdate({ musicUrl: "" });
+                      }}
+                      className="qr-button qr-button--danger text-xs inline-flex items-center gap-1.5"
+                    >
+                      <Trash2 size={13} />
+                      <span>{w("removeAudio")}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Background Video */}
+              <div className="space-y-2 pt-2 border-t border-[#F0EBE1]">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-[#68615a]">{w("videoUrlLabel")}</span>
+                  <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${event.backgroundMediaUrl ? "text-[#0C2D24]" : "text-[#756F66]"}`}>
+                    <span className={`h-2 w-2 rounded-full ${event.backgroundMediaUrl ? "bg-[#0C2D24]" : "bg-[#D1C7B7]"}`} />
+                    {event.backgroundMediaUrl ? w("videoConfigured") : w("noVideoConfigured")}
+                  </span>
+                </div>
+
                 <input
                   value={event.backgroundMediaUrl}
                   onChange={(e) => onUpdate({ backgroundMediaUrl: e.target.value })}
@@ -900,7 +1025,27 @@ export function WeddingContextualSheet({
                   dir="ltr"
                   className="qr-field-inline min-h-11 w-full rounded-xl px-3 text-xs"
                 />
-              </label>
+
+                {isStreamingVideoLink(event.backgroundMediaUrl) && (
+                  <div className="flex items-start gap-2 rounded-xl bg-[#b4534b]/10 p-2.5 text-xs text-[#8c302b]" role="alert">
+                    <AlertCircle size={15} className="shrink-0 mt-0.5 text-[#8c302b]" />
+                    <span>{w("streamingWarning")}</span>
+                  </div>
+                )}
+
+                {event.backgroundMediaUrl && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => onUpdate({ backgroundMediaUrl: "" })}
+                      className="qr-button qr-button--danger text-xs inline-flex items-center gap-1.5"
+                    >
+                      <Trash2 size={13} />
+                      <span>{w("removeVideo")}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Overall Content Scale & Position */}

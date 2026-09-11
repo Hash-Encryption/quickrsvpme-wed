@@ -909,7 +909,7 @@ function WeddingStudioPage({ embedded = false }: { embedded?: boolean }) {
               >
                 <ExternalLink size={14} /> {t('preview')}
               </button>
-              {auth.session && <Link href={isExistingEvent ? buildProjectRoute('wedding', activeProject.id, 'scanner') : '/scanner'} data-testid="link-open-scanner" className="focus-ring inline-flex items-center gap-2 rounded-full bg-[#0A2E23] px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#FFFDF9]">
+              {auth.session && <Link href={buildProjectRoute('wedding', activeProject.id, 'scanner')} data-testid="link-open-scanner" className="focus-ring inline-flex items-center gap-2 rounded-full bg-[#0A2E23] px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#FFFDF9]">
                 <QrCode size={14} /> {t('doorScanner')}
               </Link>}
             </div>
@@ -1115,9 +1115,27 @@ function DraftRoutePage() {
   if (error) return <main className="min-h-[100dvh] bg-[#F5F2EC] p-5"><div className="mx-auto max-w-xl rounded-3xl bg-white p-7 text-[#8c302b]" role="alert">{error}</div></main>;
   if (!draft) return <LoadingPage />;
   const allowed = access?.allowed ?? access?.can_publish;
-  const alreadyPublished = (typeof access?.event_id === 'string' && access.event_id.length > 0)
-    || auth.events.some((event) => event.source_draft_id === draft.id);
-  const authorityMessage = String(access?.reason ?? access?.code ?? access?.status ?? (allowed === true ? t('publishAvailable') : t('publicationUnavailable')));
+  const publishedEventId = (typeof access?.event_id === 'string' && access.event_id.length > 0)
+    ? access.event_id
+    : auth.events.find((event) => event.source_draft_id === draft.id)?.id;
+  const alreadyPublished = Boolean(publishedEventId);
+
+  const getAuthorityMessage = (): string => {
+    if (alreadyPublished || access?.code === 'draft_already_published' || access?.reason === 'draft_already_published') {
+      return t('alreadyPublished');
+    }
+    if (access?.code === 'publication_allowance_used' || access?.reason === 'publication_allowance_used') {
+      return t('publishingLimitReached');
+    }
+    if (access?.code === 'entitlement_inactive' || access?.code === 'subscription_unavailable' || access?.reason === 'entitlement_inactive') {
+      return t('subscriptionInactive');
+    }
+    if (allowed === true) return t('publishAvailable');
+    if (allowed === false) return t('publicationUnavailable');
+    return t('publishAvailable');
+  };
+  const authorityMessage = getAuthorityMessage();
+
   const publish = async () => {
     setPublishing(true); setError('');
     try {
@@ -1130,7 +1148,7 @@ function DraftRoutePage() {
       setError(caught instanceof Error ? caught.message : t('operationFailed'));
     } finally { setPublishing(false); }
   };
-  return <div className="min-h-[100dvh] bg-[#F5F2EC] text-[#17251F]"><header className="sticky top-0 z-40 border-b border-[#D9D2C5] bg-[#FAF8F4]/95 px-5 py-4 backdrop-blur"><div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[.16em] text-[#8B7040]">{t(type)} · {t('draft')}</p><h1 className="text-lg font-semibold">{draft.title}</h1></div><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-3 py-2 text-xs ${allowed === false ? 'bg-[#8c302b]/10 text-[#8c302b]' : 'bg-[#0C2D24]/10 text-[#0C2D24]'}`}>{authorityMessage}</span><button disabled={publishing || !access || (allowed === false && !alreadyPublished)} onClick={() => void publish()} className="min-h-11 rounded-full bg-[#0C2D24] px-5 text-xs font-semibold text-white disabled:opacity-40">{publishing ? t('publishing') : t('publish')}</button><Link href={type === 'wedding' ? '/planner/wedding' : '/planner/party'} className="min-h-11 rounded-full border border-[#D9D2C5] px-5 py-3 text-xs font-semibold">{t(type === 'wedding' ? 'myWeddingsTitle' : 'myPartiesTitle')}</Link></div></div></header>{error && <p className="mx-auto mt-4 max-w-7xl rounded-2xl bg-[#8c302b]/10 p-4 text-sm text-[#8c302b]" role="alert">{error}</p>}<main className="mx-auto max-w-7xl p-4 sm:p-7">{type === 'wedding' ? <WeddingStudioPage embedded /> : <PartyStudioPage embedded />}</main></div>;
+  return <div className="min-h-[100dvh] bg-[#F5F2EC] text-[#17251F]"><header className="sticky top-0 z-40 border-b border-[#D9D2C5] bg-[#FAF8F4]/95 px-5 py-4 backdrop-blur"><div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[.16em] text-[#8B7040]">{t(type)} · {t('draft')}</p><h1 className="text-lg font-semibold">{draft.title}</h1></div><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-3 py-2 text-xs ${allowed === false && !alreadyPublished ? 'bg-[#8c302b]/10 text-[#8c302b]' : 'bg-[#0C2D24]/10 text-[#0C2D24]'}`}>{authorityMessage}</span>{alreadyPublished && publishedEventId ? <Link href={buildProjectRoute(type, publishedEventId, 'overview')} className="min-h-11 rounded-full bg-[#0C2D24] px-5 py-3 text-xs font-semibold text-white inline-flex items-center justify-center">{t(type === 'wedding' ? 'openWedding' : 'event')}</Link> : <button disabled={publishing || !access || (allowed === false && !alreadyPublished)} onClick={() => void publish()} className="min-h-11 rounded-full bg-[#0C2D24] px-5 text-xs font-semibold text-white disabled:opacity-40">{publishing ? t('publishing') : t('publish')}</button>}<Link href={type === 'wedding' ? '/planner/wedding' : '/planner/party'} className="min-h-11 rounded-full border border-[#D9D2C5] px-5 py-3 text-xs font-semibold">{t(type === 'wedding' ? 'myWeddingsTitle' : 'myPartiesTitle')}</Link></div></div></header>{error && <p className="mx-auto mt-4 max-w-7xl rounded-2xl bg-[#8c302b]/10 p-4 text-sm text-[#8c302b]" role="alert">{error}</p>}<main className="mx-auto max-w-7xl p-4 sm:p-7">{type === 'wedding' ? <WeddingStudioPage embedded /> : <PartyStudioPage embedded />}</main></div>;
 }
 
 function ProjectRoutePage({ type }: { type: ProjectType }) {
@@ -1164,7 +1182,6 @@ function ProjectRoutePage({ type }: { type: ProjectType }) {
   const deadline = type === 'wedding' ? weddingProject?.event.rsvpDeadline ?? '' : state.partyEvent.rsvpDeadline;
   const terminal = backendEvent && isTerminalEvent(backendEvent.lifecycle_status);
   if (terminal && section !== 'overview' && section !== 'settings') content = <EmptyProjectSection title={t('eventReadOnly')}>{t('eventReadOnlyHelp')}</EmptyProjectSection>;
-  else if (backendEvent?.lifecycle_status === 'planning' && section === 'scanner') content = <EmptyProjectSection title={t('eventDayScanner')}>{t('scannerActiveOnly')}</EmptyProjectSection>;
   else if (section === 'overview') content = <EventOperationsOverview project={project} rsvpDeadline={deadline} />;
   else if (section === 'invitation') content = type === 'wedding' ? <WeddingStudioPage embedded /> : <PartyStudioPage embedded />;
   else if (section === 'guests') content = <BackendGuestManager project={project} />;
@@ -1233,7 +1250,9 @@ function Router() {
         <Route path="/account">{() => <RequireAuth><AccountRoute /></RequireAuth>}</Route>
         <Route path="/drafts/:type/:draftId">{() => <RequireAuth><DraftRoutePage /></RequireAuth>}</Route>
         <Route path="/weddings/:eventId/:section">{() => <RequireAuth><WeddingProjectRoute /></RequireAuth>}</Route>
+        <Route path="/weddings/:eventId">{() => <RequireAuth><WeddingProjectRoute /></RequireAuth>}</Route>
         <Route path="/parties/:eventId/:section">{() => <RequireAuth><PartyProjectRoute /></RequireAuth>}</Route>
+        <Route path="/parties/:eventId">{() => <RequireAuth><PartyProjectRoute /></RequireAuth>}</Route>
         <Route path="/admin/:section">{() => <RequireAuth admin><AdminRoute /></RequireAuth>}</Route>
         <Route path="/admin">{() => <RequireAuth admin><AdminRoute /></RequireAuth>}</Route>
         <Route path="/studio/party">{() => <RequireAuth><LegacyRedirect path="/studio/party" /></RequireAuth>}</Route>

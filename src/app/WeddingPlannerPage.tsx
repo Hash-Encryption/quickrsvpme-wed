@@ -196,7 +196,9 @@ export function WeddingPlannerPage() {
                 >
                   <div>
                     <div className="flex items-center justify-between gap-2">
-                      <StatusPill tone="success">{t('live')}</StatusPill>
+                      <StatusPill tone={event.lifecycle_status === 'active' ? 'success' : event.lifecycle_status === 'ended' ? 'warning' : 'neutral'}>
+                        {event.lifecycle_status === 'active' ? t('live') : event.lifecycle_status === 'ended' ? t('ended') : t('planning')}
+                      </StatusPill>
                       <span className="text-xs text-[var(--qr-secondary)]">
                         {event.city || event.venue_name || '—'}
                       </span>
@@ -215,13 +217,20 @@ export function WeddingPlannerPage() {
                     </p>
                   </div>
 
-                  <div className="mt-6 pt-4 border-t border-[var(--qr-divider)] flex items-center justify-between">
+                  <div className="mt-6 pt-4 border-t border-[var(--qr-divider)] flex items-center justify-between gap-2">
                     <Link
                       href={buildProjectRoute('wedding', event.id, 'overview')}
                       data-testid={`link-open-wedding-${event.id}`}
-                      className="qr-button qr-button--secondary text-xs w-full justify-center"
+                      className="qr-button qr-button--primary text-xs flex-1 justify-center"
                     >
                       {t('openWedding')}
+                    </Link>
+                    <Link
+                      href={buildProjectRoute('wedding', event.id, 'invitation')}
+                      data-testid={`link-edit-wedding-invitation-${event.id}`}
+                      className="qr-button qr-button--secondary text-xs flex-1 justify-center"
+                    >
+                      {t('editInvitation')}
                     </Link>
                   </div>
                 </article>

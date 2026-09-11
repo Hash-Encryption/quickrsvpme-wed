@@ -4,11 +4,15 @@ import { useLocation } from 'wouter';
 import { Button, MobileHeader, PageShell } from '@/components/customer-ui';
 import { AppLanguageControl, useAppLocale } from '@/i18n/app-locale';
 import { defaultWeddingEvent, type WeddingEventData } from '@/wedding/model';
-import { createDesignDraft } from '@/backend/phase2';
+import { createEvent } from '@/backend/events';
+import { saveWeddingConfig } from '@/backend/phase2';
+import { useAuth } from '@/auth/AuthProvider';
+import { buildProjectRoute } from './projects';
 
 export function CreateWeddingPage() {
   const { t } = useAppLocale();
   const [, navigate] = useLocation();
+  const auth = useAuth();
 
   const [name, setName] = useState('');
   const [date, setDate] = useState('');
@@ -34,11 +38,20 @@ export function CreateWeddingPage() {
       const configuration = {
         ...(structuredClone(defaultWeddingEvent) as WeddingEventData & Record<string, unknown>),
         gregorianDate: date.trim(),
+        title: name.trim(),
       };
 
-      const draft = await createDesignDraft('wedding', name.trim(), configuration);
+      const startsAt = date.trim() ? new Date(date.trim()).toISOString() : null;
+      const newEvent = await createEvent({
+        productId: 'wedding',
+        title: name.trim(),
+        startsAt,
+        invitationLocale: 'ar',
+      });
+      await saveWeddingConfig(newEvent.id, configuration, 0, null);
+      await auth.refresh();
       // Direct Entry Rule: Immediately navigate to Wedding invitation setup
-      navigate(`/drafts/wedding/${draft.id}`);
+      navigate(buildProjectRoute('wedding', newEvent.id, 'invitation'));
     } catch (caught) {
       setErrorMessage(caught instanceof Error ? caught.message : t('operationFailed'));
       setSubmitting(false);

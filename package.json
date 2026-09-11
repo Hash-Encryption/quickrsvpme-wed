@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test src/i18n/locale.test.ts src/auth/bootstrap.test.ts src/app/projects.test.ts src/app/phase2.test.ts src/app/operations.test.ts src/app/commercial.test.ts src/app/lifecycle.test.ts src/backend/errors.test.ts src/backend/phase3.test.ts src/party/model.test.ts src/party/party-v2.test.ts src/wedding/anonymous-transfer.test.ts src/wedding/model.test.ts src/wedding/workspace.test.ts src/wedding/wedding-ux-v2.test.ts src/app/pre-phase-flow.test.ts src/app/phase5-event-management.test.ts src/app/phase6-certification.test.ts",
+    "test": "node --experimental-strip-types --test src/i18n/locale.test.ts src/auth/bootstrap.test.ts src/app/projects.test.ts src/app/phase2.test.ts src/app/operations.test.ts src/app/commercial.test.ts src/app/lifecycle.test.ts src/backend/errors.test.ts src/backend/phase3.test.ts src/party/model.test.ts src/party/party-v2.test.ts src/wedding/anonymous-transfer.test.ts src/wedding/model.test.ts src/wedding/workspace.test.ts src/wedding/wedding-ux-v2.test.ts src/app/pre-phase-flow.test.ts src/app/phase5-event-management.test.ts src/app/phase6-certification.test.ts src/app/post-v2-corrections.test.ts",
     "test:ui": "node scripts/check-customer-ui.mjs && node scripts/certify-phase5-flows.mjs",
     "check": "npm run test && npm run test:ui && npm run typecheck && npm run build"
   },
