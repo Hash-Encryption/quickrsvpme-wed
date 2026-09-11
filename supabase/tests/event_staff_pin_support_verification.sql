@@ -289,8 +289,7 @@ begin
 
   select * into guest_row
   from public.event_guests
-  where id = invitation.guest_id
-    and deleted_at is null;
+  where id = invitation.guest_id;
 
   if guest_row.id is null then
     return jsonb_build_object('status', 'invalid');
@@ -355,7 +354,6 @@ begin
   select * into guest_row
   from public.event_guests
   where id = invitation.guest_id
-    and deleted_at is null
   for update;
 
   if guest_row.id is null then
@@ -441,8 +439,7 @@ begin
     jsonb_build_array()
   ) into v_guests
   from public.event_guests g
-  where g.event_id = v_auth.event_id
-    and g.deleted_at is null;
+  where g.event_id = v_auth.event_id;
 
   return jsonb_build_object(
     'status', 'authorized',

@@ -84,8 +84,7 @@ begin
 
   select * into guest_row
   from public.event_guests
-  where id = invitation.guest_id
-    and deleted_at is null;
+  where id = invitation.guest_id;
 
   if guest_row.id is null then
     return jsonb_build_object('status', 'invalid');
@@ -156,7 +155,6 @@ begin
   select * into guest_row
   from public.event_guests
   where id = invitation.guest_id
-    and deleted_at is null
   for update;
 
   if guest_row.id is null then
@@ -252,7 +250,6 @@ begin
     g.first_checked_in_at
   from public.event_guests g
   where g.event_id = staff_row.event_id
-    and g.deleted_at is null
   order by g.name;
 end;
 $$;
