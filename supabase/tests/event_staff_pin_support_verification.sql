@@ -466,6 +466,7 @@ grant execute on function public.list_staff_guests(text, text) to anon, authenti
 -- 2. Execute Verification Assertions
 do $$
 declare
+  v_instance_id uuid;
   v_client_id uuid;
   v_user_id uuid;
   v_event_a uuid;
@@ -484,13 +485,55 @@ declare
   v_staff_locked_until timestamptz;
 begin
   -- Setup test auth & client
-  v_user_id := gen_random_uuid();
-  insert into public.clients (auth_user_id, display_name)
-  values (v_user_id, 'Test Client Host')
-  returning id into v_client_id;
+  -- Discover existing non-admin Client first
+  select i.user_id, i.client_id into v_user_id, v_client_id
+  from public.client_identities i
+  where not exists (select 1 from public.platform_admins a where a.user_id = i.user_id)
+  order by i.created_at, i.user_id
+  limit 1;
+
+  if v_user_id is null or v_client_id is null then
+    begin
+      select instance_id into v_instance_id from auth.users where instance_id is not null limit 1;
+    exception when others then
+      v_instance_id := null;
+    end;
+    v_instance_id := coalesce(v_instance_id, '00000000-0000-0000-0000-000000000000'::uuid);
+
+    v_user_id := gen_random_uuid();
+    insert into auth.users (
+      id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
+      raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+    ) values (
+      v_user_id, v_instance_id, 'authenticated', 'authenticated',
+      'test-staff-' || v_user_id || '@quickrsvp.test', '', now(),
+      '{"provider":"email","providers":["email"]}'::jsonb,
+      jsonb_build_object('display_name', 'Test Client Host'),
+      now(), now()
+    );
+
+    select client_id into v_client_id from public.client_identities where user_id = v_user_id;
+    if v_client_id is null then
+      insert into public.clients (display_name, status)
+      values ('Test Client Host', 'active')
+      returning id into v_client_id;
+
+      insert into public.client_identities (user_id, client_id)
+      values (v_user_id, v_client_id);
+    end if;
+  end if;
+
+  -- Ensure active product entitlements for the client
+  insert into public.client_entitlements (client_id, product_id, status)
+  values
+    (v_client_id, 'wedding', 'active'),
+    (v_client_id, 'party', 'active')
+  on conflict (client_id, product_id) do update
+  set status = 'active', starts_at = now(), ends_at = null;
 
   -- Impersonate client host
   perform set_config('request.jwt.claims', json_build_object('sub', v_user_id::text)::text, true);
+  perform set_config('request.jwt.claim.sub', v_user_id::text, true);
 
   -- Setup active events A and B
   insert into public.events (client_id, title, product_id, lifecycle_status, starts_at)
@@ -532,6 +575,7 @@ begin
 
   -- Switch to unauthenticated / anon role to test staff scanner access
   perform set_config('request.jwt.claims', '', true);
+  perform set_config('request.jwt.claim.sub', '', true);
 
   -- ============================================================================
   -- Assertion 1: Baseline Authorized Access (token + PIN) across all 4 RPCs
