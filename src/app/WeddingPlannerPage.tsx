@@ -7,11 +7,11 @@ import { useAuth } from '@/auth/AuthProvider';
 import { deleteDesignDraft, listDesignDrafts, type DesignDraft } from '@/backend/phase2';
 import { buildProjectRoute } from './projects';
 
-export function WeddingPlannerPage() {
+export function WeddingPlannerPage({ initialDrafts }: { initialDrafts?: DesignDraft<Record<string, unknown>>[] } = {}) {
   const { t, locale } = useAppLocale();
   const auth = useAuth();
-  const [drafts, setDrafts] = useState<DesignDraft<Record<string, unknown>>[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [drafts, setDrafts] = useState<DesignDraft<Record<string, unknown>>[]>(initialDrafts ?? []);
+  const [loading, setLoading] = useState(initialDrafts === undefined);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
@@ -35,6 +35,11 @@ export function WeddingPlannerPage() {
   };
 
   const loadData = async () => {
+    if (initialDrafts !== undefined) {
+      setDrafts(initialDrafts);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError('');
     try {
@@ -48,13 +53,16 @@ export function WeddingPlannerPage() {
   };
 
   useEffect(() => {
+    if (initialDrafts !== undefined) return;
     if (!auth.loading) {
       void loadData();
     }
-  }, [auth.loading]);
+  }, [auth.loading, initialDrafts]);
 
   const liveEvents = auth.events.filter((event) => event.product_id === 'wedding' && !event.deleted_at);
-  const totalCount = drafts.length + liveEvents.length;
+  const unlinkedDrafts = drafts.filter((draft) =>
+    !auth.events.some((event) => !event.deleted_at && (event.id === draft.id || (Boolean(event.source_draft_id) && event.source_draft_id === draft.id)))
+  );
 
   const formatDate = (dateStr?: string | null) => {
     if (!dateStr) return '—';
@@ -97,8 +105,8 @@ export function WeddingPlannerPage() {
           </Link>
         </section>
 
-        {/* Weddings List Section */}
-        <section>
+        {/* Real Backend Weddings List Section */}
+        <section data-testid="section-my-weddings">
           {auth.degraded?.events && (
             <div className="mb-6 qr-notice qr-notice--warning flex items-center justify-between gap-3" role="status">
               <span>{t('eventsLoadFailed')}</span>
@@ -110,7 +118,7 @@ export function WeddingPlannerPage() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="qr-section-title text-lg font-bold text-[var(--qr-text)] flex items-center gap-2">
               <span>{t('myWeddingsCount')}</span>
-              <span className="text-xs font-normal text-[var(--qr-secondary)]">({totalCount})</span>
+              <span className="text-xs font-normal text-[var(--qr-secondary)]">({liveEvents.length})</span>
             </h2>
           </div>
 
@@ -120,8 +128,8 @@ export function WeddingPlannerPage() {
             </div>
           ) : error ? (
             <ErrorState title={t('appErrorTitle')} description={error} />
-          ) : totalCount === 0 ? (
-            /* State A — No Weddings Empty State */
+          ) : liveEvents.length === 0 ? (
+            /* State A — No Real Weddings Empty State */
             <div className="qr-card py-12 px-6 text-center">
               <EmptyState
                 icon={<Heart size={36} strokeWidth={1.5} className="qr-gold-text mx-auto" aria-hidden="true" />}
@@ -136,10 +144,89 @@ export function WeddingPlannerPage() {
               />
             </div>
           ) : (
-            /* State B — Existing Weddings List */
+            /* State B — Existing Backend Weddings List */
             <div className="grid gap-4 sm:grid-cols-2">
-              {/* Draft Weddings */}
-              {drafts.map((draft) => {
+              {liveEvents.map((event) => {
+                const statusTone =
+                  event.lifecycle_status === 'active'
+                    ? 'success'
+                    : event.lifecycle_status === 'ended'
+                      ? 'warning'
+                      : 'neutral';
+                const statusLabel =
+                  event.lifecycle_status === 'active'
+                    ? t('live')
+                    : event.lifecycle_status === 'ended'
+                      ? t('ended')
+                      : event.lifecycle_status === 'archived'
+                        ? t('archived')
+                        : t('notPublished');
+
+                return (
+                  <article
+                    key={`event-${event.id}`}
+                    data-testid={`wedding-event-${event.id}`}
+                    className="qr-card flex flex-col justify-between p-5 hover:border-[var(--qr-primary)] transition"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2">
+                        <StatusPill tone={statusTone}>{statusLabel}</StatusPill>
+                        <span className="text-xs text-[var(--qr-secondary)]">
+                          {event.city || event.venue_name || '—'}
+                        </span>
+                      </div>
+                      <Link
+                        href={buildProjectRoute('wedding', event.id, 'overview')}
+                        className="focus-ring block mt-3"
+                      >
+                        <h3 className="qr-card-title text-lg font-bold text-[var(--qr-primary)] hover:underline break-words">
+                          {event.title}
+                        </h3>
+                      </Link>
+                      <p className="mt-2 flex items-center gap-2 text-xs text-[var(--qr-secondary)]">
+                        <CalendarDays size={14} className="shrink-0 qr-gold-text" aria-hidden="true" />
+                        <span>{formatDate(event.starts_at)}</span>
+                      </p>
+                    </div>
+
+                    <div className="mt-6 pt-4 border-t border-[var(--qr-divider)] flex items-center justify-between gap-2">
+                      <Link
+                        href={buildProjectRoute('wedding', event.id, 'overview')}
+                        data-testid={`link-overview-wedding-${event.id}`}
+                        className="qr-button qr-button--primary text-xs flex-1 justify-center"
+                      >
+                        {t('overview')}
+                      </Link>
+                      <Link
+                        href={buildProjectRoute('wedding', event.id, 'invitation')}
+                        data-testid={`link-edit-wedding-invitation-${event.id}`}
+                        className="qr-button qr-button--secondary text-xs flex-1 justify-center"
+                      >
+                        {t('editInvitation')}
+                      </Link>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* Standalone Design Drafts Section */}
+        {unlinkedDrafts.length > 0 && (
+          <section className="mt-10" data-testid="section-wedding-drafts">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="qr-section-title text-lg font-bold text-[var(--qr-text)] flex items-center gap-2">
+                <span>{t('draftInvitations')}</span>
+                <span className="text-xs font-normal text-[var(--qr-secondary)]">({unlinkedDrafts.length})</span>
+              </h2>
+            </div>
+            <p className="text-xs text-[var(--qr-secondary)] mb-4">
+              {t('draftInvitationsHelp')}
+            </p>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              {unlinkedDrafts.map((draft) => {
                 const draftConfig = draft.configuration as Record<string, unknown> | undefined;
                 const draftDate = typeof draftConfig?.gregorianDate === 'string' ? draftConfig.gregorianDate : undefined;
 
@@ -168,10 +255,10 @@ export function WeddingPlannerPage() {
                     <div className="mt-6 pt-4 border-t border-[var(--qr-divider)] flex items-center justify-between gap-2">
                       <Link
                         href={`/drafts/wedding/${draft.id}`}
-                        data-testid={`link-continue-wedding-${draft.id}`}
+                        data-testid={`link-edit-draft-wedding-${draft.id}`}
                         className="qr-button qr-button--primary text-xs flex-1 justify-center"
                       >
-                        {t('continueInvitation')}
+                        {t('editDraft')}
                       </Link>
                       <button
                         type="button"
@@ -186,58 +273,9 @@ export function WeddingPlannerPage() {
                   </article>
                 );
               })}
-
-              {/* Published Wedding Events */}
-              {liveEvents.map((event) => (
-                <article
-                  key={`event-${event.id}`}
-                  data-testid={`wedding-event-${event.id}`}
-                  className="qr-card flex flex-col justify-between p-5 hover:border-[var(--qr-primary)] transition"
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-2">
-                      <StatusPill tone={event.lifecycle_status === 'active' ? 'success' : event.lifecycle_status === 'ended' ? 'warning' : 'neutral'}>
-                        {event.lifecycle_status === 'active' ? t('live') : event.lifecycle_status === 'ended' ? t('ended') : t('planning')}
-                      </StatusPill>
-                      <span className="text-xs text-[var(--qr-secondary)]">
-                        {event.city || event.venue_name || '—'}
-                      </span>
-                    </div>
-                    <Link
-                      href={buildProjectRoute('wedding', event.id, 'overview')}
-                      className="focus-ring block mt-3"
-                    >
-                      <h3 className="qr-card-title text-lg font-bold text-[var(--qr-primary)] hover:underline break-words">
-                        {event.title}
-                      </h3>
-                    </Link>
-                    <p className="mt-2 flex items-center gap-2 text-xs text-[var(--qr-secondary)]">
-                      <CalendarDays size={14} className="shrink-0 qr-gold-text" aria-hidden="true" />
-                      <span>{formatDate(event.starts_at)}</span>
-                    </p>
-                  </div>
-
-                  <div className="mt-6 pt-4 border-t border-[var(--qr-divider)] flex items-center justify-between gap-2">
-                    <Link
-                      href={buildProjectRoute('wedding', event.id, 'overview')}
-                      data-testid={`link-open-wedding-${event.id}`}
-                      className="qr-button qr-button--primary text-xs flex-1 justify-center"
-                    >
-                      {t('openWedding')}
-                    </Link>
-                    <Link
-                      href={buildProjectRoute('wedding', event.id, 'invitation')}
-                      data-testid={`link-edit-wedding-invitation-${event.id}`}
-                      className="qr-button qr-button--secondary text-xs flex-1 justify-center"
-                    >
-                      {t('editInvitation')}
-                    </Link>
-                  </div>
-                </article>
-              ))}
             </div>
-          )}
-        </section>
+          </section>
+        )}
       </main>
 
       <CustomerBottomNav active="wedding" />

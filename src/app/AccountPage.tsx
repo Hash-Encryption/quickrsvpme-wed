@@ -120,7 +120,7 @@ export function AccountPage({
                 <UserRound size={22} aria-hidden="true" />
               </span>
               <div>
-                <p className="text-xs font-semibold qr-gold-text">{t('backendConnected')}</p>
+                <p className="text-xs font-semibold qr-gold-text">{t('account')}</p>
                 <p className="text-sm font-medium" dir="ltr">{email}</p>
               </div>
             </div>
@@ -211,13 +211,13 @@ export function AccountPage({
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-[var(--qr-secondary)]">{t('allowance')}</dt>
+                    <dt className="text-[var(--qr-secondary)]">{t('eventsIncluded')}</dt>
                     <dd className="mt-1 font-semibold text-[var(--qr-primary)]">
                       {item?.unlimited ? t('unlimited') : item?.limit ?? '—'}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-[var(--qr-secondary)]">{t('remaining')}</dt>
+                    <dt className="text-[var(--qr-secondary)]">{t('available')}</dt>
                     <dd className="mt-1 font-semibold text-[var(--qr-primary)]">
                       {item?.unlimited ? t('unlimited') : item?.remaining ?? '—'}
                     </dd>

@@ -9,13 +9,13 @@ import { loadCommercialSource } from '@/backend/commercial';
 import { commercialSummary, type CommercialSource, type CommercialSummary } from './commercial';
 import { buildProjectRoute } from './projects';
 
-export function PartyPlannerPage() {
+export function PartyPlannerPage({ initialDrafts, initialCommercial }: { initialDrafts?: DesignDraft<Record<string, unknown>>[]; initialCommercial?: CommercialSource | null } = {}) {
   const { t, locale, dir } = useAppLocale();
   const auth = useAuth();
 
-  const [drafts, setDrafts] = useState<DesignDraft<Record<string, unknown>>[]>([]);
-  const [commercial, setCommercial] = useState<CommercialSource | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [drafts, setDrafts] = useState<DesignDraft<Record<string, unknown>>[]>(initialDrafts ?? []);
+  const [commercial, setCommercial] = useState<CommercialSource | null>(initialCommercial ?? null);
+  const [loading, setLoading] = useState(initialDrafts === undefined);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
@@ -39,6 +39,12 @@ export function PartyPlannerPage() {
   };
 
   const loadData = async () => {
+    if (initialDrafts !== undefined) {
+      setDrafts(initialDrafts);
+      if (initialCommercial !== undefined) setCommercial(initialCommercial);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError('');
     try {
@@ -56,13 +62,16 @@ export function PartyPlannerPage() {
   };
 
   useEffect(() => {
+    if (initialDrafts !== undefined) return;
     if (!auth.loading) {
       void loadData();
     }
-  }, [auth.loading]);
+  }, [auth.loading, initialDrafts]);
 
   const liveEvents = auth.events.filter((event) => event.product_id === 'party' && !event.deleted_at);
-  const totalCount = drafts.length + liveEvents.length;
+  const unlinkedDrafts = drafts.filter((draft) =>
+    !auth.events.some((event) => !event.deleted_at && (event.id === draft.id || (Boolean(event.source_draft_id) && event.source_draft_id === draft.id)))
+  );
 
   const partySummary: CommercialSummary | null = commercial
     ? commercialSummary('party', auth.entitlements, commercial, auth.events)
@@ -147,8 +156,8 @@ export function PartyPlannerPage() {
           </Link>
         </section>
 
-        {/* Parties List Section */}
-        <section>
+        {/* Real Backend Parties List Section */}
+        <section data-testid="section-my-parties">
           {auth.degraded?.events && (
             <div className="mb-6 qr-notice qr-notice--warning flex items-center justify-between gap-3" role="status">
               <span>{t('eventsLoadFailed')}</span>
@@ -160,7 +169,7 @@ export function PartyPlannerPage() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="qr-section-title text-lg font-bold text-[var(--qr-text)] flex items-center gap-2">
               <span>{t('myPartiesCount')}</span>
-              <span className="text-xs font-normal text-[var(--qr-secondary)]">({totalCount})</span>
+              <span className="text-xs font-normal text-[var(--qr-secondary)]">({liveEvents.length})</span>
             </h2>
           </div>
 
@@ -170,7 +179,7 @@ export function PartyPlannerPage() {
             </div>
           ) : error ? (
             <ErrorState title={t('appErrorTitle')} description={error} />
-          ) : totalCount === 0 ? (
+          ) : liveEvents.length === 0 ? (
             /* State A — No Parties Empty State */
             <div className="qr-card py-12 px-6 text-center">
               <EmptyState
@@ -188,8 +197,87 @@ export function PartyPlannerPage() {
           ) : (
             /* State B — Existing Parties List */
             <div className="grid gap-4 sm:grid-cols-2">
-              {/* Draft Parties */}
-              {drafts.map((draft) => {
+              {liveEvents.map((event) => {
+                const statusTone =
+                  event.lifecycle_status === 'active'
+                    ? 'success'
+                    : event.lifecycle_status === 'ended'
+                      ? 'warning'
+                      : 'neutral';
+                const statusLabel =
+                  event.lifecycle_status === 'active'
+                    ? t('live')
+                    : event.lifecycle_status === 'ended'
+                      ? t('ended')
+                      : event.lifecycle_status === 'archived'
+                        ? t('archived')
+                        : t('notPublished');
+
+                return (
+                  <article
+                    key={`event-${event.id}`}
+                    data-testid={`party-event-${event.id}`}
+                    className="qr-card flex flex-col justify-between p-5 hover:border-[var(--qr-primary)] transition"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2">
+                        <StatusPill tone={statusTone}>{statusLabel}</StatusPill>
+                        <span className="text-xs text-[var(--qr-secondary)]">
+                          {event.city || event.venue_name || '—'}
+                        </span>
+                      </div>
+                      <Link
+                        href={buildProjectRoute('party', event.id, 'overview')}
+                        className="focus-ring block mt-3"
+                      >
+                        <h3 className="qr-card-title text-lg font-bold text-[var(--qr-primary)] hover:underline break-words">
+                          {event.title}
+                        </h3>
+                      </Link>
+                      <p className="mt-2 flex items-center gap-2 text-xs text-[var(--qr-secondary)]">
+                        <CalendarDays size={14} className="shrink-0 qr-gold-text" aria-hidden="true" />
+                        <span>{formatDate(event.starts_at)}</span>
+                      </p>
+                    </div>
+
+                    <div className="mt-6 pt-4 border-t border-[var(--qr-divider)] flex items-center justify-between gap-2">
+                      <Link
+                        href={buildProjectRoute('party', event.id, 'overview')}
+                        data-testid={`link-overview-party-${event.id}`}
+                        className="qr-button qr-button--primary text-xs flex-1 justify-center"
+                      >
+                        {t('overview')}
+                      </Link>
+                      <Link
+                        href={buildProjectRoute('party', event.id, 'invitation')}
+                        data-testid={`link-edit-party-invitation-${event.id}`}
+                        className="qr-button qr-button--secondary text-xs flex-1 justify-center"
+                      >
+                        {t('editInvitation')}
+                      </Link>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* Standalone Design Drafts Section */}
+        {unlinkedDrafts.length > 0 && (
+          <section className="mt-10" data-testid="section-party-drafts">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="qr-section-title text-lg font-bold text-[var(--qr-text)] flex items-center gap-2">
+                <span>{t('draftInvitations')}</span>
+                <span className="text-xs font-normal text-[var(--qr-secondary)]">({unlinkedDrafts.length})</span>
+              </h2>
+            </div>
+            <p className="text-xs text-[var(--qr-secondary)] mb-4">
+              {t('draftInvitationsHelp')}
+            </p>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              {unlinkedDrafts.map((draft) => {
                 const draftConfig = draft.configuration as Record<string, unknown> | undefined;
                 const draftDate = typeof draftConfig?.date === 'string' && draftConfig.date ? draftConfig.date : undefined;
 
@@ -218,10 +306,10 @@ export function PartyPlannerPage() {
                     <div className="mt-6 pt-4 border-t border-[var(--qr-divider)] flex items-center justify-between gap-2">
                       <Link
                         href={`/drafts/party/${draft.id}`}
-                        data-testid={`link-continue-party-${draft.id}`}
+                        data-testid={`link-edit-draft-party-${draft.id}`}
                         className="qr-button qr-button--primary text-xs flex-1 justify-center"
                       >
-                        {t('continueParty')}
+                        {t('editDraft')}
                       </Link>
                       <button
                         type="button"
@@ -236,44 +324,9 @@ export function PartyPlannerPage() {
                   </article>
                 );
               })}
-
-              {/* Published Party Events */}
-              {liveEvents.map((event) => (
-                <article
-                  key={`event-${event.id}`}
-                  data-testid={`party-event-${event.id}`}
-                  className="qr-card flex flex-col justify-between p-5 hover:border-[var(--qr-primary)] transition"
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-2">
-                      <StatusPill tone="success">{t('live')}</StatusPill>
-                      <span className="text-xs text-[var(--qr-secondary)]">
-                        {event.city || event.venue_name || '—'}
-                      </span>
-                    </div>
-                    <h3 className="qr-card-title mt-3 text-lg font-bold text-[var(--qr-primary)] break-words">
-                      {event.title}
-                    </h3>
-                    <p className="mt-2 flex items-center gap-2 text-xs text-[var(--qr-secondary)]">
-                      <CalendarDays size={14} className="shrink-0 qr-gold-text" aria-hidden="true" />
-                      <span>{formatDate(event.starts_at)}</span>
-                    </p>
-                  </div>
-
-                  <div className="mt-6 pt-4 border-t border-[var(--qr-divider)] flex items-center justify-between">
-                    <Link
-                      href={buildProjectRoute('party', event.id, 'overview')}
-                      data-testid={`link-open-party-${event.id}`}
-                      className="qr-button qr-button--secondary text-xs w-full justify-center"
-                    >
-                      {t('openParty')}
-                    </Link>
-                  </div>
-                </article>
-              ))}
             </div>
-          )}
-        </section>
+          </section>
+        )}
       </main>
 
       <CustomerBottomNav active="party" />
