@@ -153,38 +153,83 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
-export async function normalizeWeddingBackground(
-  file: File,
-): Promise<WeddingUploadedBackground> {
-  if (
-    !supportedWeddingBackgroundTypes.includes(
-      file.type as (typeof supportedWeddingBackgroundTypes)[number],
-    )
-  ) {
+export function detectWeddingImageMimeType(file: File): string | null {
+  const rawType = (file.type || '').trim().toLowerCase();
+  if (rawType === 'image/jpeg' || rawType === 'image/jpg' || rawType === 'image/pjpeg') return 'image/jpeg';
+  if (rawType === 'image/png') return 'image/png';
+  if (rawType === 'image/webp') return 'image/webp';
+
+  const name = (file.name || '').toLowerCase();
+  if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
+  if (name.endsWith('.png')) return 'image/png';
+  if (name.endsWith('.webp')) return 'image/webp';
+
+  return null;
+}
+
+export function validateWeddingUploadFile(file: File): string {
+  const mimeType = detectWeddingImageMimeType(file);
+  if (!mimeType) {
     throw new Error("اختاري صورة بصيغة JPEG أو PNG أو WebP.");
   }
   if (file.size > weddingBackgroundLimits.maxRawBytes) {
     throw new Error("حجم الصورة كبير جدًا. الحد الأقصى قبل المعالجة هو 12 MB.");
   }
+  return mimeType;
+}
 
-  let image: ImageBitmap;
-  try {
-    image = await createImageBitmap(file);
-  } catch {
-    throw new Error("تعذر فتح الصورة. جرّبي ملفًا آخر.");
+export async function normalizeWeddingBackground(
+  file: File,
+): Promise<WeddingUploadedBackground> {
+  const mimeType = validateWeddingUploadFile(file);
+
+  let width = 0;
+  let height = 0;
+  let drawToCanvas: (context: CanvasRenderingContext2D, w: number, h: number) => void = () => {};
+  let cleanup: () => void = () => {};
+
+  if (typeof createImageBitmap === "function") {
+    try {
+      const bitmap = await createImageBitmap(file);
+      width = bitmap.width;
+      height = bitmap.height;
+      drawToCanvas = (ctx, w, h) => ctx.drawImage(bitmap, 0, 0, w, h);
+      cleanup = () => bitmap.close();
+    } catch {
+      // Fall through to HTMLImageElement fallback
+    }
+  }
+
+  if (!width || !height) {
+    await new Promise<void>((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        width = img.naturalWidth || img.width;
+        height = img.naturalHeight || img.height;
+        drawToCanvas = (ctx, w, h) => ctx.drawImage(img, 0, 0, w, h);
+        cleanup = () => URL.revokeObjectURL(url);
+        resolve();
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error("تعذر فتح الصورة. جرّبي ملفًا آخر."));
+      };
+      img.src = url;
+    });
   }
 
   try {
     const scale = Math.min(
       1,
-      weddingBackgroundLimits.maxDimension / Math.max(image.width, image.height),
+      weddingBackgroundLimits.maxDimension / Math.max(width, height),
     );
     const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(image.width * scale));
-    canvas.height = Math.max(1, Math.round(image.height * scale));
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
     const context = canvas.getContext("2d");
     if (!context) throw new Error("تعذر تجهيز الصورة للمعاينة.");
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    drawToCanvas(context, canvas.width, canvas.height);
 
     let output = await canvasToBlob(canvas, 0.84);
     for (let quality = 0.74; output.size > weddingBackgroundLimits.maxOutputBytes && quality >= 0.5; quality -= 0.12) {
@@ -200,6 +245,6 @@ export async function normalizeWeddingBackground(
       mimeType: "image/webp",
     };
   } finally {
-    image.close();
+    cleanup();
   }
 }

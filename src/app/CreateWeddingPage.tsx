@@ -3,7 +3,7 @@ import { Sparkles } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { Button, MobileHeader, PageShell } from '@/components/customer-ui';
 import { AppLanguageControl, useAppLocale } from '@/i18n/app-locale';
-import { defaultWeddingEvent, type WeddingEventData } from '@/wedding/model';
+import { defaultWeddingEvent, deriveHijriDateFromGregorian, deriveDayOfWeekFromGregorian, type WeddingEventData } from '@/wedding/model';
 import { createEvent } from '@/backend/events';
 import { saveWeddingConfig } from '@/backend/phase2';
 import { useAuth } from '@/auth/AuthProvider';
@@ -16,12 +16,16 @@ export function CreateWeddingPage() {
 
   const [name, setName] = useState('');
   const [date, setDate] = useState('');
+  const [showHijriDate, setShowHijriDate] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [touched, setTouched] = useState({ name: false, date: false });
 
   const nameError = touched.name && !name.trim() ? t('weddingNameRequired') : '';
   const dateError = touched.date && !date.trim() ? t('weddingDateRequired') : '';
+
+  const derivedHijri = date.trim() ? deriveHijriDateFromGregorian(date.trim(), 'ar') : '';
+  const derivedDay = date.trim() ? deriveDayOfWeekFromGregorian(date.trim(), 'ar') : '';
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -38,6 +42,9 @@ export function CreateWeddingPage() {
       const configuration = {
         ...(structuredClone(defaultWeddingEvent) as WeddingEventData & Record<string, unknown>),
         gregorianDate: date.trim(),
+        hijriDate: derivedHijri || defaultWeddingEvent.hijriDate,
+        eventDay: derivedDay || defaultWeddingEvent.eventDay,
+        showHijriDate,
         title: name.trim(),
       };
 
@@ -110,32 +117,59 @@ export function CreateWeddingPage() {
             </div>
 
             {/* Wedding Date */}
-            <div>
-              <label className="qr-label" htmlFor="wedding-date">
-                <span>{t('weddingDateLabel')}</span>
-                <span className="qr-gold-text ms-1" aria-hidden="true">*</span>
-              </label>
-              <input
-                id="wedding-date"
-                data-testid="input-wedding-date"
-                type="date"
-                required
-                value={date}
-                onChange={(e) => {
-                  setDate(e.target.value);
-                  if (errorMessage) setErrorMessage('');
-                }}
-                onBlur={() => setTouched((prev) => ({ ...prev, date: true }))}
-                aria-invalid={Boolean(dateError)}
-                aria-describedby={dateError ? 'wedding-date-error' : undefined}
-                className="qr-field mt-2"
-                disabled={submitting}
-              />
-              {dateError && (
-                <p id="wedding-date-error" className="qr-field-error" role="alert">
-                  {dateError}
-                </p>
+            <div className="space-y-3">
+              <div>
+                <label className="qr-label" htmlFor="wedding-date">
+                  <span>{t('weddingDateLabel')} ({t('gregorianDate')})</span>
+                  <span className="qr-gold-text ms-1" aria-hidden="true">*</span>
+                </label>
+                <input
+                  id="wedding-date"
+                  data-testid="input-wedding-date"
+                  type="date"
+                  required
+                  value={date}
+                  onChange={(e) => {
+                    setDate(e.target.value);
+                    if (errorMessage) setErrorMessage('');
+                  }}
+                  onBlur={() => setTouched((prev) => ({ ...prev, date: true }))}
+                  aria-invalid={Boolean(dateError)}
+                  aria-describedby={dateError ? 'wedding-date-error' : undefined}
+                  className="qr-field mt-2"
+                  disabled={submitting}
+                />
+                {dateError && (
+                  <p id="wedding-date-error" className="qr-field-error" role="alert">
+                    {dateError}
+                  </p>
+                )}
+              </div>
+
+              {date && derivedHijri && (
+                <div className="rounded-lg bg-[var(--qr-surface-muted)] p-3 text-sm">
+                  <div className="text-xs font-semibold text-[var(--qr-secondary)] uppercase tracking-wide">
+                    {t('hijriDate')}
+                  </div>
+                  <div className="mt-1 font-medium text-[var(--qr-primary)]" dir="rtl">
+                    {derivedHijri}
+                  </div>
+                </div>
               )}
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  id="show-hijri-date"
+                  data-testid="checkbox-show-hijri"
+                  type="checkbox"
+                  checked={showHijriDate}
+                  onChange={(e) => setShowHijriDate(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-[var(--qr-primary)] focus:ring-[var(--qr-primary)] cursor-pointer"
+                />
+                <label htmlFor="show-hijri-date" className="text-sm cursor-pointer select-none">
+                  {t('showHijriOnInvitation')}
+                </label>
+              </div>
             </div>
 
             {errorMessage && (

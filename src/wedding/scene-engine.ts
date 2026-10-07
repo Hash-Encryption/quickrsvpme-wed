@@ -220,7 +220,7 @@ export function resolveWeddingSemanticBlocks(
           id: "date-time",
           eventDay: optional(event.eventDay),
           gregorianDate: optional(event.gregorianDate),
-          hijriDate: optional(event.hijriDate),
+          hijriDate: event.showHijriDate === false ? undefined : optional(event.hijriDate),
           startTime: optional(event.startTime),
           receptionTime: optional(event.receptionTime),
           dinnerTime: optional(event.dinnerTime),

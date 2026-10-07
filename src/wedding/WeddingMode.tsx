@@ -1484,23 +1484,32 @@ function PresentationStep({
           })}
         </div>
         <div className="wedding-transform-panel">
-          <div className="wedding-control-heading"><h3>{w("overallContent")}</h3><p>{w("overallContentHelp")}</p></div>
+          <div className="wedding-control-heading"><h3>{w("moveAllContent")}</h3><p>{w("overallContentHelp")}</p></div>
           <TransformSlider id="wedding-global-size" label={w("contentSize")} min={0.8} max={1.25} step={0.01} value={transforms.global.scale} output={`${Math.round(transforms.global.scale * 100)}%`} onChange={(scale) => updateGlobal({ scale })} />
           <TransformSlider id="wedding-global-x" label={w("horizontalPosition")} min={-0.18} max={0.18} step={0.01} value={transforms.global.x} output={`${Math.round(transforms.global.x * 100)}`} onChange={(x) => updateGlobal({ x })} />
           <TransformSlider id="wedding-global-y" label={w("verticalPosition")} min={-0.22} max={0.22} step={0.01} value={transforms.global.y} output={`${Math.round(transforms.global.y * 100)}`} onChange={(y) => updateGlobal({ y })} />
           <div className="wedding-transform-actions"><button onClick={() => updateGlobal({ ...defaultWeddingTransform })}>{w("resetContent")}</button><button onClick={() => updateTransforms(resetWeddingLayoutTransforms())}>{w("resetEntireLayout")}</button></div>
         </div>
-        <details className="wedding-block-editor">
-          <summary>{w("advancedBlockEditing")}</summary>
-          <p>{w("selectBlockHelp")}</p>
-          <div className="wedding-block-list" role="group" aria-label={w("advancedBlockEditing")}>
-            {(["opening", "occasion", "hosts", "principals", "date-time", "venue", "rsvp"] as WeddingTransformBlockId[]).map((id) => <button key={id} className={selectedBlock === id ? "is-selected" : ""} aria-pressed={selectedBlock === id} onClick={() => onSelectBlock(id)}>{w(id === "principals" ? "namesBlock" : id === "date-time" ? "detailsBlock" : id === "rsvp" ? "rsvpBlock" : id)}</button>)}
+        <section className="wedding-block-editor">
+          <div className="wedding-control-heading">
+            <h3>{w("moveElementsSeparately")}</h3>
+            <p>{w("selectBlockHelp")}</p>
+          </div>
+          <div className="wedding-block-list" role="group" aria-label={w("moveElementsSeparately")}>
+            {(["opening", "occasion", "hosts", "principals", "date-time", "venue", "rsvp"] as WeddingTransformBlockId[]).map((id) => (
+              <button key={id} className={selectedBlock === id ? "is-selected" : ""} aria-pressed={selectedBlock === id} onClick={() => onSelectBlock(id)}>
+                {w(id === "principals" ? "namesBlock" : id === "date-time" ? "detailsBlock" : id === "rsvp" ? "rsvpBlock" : id)}
+              </button>
+            ))}
+          </div>
+          <div className="text-xs font-semibold text-[#8B7040] my-2">
+            {w("selectedElement")}: <span className="text-[#0C2D24]">{w(selectedBlock === "principals" ? "namesBlock" : selectedBlock === "date-time" ? "detailsBlock" : selectedBlock === "rsvp" ? "rsvpBlock" : selectedBlock)}</span>
           </div>
           <TransformSlider id="wedding-block-size" label={w("blockSize")} min={0.75} max={1.35} step={0.01} value={blockTransform.scale} output={`${Math.round(blockTransform.scale * 100)}%`} onChange={(scale) => updateBlock({ scale })} />
           <TransformSlider id="wedding-block-x" label={w("horizontalPosition")} min={-0.25} max={0.25} step={0.01} value={blockTransform.x} output={`${Math.round(blockTransform.x * 100)}`} onChange={(x) => updateBlock({ x })} />
           <TransformSlider id="wedding-block-y" label={w("verticalPosition")} min={-0.25} max={0.25} step={0.01} value={blockTransform.y} output={`${Math.round(blockTransform.y * 100)}`} onChange={(y) => updateBlock({ y })} />
           <div className="wedding-nudge-controls" aria-label={w("nudgeBlock")}><button aria-label={w("moveUp")} onClick={() => updateBlock({ y: Math.max(-0.25, blockTransform.y - 0.02) })}><ArrowUp aria-hidden="true" /></button><button aria-label={w("moveLeft")} onClick={() => updateBlock({ x: Math.max(-0.25, blockTransform.x - 0.02) })}><ArrowLeft aria-hidden="true" /></button><button className="is-center" onClick={resetBlock}>{w("resetBlock")}</button><button aria-label={w("moveRight")} onClick={() => updateBlock({ x: Math.min(0.25, blockTransform.x + 0.02) })}><ArrowRight aria-hidden="true" /></button><button aria-label={w("moveDown")} onClick={() => updateBlock({ y: Math.min(0.25, blockTransform.y + 0.02) })}><ArrowDown aria-hidden="true" /></button></div>
-        </details>
+        </section>
       </div>}
       {kind === "motion" && <div className="wedding-presentation-section">
         <b>{w("motion")}</b>

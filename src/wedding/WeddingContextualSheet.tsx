@@ -20,6 +20,8 @@ import {
   WeddingTemplateRegistry,
   floralThemes,
   weddingFonts,
+  deriveHijriDateFromGregorian,
+  deriveDayOfWeekFromGregorian,
   type ArabicFont,
   type FloralTheme,
   type WeddingEventData,
@@ -363,20 +365,37 @@ export function WeddingContextualSheet({
               </fieldset>
             )}
 
-            {/* Date & Time */}
+            {/* Date Section */}
             {(!directTarget || directTarget === "date-time") && (
               <fieldset className="rounded-2xl border border-[#D4AF37]/30 bg-white/70 p-4 shadow-2xs">
-                <legend className="px-2 text-xs font-bold text-[#0C2D24]">{w("dateTimeSection")}</legend>
+                <legend className="px-2 text-xs font-bold text-[#0C2D24]">{w("dateSection")}</legend>
                 <div className="wedding-fields mt-2" dir={contentDir}>
                   <label>
                     <span>{w("gregorian")}</span>
                     <input
                       data-testid="input-edit-gregorian-date"
                       value={event.gregorianDate}
-                      onChange={(e) => onUpdate({ gregorianDate: e.target.value })}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const derivedHijri = val.trim() ? deriveHijriDateFromGregorian(val.trim(), locale) : "";
+                        const derivedDay = val.trim() ? deriveDayOfWeekFromGregorian(val.trim(), locale) : "";
+                        onUpdate({
+                          gregorianDate: val,
+                          ...(derivedHijri ? { hijriDate: derivedHijri } : {}),
+                          ...(derivedDay ? { eventDay: derivedDay } : {}),
+                        });
+                      }}
                     />
                   </label>
                   <label>
+                    <span>{w("hijri")}</span>
+                    <input
+                      data-testid="input-edit-hijri-date"
+                      value={event.hijriDate}
+                      onChange={(e) => onUpdate({ hijriDate: e.target.value })}
+                    />
+                  </label>
+                  <label className="is-wide">
                     <span>{w("day")}</span>
                     <input
                       value={event.eventDay}
@@ -384,7 +403,29 @@ export function WeddingContextualSheet({
                       placeholder={locale === "ar" ? "الجمعة" : "Friday"}
                     />
                   </label>
-                  <label className={showOptionalTiming ? "" : "is-wide"}>
+                  <div className="is-wide flex items-center gap-2 pt-1">
+                    <input
+                      id="sheet-show-hijri"
+                      data-testid="checkbox-sheet-show-hijri"
+                      type="checkbox"
+                      checked={event.showHijriDate !== false}
+                      onChange={(e) => onUpdate({ showHijriDate: e.target.checked })}
+                      className="h-4 w-4 rounded border-[#D4AF37] text-[#0C2D24] focus:ring-[#D4AF37] cursor-pointer"
+                    />
+                    <label htmlFor="sheet-show-hijri" className="text-xs font-semibold text-[#0C2D24] cursor-pointer select-none">
+                      {w("showHijriOnInvitation")}
+                    </label>
+                  </div>
+                </div>
+              </fieldset>
+            )}
+
+            {/* Timing Section */}
+            {(!directTarget || directTarget === "date-time") && (
+              <fieldset className="rounded-2xl border border-[#D4AF37]/30 bg-white/70 p-4 shadow-2xs">
+                <legend className="px-2 text-xs font-bold text-[#0C2D24]">{w("timingSection")}</legend>
+                <div className="wedding-fields mt-2" dir={contentDir}>
+                  <label>
                     <span>{w("start")}</span>
                     <input
                       value={event.startTime}
@@ -392,43 +433,20 @@ export function WeddingContextualSheet({
                       placeholder="8:00 PM"
                     />
                   </label>
-
-                  {/* Progressive disclosure for secondary timing */}
-                  {showOptionalTiming ? (
-                    <>
-                      <label>
-                        <span>{w("hijri")}</span>
-                        <input
-                          value={event.hijriDate}
-                          onChange={(e) => onUpdate({ hijriDate: e.target.value })}
-                        />
-                      </label>
-                      <label>
-                        <span>{w("reception")}</span>
-                        <input
-                          value={event.receptionTime}
-                          onChange={(e) => onUpdate({ receptionTime: e.target.value })}
-                        />
-                      </label>
-                      <label>
-                        <span>{w("dinner")}</span>
-                        <input
-                          value={event.dinnerTime}
-                          onChange={(e) => onUpdate({ dinnerTime: e.target.value })}
-                        />
-                      </label>
-                    </>
-                  ) : (
-                    <div className="is-wide pt-1">
-                      <button
-                        type="button"
-                        onClick={() => setShowOptionalTiming(true)}
-                        className="text-xs font-semibold text-[#8B7040] hover:underline flex items-center gap-1"
-                      >
-                        <ChevronDown size={14} /> {w("optionalTiming")}
-                      </button>
-                    </div>
-                  )}
+                  <label>
+                    <span>{w("reception")}</span>
+                    <input
+                      value={event.receptionTime}
+                      onChange={(e) => onUpdate({ receptionTime: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>{w("dinner")}</span>
+                    <input
+                      value={event.dinnerTime}
+                      onChange={(e) => onUpdate({ dinnerTime: e.target.value })}
+                    />
+                  </label>
                 </div>
               </fieldset>
             )}
@@ -560,15 +578,31 @@ export function WeddingContextualSheet({
                 ))}
 
                 {/* Upload Background Card */}
-                <button
-                  type="button"
-                  className={uploaded ? "wedding-upload-card is-selected" : "wedding-upload-card"}
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploading}
-                  aria-pressed={uploaded}
+                <label
+                  className={`wedding-upload-card cursor-pointer select-none relative ${uploaded ? "is-selected" : ""} ${uploading ? "opacity-60 pointer-events-none" : ""}`}
+                  data-testid="upload-background-card"
                 >
-                  <span className="wedding-template-swatch wedding-template-swatch--upload">
-                    <ImagePlus aria-hidden="true" size={20} />
+                  <input
+                    ref={fileInputRef}
+                    className="sr-only"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/*,.jpg,.jpeg,.png,.webp"
+                    disabled={uploading}
+                    aria-label={w("uploadBackground")}
+                    onChange={(e) => void uploadBackground(e.target.files?.[0])}
+                  />
+                  <span className="wedding-template-swatch wedding-template-swatch--upload overflow-hidden">
+                    {uploading ? (
+                      <span className="inline-block animate-spin text-[#D4AF37]">⏳</span>
+                    ) : uploaded && visual.source === "uploaded-background" ? (
+                      <img
+                        src={visual.uploadedBackground.dataUrl}
+                        alt="Preview"
+                        className="h-full w-full object-cover rounded"
+                      />
+                    ) : (
+                      <ImagePlus aria-hidden="true" size={20} />
+                    )}
                   </span>
                   <span>
                     <b>{w(uploading ? "preparingImage" : uploaded ? "replaceBackground" : "customBackground")}</b>
@@ -579,15 +613,7 @@ export function WeddingContextualSheet({
                     </small>
                   </span>
                   {uploaded && <Check aria-hidden="true" size={16} />}
-                </button>
-                <input
-                  ref={fileInputRef}
-                  className="wedding-file-input"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  aria-label={w("uploadBackground")}
-                  onChange={(e) => void uploadBackground(e.target.files?.[0])}
-                />
+                </label>
               </div>
 
               {uploadError && <p className="wedding-upload-error mt-2" role="alert">{uploadError}</p>}
@@ -1048,10 +1074,10 @@ export function WeddingContextualSheet({
               </div>
             </div>
 
-            {/* Overall Content Scale & Position */}
+            {/* Overall Content Scale & Position - Move all content */}
             <div className="rounded-2xl border border-[#D4AF37]/30 bg-white/70 p-4 shadow-2xs space-y-3">
               <h4 className="text-xs font-bold uppercase tracking-wider text-[#8B7040]">
-                {w("overallContent")}
+                {w("moveAllContent")}
               </h4>
               <p className="text-xs text-[#756F66]">{w("overallContentHelp")}</p>
 
@@ -1099,6 +1125,202 @@ export function WeddingContextualSheet({
                   className="qr-button qr-button--secondary text-xs"
                 >
                   {w("resetEntireLayout")}
+                </button>
+              </div>
+            </div>
+
+            {/* Move elements separately */}
+            <div className="rounded-2xl border border-[#D4AF37]/30 bg-white/70 p-4 shadow-2xs space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-[#8B7040]">
+                {w("moveElementsSeparately")}
+              </h4>
+              <p className="text-xs text-[#756F66]">{w("selectBlockHelp")}</p>
+
+              <div className="flex flex-wrap gap-1.5" role="group" aria-label={w("moveElementsSeparately")}>
+                {(["opening", "hosts", "principals", "date-time", "venue", "rsvp"] as WeddingTransformBlockId[]).map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                      selectedBlock === id
+                        ? "bg-[#0C2D24] text-white border-[#0C2D24]"
+                        : "bg-white text-[#0C2D24] border-[#D4AF37]/40 hover:bg-[#FAF8F5]"
+                    }`}
+                    onClick={() => onSelectBlock?.(id)}
+                    aria-pressed={selectedBlock === id}
+                  >
+                    {w(id === "principals" ? "namesBlock" : id === "date-time" ? "detailsBlock" : id === "rsvp" ? "rsvpBlock" : id)}
+                  </button>
+                ))}
+              </div>
+
+              <div className="text-xs font-semibold text-[#8B7040] pt-1">
+                {w("selectedElement")}:{" "}
+                <span className="text-[#0C2D24]">
+                  {w(selectedBlock === "principals" ? "namesBlock" : selectedBlock === "date-time" ? "detailsBlock" : selectedBlock === "rsvp" ? "rsvpBlock" : selectedBlock)}
+                </span>
+              </div>
+
+              <label className="wedding-transform-slider text-xs">
+                <span>{w("blockSize")}</span>
+                <input
+                  type="range"
+                  min={0.75}
+                  max={1.35}
+                  step={0.01}
+                  value={(event.presentation.transforms.blocks[selectedBlock] ?? defaultWeddingTransform).scale}
+                  onChange={(e) => {
+                    const current = event.presentation.transforms.blocks[selectedBlock] ?? defaultWeddingTransform;
+                    updatePresentation({
+                      transforms: {
+                        ...event.presentation.transforms,
+                        blocks: {
+                          ...event.presentation.transforms.blocks,
+                          [selectedBlock]: { ...current, scale: Number(e.target.value) },
+                        },
+                      },
+                    });
+                  }}
+                />
+                <output>{Math.round((event.presentation.transforms.blocks[selectedBlock] ?? defaultWeddingTransform).scale * 100)}%</output>
+              </label>
+
+              <label className="wedding-transform-slider text-xs">
+                <span>{w("horizontalPosition")}</span>
+                <input
+                  type="range"
+                  min={-0.25}
+                  max={0.25}
+                  step={0.01}
+                  value={(event.presentation.transforms.blocks[selectedBlock] ?? defaultWeddingTransform).x}
+                  onChange={(e) => {
+                    const current = event.presentation.transforms.blocks[selectedBlock] ?? defaultWeddingTransform;
+                    updatePresentation({
+                      transforms: {
+                        ...event.presentation.transforms,
+                        blocks: {
+                          ...event.presentation.transforms.blocks,
+                          [selectedBlock]: { ...current, x: Number(e.target.value) },
+                        },
+                      },
+                    });
+                  }}
+                />
+                <output>{Math.round((event.presentation.transforms.blocks[selectedBlock] ?? defaultWeddingTransform).x * 100)}</output>
+              </label>
+
+              <label className="wedding-transform-slider text-xs">
+                <span>{w("verticalPosition")}</span>
+                <input
+                  type="range"
+                  min={-0.25}
+                  max={0.25}
+                  step={0.01}
+                  value={(event.presentation.transforms.blocks[selectedBlock] ?? defaultWeddingTransform).y}
+                  onChange={(e) => {
+                    const current = event.presentation.transforms.blocks[selectedBlock] ?? defaultWeddingTransform;
+                    updatePresentation({
+                      transforms: {
+                        ...event.presentation.transforms,
+                        blocks: {
+                          ...event.presentation.transforms.blocks,
+                          [selectedBlock]: { ...current, y: Number(e.target.value) },
+                        },
+                      },
+                    });
+                  }}
+                />
+                <output>{Math.round((event.presentation.transforms.blocks[selectedBlock] ?? defaultWeddingTransform).y * 100)}</output>
+              </label>
+
+              <div className="wedding-nudge-controls pt-2" aria-label={w("nudgeBlock")}>
+                <button
+                  type="button"
+                  aria-label={w("moveUp")}
+                  onClick={() => {
+                    const current = event.presentation.transforms.blocks[selectedBlock] ?? defaultWeddingTransform;
+                    updatePresentation({
+                      transforms: {
+                        ...event.presentation.transforms,
+                        blocks: {
+                          ...event.presentation.transforms.blocks,
+                          [selectedBlock]: { ...current, y: Math.max(-0.25, current.y - 0.02) },
+                        },
+                      },
+                    });
+                  }}
+                >
+                  <ArrowUp aria-hidden="true" size={14} />
+                </button>
+                <button
+                  type="button"
+                  aria-label={w("moveLeft")}
+                  onClick={() => {
+                    const current = event.presentation.transforms.blocks[selectedBlock] ?? defaultWeddingTransform;
+                    updatePresentation({
+                      transforms: {
+                        ...event.presentation.transforms,
+                        blocks: {
+                          ...event.presentation.transforms.blocks,
+                          [selectedBlock]: { ...current, x: Math.max(-0.25, current.x - 0.02) },
+                        },
+                      },
+                    });
+                  }}
+                >
+                  <ArrowLeft aria-hidden="true" size={14} />
+                </button>
+                <button
+                  type="button"
+                  className="is-center"
+                  onClick={() => {
+                    const blocks = { ...event.presentation.transforms.blocks };
+                    delete blocks[selectedBlock];
+                    updatePresentation({
+                      transforms: {
+                        ...event.presentation.transforms,
+                        blocks,
+                      },
+                    });
+                  }}
+                >
+                  {w("resetBlock")}
+                </button>
+                <button
+                  type="button"
+                  aria-label={w("moveRight")}
+                  onClick={() => {
+                    const current = event.presentation.transforms.blocks[selectedBlock] ?? defaultWeddingTransform;
+                    updatePresentation({
+                      transforms: {
+                        ...event.presentation.transforms,
+                        blocks: {
+                          ...event.presentation.transforms.blocks,
+                          [selectedBlock]: { ...current, x: Math.min(0.25, current.x + 0.02) },
+                        },
+                      },
+                    });
+                  }}
+                >
+                  <ArrowRight aria-hidden="true" size={14} />
+                </button>
+                <button
+                  type="button"
+                  aria-label={w("moveDown")}
+                  onClick={() => {
+                    const current = event.presentation.transforms.blocks[selectedBlock] ?? defaultWeddingTransform;
+                    updatePresentation({
+                      transforms: {
+                        ...event.presentation.transforms,
+                        blocks: {
+                          ...event.presentation.transforms.blocks,
+                          [selectedBlock]: { ...current, y: Math.min(0.25, current.y + 0.02) },
+                        },
+                      },
+                    });
+                  }}
+                >
+                  <ArrowDown aria-hidden="true" size={14} />
                 </button>
               </div>
             </div>
