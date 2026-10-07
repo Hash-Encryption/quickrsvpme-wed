@@ -89,7 +89,7 @@ export type GeneralInvitationRequestStatus = {
 export type GeneralInvitationRequestLookup = GeneralInvitationRequestStatus | { state: 'invalid' };
 
 export type InvitationResolution = {
-  status: 'active' | 'archived_read_only' | 'invalid' | 'unavailable' | 'cancelled' | 'planning' | 'ended' | 'subscription_unavailable';
+  status: 'active' | 'archived_read_only' | 'invalid' | 'unavailable' | 'cancelled' | 'planning' | 'ended' | 'subscription_unavailable' | 'unpublished';
   kind?: 'personal' | 'general';
   event?: Pick<BackendEvent, 'product_id' | 'title' | 'invitation_locale' | 'starts_at' | 'ends_at' | 'rsvp_deadline' | 'venue_name' | 'city' | 'request_companion_names' | 'allow_custom_messages' | 'allow_rsvp_changes' | 'general_invite_allowed_companions'>;
   configuration?: Record<string, unknown>;

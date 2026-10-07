@@ -1,10 +1,14 @@
+-- ==============================================================================
+-- QuickRSVP Forward-Only Migration: Invitation Publication State
+-- Description: Disentangles Event lifecycle from Invitation publication.
+--              Allows planning Events to publish invitations and receive RSVPs
+--              while keeping scanner/check-in bound to active lifecycle.
+--              Implements client-owned publish/unpublish RPCs and updates
+--              private.event_public_state preserving all product access and
+--              archive replay rules.
 -- Migration: 20261007000100_invitation_publication_state.sql
--- Status: SQL PENDING — USER APPROVAL REQUIRED (DO NOT EXECUTE AUTOMATICALLY)
--- Purpose:
---   1. Separate Event Lifecycle from Invitation Publication.
---   2. Allow planning Events to have published, accessible guest invitations with RSVP capabilities.
---   3. Add public.publish_event_invitation and public.unpublish_event_invitation RPCs.
---   4. Update private.event_public_state to enforce invitation publication for planning and active events.
+-- Status: PREPARED FORWARD-ONLY — DO NOT EXECUTE WITHOUT EXPLICIT APPROVAL
+-- ==============================================================================
 
 begin;
 
@@ -16,9 +20,21 @@ create index if not exists events_invitation_published_idx
   on public.events(id, invitation_published_at);
 
 -- 2. Update private.event_public_state
--- Disentangles Event lifecycle from Invitation publication.
--- An Event in 'planning' state whose invitation is published is accessible to guests and accepts RSVPs.
--- Staff check-in remains strictly bound to lifecycle_status = 'active' via private.checkin_event_state.
+-- Preserves ALL existing business rules:
+-- - deleted -> 'unavailable'
+-- - cancelled -> 'cancelled'
+-- - ended -> 'ended'
+-- - planning + unpublished -> 'planning'
+-- - planning + published -> requires has_product_access:
+--     if entitled -> 'active'
+--     else -> 'subscription_unavailable'
+-- - active + published -> requires has_product_access:
+--     if entitled -> 'active'
+--     else -> 'subscription_unavailable'
+-- - active + unpublished -> 'unpublished'
+-- - archived Wedding -> obeys archive_replay_enabled & archive_replay_days
+-- - archived Party / non-Wedding -> 'unavailable'
+-- - invalid archive policy -> 'unavailable'
 create or replace function private.event_public_state(p_event_id uuid)
 returns text
 language plpgsql
@@ -36,29 +52,33 @@ begin
   if event_row.lifecycle_status = 'cancelled' then return 'cancelled'; end if;
   if event_row.lifecycle_status = 'ended' then return 'ended'; end if;
 
-  -- Archived Wedding replay policy:
-  if event_row.lifecycle_status = 'archived' then
-    if event_row.product_id <> 'wedding' then return 'unavailable'; end if;
-    select configuration into policy from public.product_policies where product_id = event_row.product_id;
-    if coalesce((policy ->> 'archive_replay_enabled')::boolean, false) is not true then return 'unavailable'; end if;
-    if policy ->> 'archive_replay_days' is null then return 'archived_read_only'; end if;
-    if policy ->> 'archive_replay_days' !~ '^\d{1,6}$' then return 'unavailable'; end if;
-    replay_days := (policy ->> 'archive_replay_days')::integer;
-    if event_row.archived_at + make_interval(days => replay_days) > now() then return 'archived_read_only'; end if;
-    return 'unavailable';
-  end if;
-
-  -- For planning or active events: invitation must be published
-  if event_row.lifecycle_status in ('planning', 'active') then
-    if event_row.invitation_published_at is null then
-      return 'unavailable';
-    end if;
-    if not private.has_product_access(event_row.client_id, event_row.product_id) then
+  if event_row.lifecycle_status = 'planning' then
+    if event_row.invitation_published_at is not null then
+      if private.has_product_access(event_row.client_id, event_row.product_id) then
+        return 'active';
+      end if;
       return 'subscription_unavailable';
     end if;
-    return 'active';
+    return 'planning';
   end if;
 
+  if event_row.lifecycle_status = 'active' then
+    if event_row.invitation_published_at is null then
+      return 'unpublished';
+    end if;
+    if private.has_product_access(event_row.client_id, event_row.product_id) then
+      return 'active';
+    end if;
+    return 'subscription_unavailable';
+  end if;
+
+  if event_row.lifecycle_status <> 'archived' or event_row.product_id <> 'wedding' then return 'unavailable'; end if;
+  select configuration into policy from public.product_policies where product_id = event_row.product_id;
+  if coalesce((policy ->> 'archive_replay_enabled')::boolean, false) is not true then return 'unavailable'; end if;
+  if policy ->> 'archive_replay_days' is null then return 'archived_read_only'; end if;
+  if policy ->> 'archive_replay_days' !~ '^\d{1,6}$' then return 'unavailable'; end if;
+  replay_days := (policy ->> 'archive_replay_days')::integer;
+  if event_row.archived_at + make_interval(days => replay_days) > now() then return 'archived_read_only'; end if;
   return 'unavailable';
 exception when invalid_text_representation then
   return 'unavailable';
@@ -66,6 +86,7 @@ end;
 $$;
 
 -- 3. Authoritative Host RPC to publish an Event Invitation
+-- Relies on public.current_client_id() ownership
 create or replace function public.publish_event_invitation(p_event_id uuid)
 returns public.events
 language plpgsql
@@ -74,19 +95,21 @@ set search_path = ''
 as $$
 declare
   caller_client_id uuid := public.current_client_id();
+  is_admin boolean := public.is_platform_admin();
   event_row public.events;
 begin
-  if auth.uid() is null then
+  if auth.uid() is null or (caller_client_id is null and not is_admin) then
     raise exception 'Authentication is required.' using errcode = '42501';
   end if;
 
-  select * into event_row from public.events where id = p_event_id and deleted_at is null;
+  select * into event_row
+  from public.events
+  where id = p_event_id
+    and (client_id = caller_client_id or is_admin)
+    and deleted_at is null;
+
   if event_row.id is null then
     raise exception 'Event was not found.' using errcode = '42501';
-  end if;
-
-  if event_row.client_id <> caller_client_id and not public.is_platform_admin() then
-    raise exception 'Unauthorized event update.' using errcode = '42501';
   end if;
 
   if event_row.lifecycle_status in ('cancelled', 'ended', 'archived') then
@@ -107,6 +130,7 @@ end;
 $$;
 
 -- 4. Authoritative Host RPC to unpublish an Event Invitation
+-- Relies on public.current_client_id() ownership
 create or replace function public.unpublish_event_invitation(p_event_id uuid)
 returns public.events
 language plpgsql
@@ -115,19 +139,21 @@ set search_path = ''
 as $$
 declare
   caller_client_id uuid := public.current_client_id();
+  is_admin boolean := public.is_platform_admin();
   event_row public.events;
 begin
-  if auth.uid() is null then
+  if auth.uid() is null or (caller_client_id is null and not is_admin) then
     raise exception 'Authentication is required.' using errcode = '42501';
   end if;
 
-  select * into event_row from public.events where id = p_event_id and deleted_at is null;
+  select * into event_row
+  from public.events
+  where id = p_event_id
+    and (client_id = caller_client_id or is_admin)
+    and deleted_at is null;
+
   if event_row.id is null then
     raise exception 'Event was not found.' using errcode = '42501';
-  end if;
-
-  if event_row.client_id <> caller_client_id and not public.is_platform_admin() then
-    raise exception 'Unauthorized event update.' using errcode = '42501';
   end if;
 
   update public.events
@@ -140,6 +166,7 @@ end;
 $$;
 
 -- 5. Revoke and Grant Permissions
+revoke all on function private.event_public_state(uuid) from public, anon, authenticated;
 revoke all on function public.publish_event_invitation(uuid) from public, anon, authenticated;
 revoke all on function public.unpublish_event_invitation(uuid) from public, anon, authenticated;
 
