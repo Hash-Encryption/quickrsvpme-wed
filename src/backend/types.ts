@@ -41,6 +41,7 @@ export type BackendEvent = {
   created_at: string;
   updated_at: string;
   source_draft_id?: string | null;
+  invitation_published_at?: string | null;
 };
 
 export type EventGuest = {

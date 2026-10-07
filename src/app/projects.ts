@@ -1,3 +1,5 @@
+import type { EventLifecycle } from '@/backend/types';
+
 export type ProjectType = 'wedding' | 'party';
 
 export type ProjectSummary = {
@@ -6,6 +8,8 @@ export type ProjectSummary = {
   name: string;
   date: string;
   venue: string;
+  lifecycleStatus?: EventLifecycle;
+  invitationPublishedAt?: string | null;
 };
 
 export type ProjectSection = 'overview' | 'invitation' | 'guests' | 'send' | 'scanner' | 'settings';

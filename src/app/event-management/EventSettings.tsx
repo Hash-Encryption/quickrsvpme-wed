@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AlertTriangle, Calendar, Globe, Info, Lock, MapPin, ShieldAlert } from 'lucide-react';
 
-import { updateEvent } from '@/backend/events';
+import { publishEventInvitation, unpublishEventInvitation, updateEvent } from '@/backend/events';
 import type { BackendEvent, EventLifecycle } from '@/backend/types';
 import { AppLanguageControl, useAppLocale } from '@/i18n/app-locale';
 import { allowedEventTransitions, isTerminalEvent } from '../lifecycle';
@@ -46,6 +46,28 @@ export function EventSettings({ project, event, onRefresh }: EventSettingsProps)
       setError(t('operationFailed'));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const [publishing, setPublishing] = useState(false);
+
+  const handleTogglePublication = async () => {
+    setPublishing(true);
+    setError('');
+    setSuccess(false);
+    try {
+      if (project.invitationPublishedAt) {
+        await unpublishEventInvitation(project.id);
+      } else {
+        await publishEventInvitation(project.id);
+      }
+      if (onRefresh) await onRefresh();
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch {
+      setError(t('operationFailed'));
+    } finally {
+      setPublishing(false);
     }
   };
 
@@ -163,6 +185,51 @@ export function EventSettings({ project, event, onRefresh }: EventSettingsProps)
           )}
         </section>
       )}
+
+      {/* Invitation Publication Control */}
+      <section className="rounded-3xl border border-[#E8E2D8] bg-white p-6 shadow-xs space-y-4">
+        <div>
+          <h2 className="text-base font-bold text-[#17251F]">
+            {t('invitationStatus')}
+          </h2>
+          <p className="mt-1 text-xs text-[#756F66]">
+            {project.invitationPublishedAt ? t('invitationPublished') : t('notPublished')}
+          </p>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="font-semibold text-[#17251F]">{t('status')}:</span>
+            {project.invitationPublishedAt ? (
+              <span className="rounded-full bg-[#EBF5F0] px-3 py-1 text-[11px] font-bold text-[#1B6344]">
+                {t('published')}
+              </span>
+            ) : (
+              <span className="rounded-full bg-[#FAF0E6] px-3 py-1 text-[11px] font-bold text-[#8B7040]">
+                {t('notPublished')}
+              </span>
+            )}
+          </div>
+
+          <button
+            type="button"
+            data-testid="button-toggle-invitation-publish"
+            disabled={publishing || isTerminal}
+            onClick={() => void handleTogglePublication()}
+            className={`min-h-12 w-full sm:w-auto rounded-xl px-6 text-xs font-bold transition disabled:opacity-40 ${
+              project.invitationPublishedAt
+                ? 'border border-[#E8E2D8] bg-[#FAF8F4] text-[#8C302B] hover:bg-[#FDF0ED]'
+                : 'bg-[#0C2D24] text-white hover:bg-[#174839]'
+            }`}
+          >
+            {publishing
+              ? t('loading')
+              : project.invitationPublishedAt
+              ? t('unpublishInvitation')
+              : t('publishInvitation')}
+          </button>
+        </div>
+      </section>
 
       {/* 4. Global Application Language Control (Correction 5) */}
       <section className="rounded-3xl border border-[#E8E2D8] bg-white p-6 shadow-xs space-y-3">

@@ -164,6 +164,36 @@ export function guestsCsv(guests: OperationalGuest[]): string {
   ].map((row) => row.map(csvCell).join(',')).join('\n');
 }
 
+export const PRODUCTION_ORIGIN = 'https://quickrsvp.me';
+
+export function sanitizeInvitationToken(token: string): string {
+  if (!token) return '';
+  let clean = token.trim();
+  try {
+    if (clean.startsWith('http://') || clean.startsWith('https://')) {
+      const url = new URL(clean);
+      const match = url.pathname.match(/\/i\/([^/?#]+)/);
+      if (match) return decodeURIComponent(match[1]);
+    }
+  } catch {
+    // Fall back to clean
+  }
+  clean = clean.replace(/^(?:\/)?i\//, '');
+  if (clean.includes('/overview') || clean.includes('/guests') || clean.includes('/settings') || clean.startsWith('studio/') || clean.startsWith('weddings/')) {
+    clean = clean.split('/').pop() ?? clean;
+  }
+  clean = clean.replace(/^(?:\.\.\/|\.\/)+/, '');
+  clean = clean.replace(/^\/+|\/+$/g, '');
+  return clean.replace(/[^a-zA-Z0-9_\- ]/g, '');
+}
+
 export function invitationUrl(origin: string, baseUrl: string, token: string): string {
-  return `${origin}${baseUrl.replace(/\/$/, '')}/i/${encodeURIComponent(token)}`;
+  let resolvedOrigin = (origin || '').trim();
+  if (!resolvedOrigin || /localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(resolvedOrigin)) {
+    resolvedOrigin = PRODUCTION_ORIGIN;
+  }
+  resolvedOrigin = resolvedOrigin.replace(/\/+$/, '');
+
+  const cleanToken = sanitizeInvitationToken(token);
+  return `${resolvedOrigin}/i/${encodeURIComponent(cleanToken)}`;
 }

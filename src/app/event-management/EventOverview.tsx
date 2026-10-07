@@ -64,9 +64,15 @@ export function EventOverview({ project, rsvpDeadline }: { project: ProjectSumma
           <p className="text-xs font-bold uppercase tracking-[.14em] text-[#8B7040]">
             {t(project.type)} · {t('eventOverview')}
           </p>
-          <span className="rounded-full bg-[#EBF5F0] px-3 py-1 text-[11px] font-bold text-[#1B6344]">
-            {t('live')}
-          </span>
+          {project.invitationPublishedAt ? (
+            <span className="rounded-full bg-[#EBF5F0] px-3 py-1 text-[11px] font-bold text-[#1B6344]">
+              {t('published')}
+            </span>
+          ) : (
+            <span className="rounded-full bg-[#FAF0E6] px-3 py-1 text-[11px] font-bold text-[#8B7040]">
+              {t('notPublished')}
+            </span>
+          )}
         </div>
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--qr-primary)] break-words">
           {project.name}

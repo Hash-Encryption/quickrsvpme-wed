@@ -1013,7 +1013,7 @@ function partyProjectSummary(event: PartyEventData): ProjectSummary {
 }
 
 function backendProjectSummary(event: BackendEvent): ProjectSummary & { lifecycleStatus: EventLifecycle } {
-  return { id: event.id, type: event.product_id, name: event.title, date: event.starts_at ?? '', venue: [event.venue_name, event.city].filter(Boolean).join(', '), lifecycleStatus: event.lifecycle_status };
+  return { id: event.id, type: event.product_id, name: event.title, date: event.starts_at ?? '', venue: [event.venue_name, event.city].filter(Boolean).join(', '), lifecycleStatus: event.lifecycle_status, invitationPublishedAt: event.invitation_published_at };
 }
 
 function DashboardRoute({ product }: { product?: ProductId }) {
@@ -1165,7 +1165,9 @@ function ProjectRoutePage({ type }: { type: ProjectType }) {
   const backendEvent = findAuthenticatedProjectEvent(auth.events, type, eventId);
   const weddingProject = type === 'wedding' ? workspace.projects.find((item) => item.id === eventId) : undefined;
   const project = type === 'wedding'
-    ? (weddingProject ? weddingProjectSummary(weddingProject) : (backendEvent ? backendProjectSummary(backendEvent) : undefined))
+    ? (weddingProject
+        ? { ...weddingProjectSummary(weddingProject), lifecycleStatus: backendEvent?.lifecycle_status, invitationPublishedAt: backendEvent?.invitation_published_at }
+        : (backendEvent ? backendProjectSummary(backendEvent) : undefined))
     : backendEvent
       ? { ...backendProjectSummary(backendEvent), name: activePartyEventId === eventId ? state.partyEvent.title : backendEvent.title }
       : undefined;
