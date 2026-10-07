@@ -37,6 +37,7 @@ export type WeddingEventData = {
   invitationWording: string;
   gregorianDate: string;
   hijriDate: string;
+  showHijriDate?: boolean;
   eventDay: string;
   startTime: string;
   receptionTime: string;
@@ -249,6 +250,7 @@ export const defaultWeddingEvent: WeddingEventData = {
   invitationWording: "يتشرفان بدعوتكم لمشاركتهما فرحة الزواج",
   gregorianDate: "24 مايو 2027",
   hijriDate: "18 ذو الحجة 1448 هـ",
+  showHijriDate: true,
   eventDay: "الاثنين",
   startTime: "8:00 مساءً",
   receptionTime: "8:00 مساءً",
@@ -298,6 +300,7 @@ export function mergeWeddingEvent(
     ...persisted,
     invitationLocale: normalizeLocale(persisted.invitationLocale),
     templateId: template.id,
+    showHijriDate: typeof persisted.showHijriDate === "boolean" ? persisted.showHijriDate : true,
     visual: resolveWeddingVisualSelection(persisted.visual),
     style: { ...template.defaults, ...persisted.style },
     presentation: resolveWeddingPresentation(
@@ -357,13 +360,115 @@ export function isValidGuestToken(
   return false;
 }
 
+export function deriveHijriDateFromGregorian(
+  dateInput: string | Date,
+  locale: 'ar' | 'en' = 'ar',
+): string | null {
+  if (!dateInput) return null;
+  let date: Date;
+  if (dateInput instanceof Date) {
+    date = dateInput;
+  } else {
+    const trimmed = dateInput.trim();
+    if (!trimmed) return null;
+    date = new Date(trimmed.includes('T') ? trimmed : `${trimmed}T12:00:00`);
+    if (Number.isNaN(date.getTime())) {
+      date = new Date(trimmed);
+    }
+  }
+  if (Number.isNaN(date.getTime())) return null;
+
+  try {
+    const calendarLocale = locale === 'ar' ? 'ar-SA-u-ca-islamic-umalqura' : 'en-u-ca-islamic-umalqura';
+    return new Intl.DateTimeFormat(calendarLocale, {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    }).format(date);
+  } catch {
+    return null;
+  }
+}
+
+export function deriveDayOfWeekFromGregorian(
+  dateInput: string | Date,
+  locale: 'ar' | 'en' = 'ar',
+): string | null {
+  if (!dateInput) return null;
+  let date: Date;
+  if (dateInput instanceof Date) {
+    date = dateInput;
+  } else {
+    const trimmed = dateInput.trim();
+    if (!trimmed) return null;
+    date = new Date(trimmed.includes('T') ? trimmed : `${trimmed}T12:00:00`);
+    if (Number.isNaN(date.getTime())) {
+      date = new Date(trimmed);
+    }
+  }
+  if (Number.isNaN(date.getTime())) return null;
+
+  try {
+    return new Intl.DateTimeFormat(locale === 'ar' ? 'ar-SA' : 'en-GB', {
+      weekday: 'long',
+    }).format(date);
+  } catch {
+    return null;
+  }
+}
+
+export type NormalizedWhatsAppResult =
+  | { success: true; phone: string }
+  | { success: false; error: string };
+
+export function normalizeSaudiWhatsAppPhone(rawPhone: string): NormalizedWhatsAppResult {
+  if (!rawPhone || !rawPhone.trim()) {
+    return { success: false, error: 'Phone number is required.' };
+  }
+
+  let cleaned = rawPhone.trim().replace(/[\s\-.()]/g, '');
+
+  if (cleaned.startsWith('+')) {
+    cleaned = cleaned.slice(1);
+  } else if (cleaned.startsWith('00')) {
+    cleaned = cleaned.slice(2);
+  }
+
+  // 1. Full Saudi international format: 9665XXXXXXXX (12 digits)
+  if (/^9665\d{8}$/.test(cleaned)) {
+    return { success: true, phone: cleaned };
+  }
+
+  // 2. Saudi national format: 05XXXXXXXX (10 digits) -> 9665XXXXXXXX
+  if (/^05\d{8}$/.test(cleaned)) {
+    return { success: true, phone: `966${cleaned.slice(1)}` };
+  }
+
+  // 3. Saudi local without leading 0: 5XXXXXXXX (9 digits) -> 9665XXXXXXXX
+  if (/^5\d{8}$/.test(cleaned)) {
+    return { success: true, phone: `966${cleaned}` };
+  }
+
+  // 4. Valid international number with country code already supplied (8-15 digits)
+  const hadCountryPrefix = rawPhone.trim().startsWith('+') || rawPhone.trim().startsWith('00');
+  if (hadCountryPrefix && /^\d{8,15}$/.test(cleaned)) {
+    return { success: true, phone: cleaned };
+  }
+
+  return { success: false, error: 'Invalid or unsupported phone number format.' };
+}
+
 export function getWhatsAppShareUrl(
   mode: EventMode,
   eventName: string,
   phone: string,
   invitationUrl: string,
 ): string {
-  const cleanPhone = phone.replace(/\D/g, "");
+  let cleanPhone = "";
+  if (phone && phone.trim()) {
+    const normalized = normalizeSaudiWhatsAppPhone(phone);
+    cleanPhone = normalized.success ? normalized.phone : phone.replace(/\D/g, "");
+  }
   const text =
     mode === "wedding"
       ? `يسر ${eventName} دعوتكم لحضور حفل الزواج. دعوتكم الخاصة: ${invitationUrl}`

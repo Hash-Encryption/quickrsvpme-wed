@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
 import {
-  Check, Copy, ExternalLink, Link2, MessageCircle,
+  AlertTriangle, Check, Copy, ExternalLink, Link2, MessageCircle,
   QrCode, Search, Send, ShieldCheck, UserCheck, Users
 } from 'lucide-react';
 import { Link } from 'wouter';
 
+import { publishEventInvitation } from '@/backend/events';
 import { createGeneralInvitation, listGuests, rotatePersonalInvitation } from '@/backend/phase2';
 import type { EventGuest } from '@/backend/types';
 import { useAppLocale } from '@/i18n/app-locale';
-import { getWhatsAppShareUrl } from '@/wedding/model';
+import { getWhatsAppShareUrl, normalizeSaudiWhatsAppPhone } from '@/wedding/model';
 import { invitationUrl } from '../operations';
 import { buildProjectRoute, type ProjectSummary } from '../projects';
 
@@ -43,6 +44,22 @@ export function EventSend({ project }: { project: ProjectSummary }) {
     };
   }, [project.id]);
 
+  const [publishedAt, setPublishedAt] = useState<string | null>(project.invitationPublishedAt ?? null);
+  const isPublished = Boolean(publishedAt);
+
+  const handlePublish = async () => {
+    setBusy('publishing');
+    setError('');
+    try {
+      await publishEventInvitation(project.id);
+      setPublishedAt(new Date().toISOString());
+    } catch {
+      setError(t('operationFailed'));
+    } finally {
+      setBusy('');
+    }
+  };
+
   const generalUrl = generalToken
     ? invitationUrl(window.location.origin, import.meta.env.BASE_URL, generalToken)
     : '';
@@ -50,6 +67,10 @@ export function EventSend({ project }: { project: ProjectSummary }) {
   // Copy with temporary feedback
   const handleCopy = async (key: string, text: string) => {
     if (!text) return;
+    if (!isPublished) {
+      setError(t('publishBeforeSending'));
+      return;
+    }
     try {
       await navigator.clipboard.writeText(text);
       setCopiedKey(key);
@@ -73,6 +94,17 @@ export function EventSend({ project }: { project: ProjectSummary }) {
   };
 
   const handleGuestWhatsApp = async (guest: EventGuest) => {
+    if (!isPublished) {
+      setError(t('publishBeforeSending'));
+      return;
+    }
+    if (guest.phone) {
+      const normalized = normalizeSaudiWhatsAppPhone(guest.phone);
+      if (!normalized) {
+        setError(t('invalidPhoneForWhatsApp'));
+        return;
+      }
+    }
     setBusy(`wa-${guest.id}`);
     try {
       const personalUrl = await getGuestPersonalUrl(guest);
@@ -91,6 +123,10 @@ export function EventSend({ project }: { project: ProjectSummary }) {
   };
 
   const handleGuestCopy = async (guest: EventGuest) => {
+    if (!isPublished) {
+      setError(t('publishBeforeSending'));
+      return;
+    }
     setBusy(`copy-${guest.id}`);
     try {
       const personalUrl = await getGuestPersonalUrl(guest);
@@ -104,6 +140,10 @@ export function EventSend({ project }: { project: ProjectSummary }) {
 
   const handleGeneralWhatsApp = () => {
     if (!generalUrl) return;
+    if (!isPublished) {
+      setError(t('publishBeforeSending'));
+      return;
+    }
     const waUrl = getWhatsAppShareUrl(
       project.type === 'wedding' ? 'wedding' : 'standard',
       project.name,
@@ -134,6 +174,27 @@ export function EventSend({ project }: { project: ProjectSummary }) {
         <p className="rounded-2xl bg-[#8c302b]/10 p-4 text-sm text-[#8c302b]" role="alert">
           {error}
         </p>
+      )}
+
+      {!isPublished && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3" role="alert">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={18} />
+            <div>
+              <p className="text-sm font-bold">{t('publishBeforeSending')}</p>
+              <p className="text-xs text-amber-800 mt-0.5">{t('draftInvitationsHelp')}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            data-testid="button-publish-from-send"
+            disabled={busy === 'publishing'}
+            onClick={() => void handlePublish()}
+            className="shrink-0 min-h-10 px-4 rounded-xl bg-[#0C2D24] text-white text-xs font-bold hover:bg-[#174839] transition disabled:opacity-50"
+          >
+            {busy === 'publishing' ? t('loading') : t('publishInvitation')}
+          </button>
+        </div>
       )}
 
       {/* 2. Main Invitation Link Card (Matches Mockup 7) */}
@@ -309,7 +370,7 @@ export function EventSend({ project }: { project: ProjectSummary }) {
                     className="flex min-h-10 items-center gap-1.5 rounded-xl bg-[#EBF5F0] px-3.5 text-xs font-bold text-[#1B6344] hover:bg-[#D5EADF] transition disabled:opacity-50"
                   >
                     <MessageCircle size={15} aria-hidden="true" />
-                    <span>{t('directWhatsApp')}</span>
+                    <span>{t('sendOnWhatsApp')}</span>
                   </button>
                 </div>
               </article>

@@ -11,7 +11,7 @@ import {
 import { checkinStatus, setGuestCheckinCount } from '@/backend/phase3';
 import type { EventGuest, GeneralInvitationRequest } from '@/backend/types';
 import { useAppLocale } from '@/i18n/app-locale';
-import { getWhatsAppShareUrl } from '@/wedding/model';
+import { getWhatsAppShareUrl, normalizeSaudiWhatsAppPhone } from '@/wedding/model';
 import { invitationUrl } from '../operations';
 import type { ProjectSummary } from '../projects';
 
@@ -66,6 +66,17 @@ export function EventGuests({ project }: { project: ProjectSummary }) {
   };
 
   const openGuestWhatsApp = async (guest: EventGuest) => {
+    if (!project.invitationPublishedAt) {
+      setError(t('publishBeforeSending'));
+      return;
+    }
+    if (guest.phone) {
+      const normalized = normalizeSaudiWhatsAppPhone(guest.phone);
+      if (!normalized) {
+        setError(t('invalidPhoneForWhatsApp'));
+        return;
+      }
+    }
     setBusy(`wa-${guest.id}`);
     try {
       const url = await getGuestUrl(guest);
@@ -384,12 +395,13 @@ export function EventGuests({ project }: { project: ProjectSummary }) {
                   <button
                     type="button"
                     data-testid={`button-wa-guest-${guest.id}`}
-                    aria-label={`${t('directWhatsApp')} - ${guest.name}`}
+                    aria-label={`${t('sendOnWhatsApp')} - ${guest.name}`}
                     disabled={busy === `wa-${guest.id}`}
                     onClick={() => void openGuestWhatsApp(guest)}
-                    className="flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl bg-[#EBF5F0] text-[#1B6344] transition hover:bg-[#D5EADF] active:scale-95 disabled:opacity-50"
+                    className="flex min-h-10 items-center gap-1.5 rounded-xl bg-[#EBF5F0] px-2.5 sm:px-3 text-xs font-bold text-[#1B6344] transition hover:bg-[#D5EADF] active:scale-95 disabled:opacity-50"
                   >
-                    <MessageCircle size={18} aria-hidden="true" />
+                    <MessageCircle size={15} aria-hidden="true" />
+                    <span className="whitespace-nowrap">{t('sendOnWhatsApp')}</span>
                   </button>
 
                   {/* Edit Guest Button */}

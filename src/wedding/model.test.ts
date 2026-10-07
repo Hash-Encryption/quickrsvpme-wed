@@ -830,7 +830,7 @@ test("whatsapp sharing formats correctly for both standard and wedding modes", (
     "0555555555",
     "https://quickrsvp.me/i/k82f9x",
   );
-  assert.ok(weddingUrl.startsWith("https://wa.me/0555555555?text="));
+  assert.ok(weddingUrl.startsWith("https://wa.me/966555555555?text="));
   assert.ok(decodeURIComponent(weddingUrl).includes("حفل الزواج"));
   assert.ok(decodeURIComponent(weddingUrl).includes("فيصل و ريم"));
   assert.ok(decodeURIComponent(weddingUrl).includes("https://quickrsvp.me/i/k82f9x"));
