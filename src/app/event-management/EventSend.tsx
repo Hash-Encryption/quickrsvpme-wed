@@ -197,8 +197,17 @@ export function EventSend({ project }: { project: ProjectSummary }) {
         </div>
       )}
 
-      {/* 2. Main Invitation Link Card (Matches Mockup 7) */}
-      <section className="rounded-3xl border border-[#E8E2D8] bg-white p-6 sm:p-8 shadow-xs text-center">
+      {/* 2. Main Invitation Link Card */}
+      <section className={`rounded-3xl border border-[rgba(194,155,97,0.22)] bg-white p-6 sm:p-8 shadow-xs text-center relative transition-opacity ${
+        !isPublished ? 'opacity-75' : ''
+      }`}>
+        {!isPublished && (
+          <div className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-[#FAF0E6] border border-[#C29B61]/30 px-3 py-1 text-xs font-bold text-[#8B7040]">
+            <AlertTriangle size={14} className="text-[#8B7040]" aria-hidden="true" />
+            <span>{t('publishFirstToActivate')}</span>
+          </div>
+        )}
+
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#F5F2EC] text-[var(--qr-primary)]">
           <Link2 size={26} aria-hidden="true" />
         </div>
@@ -211,7 +220,7 @@ export function EventSend({ project }: { project: ProjectSummary }) {
           <p className="mt-3 text-xs text-[#756F66]">{t('loading')}</p>
         ) : generalUrl ? (
           <div className="mt-3">
-            <p className="rounded-xl bg-[#FAF8F4] border border-[#E8E2D8] px-3.5 py-2.5 text-xs text-[#564F46] font-mono break-all" dir="ltr">
+            <p className="rounded-xl bg-[#FAF7F2] border border-[rgba(194,155,97,0.22)] px-3.5 py-2.5 text-xs text-[#564F46] font-mono truncate" dir="ltr">
               {generalUrl}
             </p>
 

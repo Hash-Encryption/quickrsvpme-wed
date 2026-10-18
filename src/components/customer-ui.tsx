@@ -31,19 +31,19 @@ export function CustomerBottomNav({ active }: { active: 'home' | 'wedding' | 'pa
   return (
     <BottomNavigation label={t('projects')}>
       <Link href="/" aria-current={active === 'home' ? 'page' : undefined}>
-        <Home size={19} aria-hidden="true" />
+        <Home size={18} aria-hidden="true" />
         <span>{t('dashboard')}</span>
       </Link>
       <Link href="/planner/wedding" aria-current={active === 'wedding' ? 'page' : undefined}>
-        <Heart size={19} aria-hidden="true" />
+        <Heart size={18} aria-hidden="true" />
         <span>{t('wedding')}</span>
       </Link>
       <Link href="/planner/party" aria-current={active === 'party' ? 'page' : undefined}>
-        <PartyPopper size={19} aria-hidden="true" />
+        <PartyPopper size={18} aria-hidden="true" />
         <span>{t('party')}</span>
       </Link>
       <Link href="/account" aria-current={active === 'account' ? 'page' : undefined}>
-        <UserRound size={19} aria-hidden="true" />
+        <UserRound size={18} aria-hidden="true" />
         <span>{t('account')}</span>
       </Link>
     </BottomNavigation>
@@ -51,15 +51,32 @@ export function CustomerBottomNav({ active }: { active: 'home' | 'wedding' | 'pa
 }
 
 export function MobileHeader({ title, description, back, actions }: { title: ReactNode; description?: ReactNode; back?: { href: string; label: string }; actions?: ReactNode }) {
-  return <header className="qr-header">
-    {back && <Link href={back.href} className="qr-button qr-button--ghost qr-icon-button" aria-label={back.label}><ArrowLeft className="qr-back-icon" size={20} aria-hidden="true" /></Link>}
-    <div className="qr-header-title">{title}{description && <p className="qr-caption qr-secondary">{description}</p>}</div>
-    {actions && <div className="qr-header-actions">{actions}</div>}
-  </header>;
+  return (
+    <header className="qr-header">
+      {back && (
+        <Link
+          href={back.href}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/80 border border-black/[0.06] shadow-xs text-[var(--qr-primary)] hover:bg-white active:scale-95 transition"
+          aria-label={back.label}
+        >
+          <ArrowLeft className="qr-back-icon" size={17} aria-hidden="true" />
+        </Link>
+      )}
+      <div className="qr-header-title flex items-center gap-2 min-w-0">
+        <div className="font-semibold text-[15px] text-[var(--qr-primary)] truncate">{title}</div>
+        {description && (
+          <span className="inline-flex items-center rounded-full bg-black/[0.04] px-2.5 py-0.5 text-[11px] font-medium text-[var(--qr-secondary)] truncate shrink-0">
+            {description}
+          </span>
+        )}
+      </div>
+      {actions && <div className="qr-header-actions">{actions}</div>}
+    </header>
+  );
 }
 
 export function EmptyState({ title, description, icon = <Inbox size={28} aria-hidden="true" />, action, secondaryAction, heading: Heading = 'h2' }: { title: string; description?: ReactNode; icon?: ReactNode; action?: ReactNode; secondaryAction?: ReactNode; heading?: 'h1' | 'h2' | 'h3' }) {
-  return <section className="qr-card qr-state p-8 sm:p-12 text-center max-w-lg mx-auto">
+  return <section className="qr-state p-6 sm:p-10 text-center max-w-lg mx-auto">
     <div className="qr-state-icon flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--qr-gold-subtle)] text-[var(--qr-on-gold)] shadow-xs">{icon}</div>
     <Heading className="qr-card-title mt-4 text-xl font-bold text-[var(--qr-primary)]">{title}</Heading>
     {description && <p className="qr-secondary mt-2 text-sm leading-relaxed max-w-md">{description}</p>}

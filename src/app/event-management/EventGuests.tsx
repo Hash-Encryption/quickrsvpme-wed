@@ -17,8 +17,17 @@ import type { ProjectSummary } from '../projects';
 
 type FilterType = 'all' | 'accepted' | 'pending' | 'declined';
 
+const HONORIFIC_CHIPS = [
+  { ar: 'الشيخ', en: 'Sheikh', position: 'prefix' },
+  { ar: 'المهندس', en: 'Eng.', position: 'prefix' },
+  { ar: 'الدكتور', en: 'Dr.', position: 'prefix' },
+  { ar: 'الأستاذ', en: 'Mr.', position: 'prefix' },
+  { ar: 'الأستاذة', en: 'Mrs.', position: 'prefix' },
+  { ar: 'وعائلته', en: '& Family', position: 'suffix' },
+] as const;
+
 export function EventGuests({ project }: { project: ProjectSummary }) {
-  const { t } = useAppLocale();
+  const { t, locale } = useAppLocale();
   const [guests, setGuests] = useState<EventGuest[]>([]);
   const [requests, setRequests] = useState<GeneralInvitationRequest[]>([]);
   const [tokens, setTokens] = useState<Record<string, string>>({});
@@ -32,6 +41,25 @@ export function EventGuests({ project }: { project: ProjectSummary }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingGuest, setEditingGuest] = useState<EventGuest | null>(null);
   const [formData, setFormData] = useState({ name: '', phone: '', companions: 0, tag: '' });
+
+  const applyHonorific = (item: (typeof HONORIFIC_CHIPS)[number]) => {
+    const text = locale === 'ar' ? item.ar : item.en;
+    if (item.position === 'prefix') {
+      setFormData((prev) => {
+        const trimmed = prev.name.trim();
+        if (!trimmed) return { ...prev, name: `${text} ` };
+        if (trimmed.startsWith(text)) return prev;
+        return { ...prev, name: `${text} ${trimmed}` };
+      });
+    } else {
+      setFormData((prev) => {
+        const trimmed = prev.name.trim();
+        if (!trimmed) return { ...prev, name: text };
+        if (trimmed.endsWith(text)) return prev;
+        return { ...prev, name: `${trimmed} ${text}` };
+      });
+    }
+  };
 
   const refresh = async () => {
     try {
@@ -197,11 +225,11 @@ export function EventGuests({ project }: { project: ProjectSummary }) {
           </h1>
           <p className="mt-1 text-xs text-[#756F66]">
             {project.type === 'wedding'
-              ? 'إدارة قائمة المدعوين لحفل الزفاف'
-              : 'إدارة قائمة المدعوين للمناسبة'}
+              ? t('manageWeddingGuestsSubtitle')
+              : t('managePartyGuestsSubtitle')}
           </p>
         </div>
-        <span className="rounded-full border border-[#D9D2C5] bg-white px-3.5 py-1.5 text-xs font-semibold text-[#17251F]">
+        <span className="rounded-full border border-[rgba(194,155,97,0.22)] bg-white px-3.5 py-1.5 text-xs font-semibold text-[#17251F] tabular-nums shadow-xs">
           {guests.length} {t('guestRecords')}
         </span>
       </div>
@@ -264,20 +292,20 @@ export function EventGuests({ project }: { project: ProjectSummary }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t('searchGuestsPlaceholder')}
-          className="qr-field-inline min-h-12 w-full rounded-2xl bg-white ps-11 pe-4 text-sm text-[#17251F] border border-[#E8E2D8] placeholder:text-[#A8A196] focus:border-[var(--qr-primary)]"
+          className="qr-field-inline min-h-12 w-full rounded-2xl bg-white ps-11 pe-4 text-sm text-[#17251F] border border-[rgba(194,155,97,0.22)] placeholder:text-[#A8A196] focus:border-[var(--qr-primary)] shadow-xs"
           aria-label={t('searchGuests')}
         />
       </div>
 
-      {/* 4. Filter Pills */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1" role="tablist">
+      {/* 4. Filter Pills (Compact horizontal scroll) */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar -mx-1 px-1" role="tablist">
         <button
           type="button"
           onClick={() => setFilter('all')}
-          className={`min-h-9 shrink-0 rounded-full px-4 text-xs font-bold transition ${
+          className={`h-9 shrink-0 rounded-full px-3.5 sm:px-4 text-xs font-bold transition ${
             filter === 'all'
               ? 'bg-[#0C2D24] text-white shadow-xs'
-              : 'border border-[#E8E2D8] bg-white text-[#756F66] hover:border-[#0C2D24]/40'
+              : 'border border-[rgba(194,155,97,0.22)] bg-white text-[#756F66] hover:border-[#0C2D24]/40 hover:bg-[#FAF7F2]'
           }`}
         >
           {t('allFilter')} ({guests.length})
@@ -285,7 +313,7 @@ export function EventGuests({ project }: { project: ProjectSummary }) {
         <button
           type="button"
           onClick={() => setFilter('accepted')}
-          className={`min-h-9 shrink-0 rounded-full px-4 text-xs font-bold transition ${
+          className={`h-9 shrink-0 rounded-full px-3.5 sm:px-4 text-xs font-bold transition ${
             filter === 'accepted'
               ? 'bg-[#1B6344] text-white shadow-xs'
               : 'border border-[#D5EADF] bg-[#EBF5F0] text-[#1B6344] hover:bg-[#E2F0E9]'
@@ -296,7 +324,7 @@ export function EventGuests({ project }: { project: ProjectSummary }) {
         <button
           type="button"
           onClick={() => setFilter('pending')}
-          className={`min-h-9 shrink-0 rounded-full px-4 text-xs font-bold transition ${
+          className={`h-9 shrink-0 rounded-full px-3.5 sm:px-4 text-xs font-bold transition ${
             filter === 'pending'
               ? 'bg-[#8B7040] text-white shadow-xs'
               : 'border border-[#F6E9C8] bg-[#FDF6E2] text-[#8B7040] hover:bg-[#F9F0D6]'
@@ -307,7 +335,7 @@ export function EventGuests({ project }: { project: ProjectSummary }) {
         <button
           type="button"
           onClick={() => setFilter('declined')}
-          className={`min-h-9 shrink-0 rounded-full px-4 text-xs font-bold transition ${
+          className={`h-9 shrink-0 rounded-full px-3.5 sm:px-4 text-xs font-bold transition ${
             filter === 'declined'
               ? 'bg-[#9C382A] text-white shadow-xs'
               : 'border border-[#F8D8D3] bg-[#FDF0ED] text-[#9C382A] hover:bg-[#FCE6E2]'
@@ -475,6 +503,18 @@ export function EventGuests({ project }: { project: ProjectSummary }) {
                   placeholder={t('guest')}
                   className="qr-field-inline min-h-12 w-full rounded-xl px-3.5 text-sm border border-[#D9D2C5]"
                 />
+                <div className="flex flex-wrap gap-1.5 pt-2">
+                  {HONORIFIC_CHIPS.map((chip) => (
+                    <button
+                      key={chip.en}
+                      type="button"
+                      onClick={() => applyHonorific(chip)}
+                      className="rounded-full bg-[#FAF7F2] border border-[rgba(194,155,97,0.22)] px-2.5 py-1 text-[11px] font-semibold text-[#17251F] hover:bg-[#F5EFE6] transition active:scale-95"
+                    >
+                      {locale === 'ar' ? chip.ar : chip.en}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div>
@@ -564,6 +604,18 @@ export function EventGuests({ project }: { project: ProjectSummary }) {
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="qr-field-inline min-h-12 w-full rounded-xl px-3.5 text-sm border border-[#D9D2C5]"
                 />
+                <div className="flex flex-wrap gap-1.5 pt-2">
+                  {HONORIFIC_CHIPS.map((chip) => (
+                    <button
+                      key={chip.en}
+                      type="button"
+                      onClick={() => applyHonorific(chip)}
+                      className="rounded-full bg-[#FAF7F2] border border-[rgba(194,155,97,0.22)] px-2.5 py-1 text-[11px] font-semibold text-[#17251F] hover:bg-[#F5EFE6] transition active:scale-95"
+                    >
+                      {locale === 'ar' ? chip.ar : chip.en}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div>

@@ -17,7 +17,7 @@ const en = {
   scannerTitle: 'Welcome them by name.', scannerHelp: 'Secure check-in for', scannerPlaceholder: 'Scan or enter invitation code', verified: 'Verified', invitationFor: 'Invitation for',
   partyStudio: 'Party Studio', weddingStudio: 'Wedding Studio', hostStudio: 'Host Studio',
   partyStudioTitle: 'Your suite, in your hands.', partyStudioHelp: 'Shape the guest experience, then send a private link that feels like yours.', weddingStudioTitle: 'Design your perfect wedding invitation', weddingStudioHelp: 'Create a beautiful invitation, share it with your guests, track RSVPs, and manage your event from one place.', guestExperience: 'Guest experience', invitationBlocks: 'Invitation blocks', blocksHelp: 'Use the arrow controls to reorder. Hide anything that does not belong.', visible: 'visible', makePersonal: 'Make it personal.', makePersonalHelp: 'Select any block to edit its wording, menu, colors, or questions.',
-  chooseStudio: 'Choose your invitation studio.', chooseStudioHelp: 'Wedding and Party keep independent creation experiences while sharing RSVP tracking, guest links, and check-in.', partyEvents: 'Party & Events', standardInvitation: 'Standard invitation', standardHelp: 'For birthdays, dinners, graduations, and celebrations with modular guest blocks.', weddingSuite: 'Wedding suite', weddingInvitation: 'Wedding invitation', weddingHelp: 'Arabic-first 9:16 Wedding experience with templates, layouts, motion, and RSVP.', openPartyStudio: 'Open Party Studio', openWeddingStudio: 'Open Wedding Studio', sharedState: 'RSVP state, private guest links, and door scanner remain synced across both studios.',
+  chooseStudio: 'Choose your invitation studio.', chooseStudioHelp: 'Wedding and Party keep independent creation experiences while sharing RSVP tracking, guest links, and check-in.', partyEvents: 'Party & Events', standardInvitation: 'Standard invitation', standardHelp: 'For birthdays, private dinners, graduations, and memorable celebrations.', weddingSuite: 'Wedding suite', weddingInvitation: 'Wedding invitation', weddingHelp: 'Cinematic Arabic wedding invitation suite with visual themes, motion, and RSVP.', openPartyStudio: 'Open Party Studio', openWeddingStudio: 'Open Wedding Studio', sharedState: 'RSVP state, private guest links, and door scanner remain synced across both studios.',
   privateLinkActive: 'private link active', awaitingReply: 'awaiting first reply', webQrEnabled: 'web QR enabled',
   saveChanges: 'Save changes', edit: 'Edit', hide: 'Hide', show: 'Show', heading: 'Heading', description: 'Description', questions: 'Questions', selected: 'Selected', notSelected: 'Not selected', addBlock: 'Add block', text: 'Text', host: 'Host', cta: 'Button', divider: 'Divider', spacer: 'Spacer',
   catering: 'Catering', dress: 'Dress code', schedule: 'Schedule', registry: 'Registry', song: 'Song request', faq: 'FAQ', entrees: 'Entrées', menuSwatches: 'Menu swatches', guest: 'Guest', response: 'Response', invite: 'Invite', catererExport: 'Caterer export', guestList: 'Guest list', guestListTitle: 'The people who matter.', personalLink: 'Personal link ready',
@@ -218,6 +218,15 @@ const en = {
   moveAllContent: 'Move all content',
   selectedElement: 'Selected element',
   resetElement: 'Reset element',
+  weddingBadgeLuxury: 'Luxury Invitations',
+  weddingBadgeGuests: 'Guest List & QR Gate Pass',
+  partyBadgeCelebrations: 'Celebrations & Gatherings',
+  partyBadgeBranding: 'Personal & Corporate Branding',
+  partyOccasionsSubtitle: 'Birthdays · Private Dinners · Graduations · Celebrations',
+  weddingOccasionsSubtitle: 'Cinematic Wedding Invitations & Luxury Arabic Experience',
+  manageWeddingGuestsSubtitle: 'Manage wedding guest list and private invitations',
+  managePartyGuestsSubtitle: 'Manage party guest list and private invitations',
+  publishFirstToActivate: 'Publish first to activate link',
 } as const;
 
 export type AppTranslationKey = keyof typeof en;
@@ -238,7 +247,7 @@ const ar: Record<AppTranslationKey, string> = {
   scannerTitle: 'رحّب بهم بالاسم.', scannerHelp: 'تسجيل دخول آمن لمناسبة', scannerPlaceholder: 'امسح رمز الدعوة أو أدخله', verified: 'تم التحقق', invitationFor: 'دعوة لعدد',
   partyStudio: 'استوديو المناسبات', weddingStudio: 'استوديو الزفاف', hostStudio: 'استوديو المضيف',
   partyStudioTitle: 'دعوتك بين يديك.', partyStudioHelp: 'شكّل تجربة الضيف، ثم أرسل رابطاً خاصاً يعبّر عن مناسبتك.', weddingStudioTitle: 'صمم دعوة زفافك المثالية', weddingStudioHelp: 'أنشئ دعوة مميزة، وشاركها مع ضيوفك، وتابع تأكيد الحضور، وأدر مناسبتك من مكان واحد.', guestExperience: 'تجربة الضيف', invitationBlocks: 'أقسام الدعوة', blocksHelp: 'استخدم أزرار الأسهم لإعادة الترتيب، وأخفِ ما لا يناسب مناسبتك.', visible: 'ظاهر', makePersonal: 'أضف لمستك.', makePersonalHelp: 'اختر أي قسم لتعديل نصه أو قائمته أو ألوانه أو أسئلته.',
-  chooseStudio: 'اختر استوديو دعوتك.', chooseStudioHelp: 'يحافظ الزفاف والمناسبات على تجربتي إنشاء مستقلتين مع مشاركة الردود وروابط الضيوف وتسجيل الدخول.', partyEvents: 'الحفلات والمناسبات', standardInvitation: 'دعوة المناسبات', standardHelp: 'لأعياد الميلاد والعشاء والتخرج والاحتفالات، مع أقسام مرنة للضيوف.', weddingSuite: 'جناح الزفاف', weddingInvitation: 'دعوة زفاف', weddingHelp: 'تجربة زفاف عربية 9:16 مع القوالب والتخطيطات والحركة وتأكيد الحضور.', openPartyStudio: 'فتح استوديو المناسبات', openWeddingStudio: 'فتح استوديو الزفاف', sharedState: 'تبقى الردود وروابط الضيوف الخاصة وماسح الدخول متزامنة بين الاستوديوهين.',
+  chooseStudio: 'اختر استوديو دعوتك.', chooseStudioHelp: 'يحافظ الزفاف والمناسبات على تجربتي إنشاء مستقلتين مع مشاركة الردود وروابط الضيوف وتسجيل الدخول.', partyEvents: 'الحفلات والمناسبات', standardInvitation: 'دعوة المناسبات', standardHelp: 'لأعياد الميلاد والعشاء الخاص والتخرج والاحتفالات، بتجربة ضيوف استثنائية.', weddingSuite: 'جناح الزفاف', weddingInvitation: 'دعوة زفاف', weddingHelp: 'تجربة زفاف عربية سينمائية فاخرة مع القوالب الفنية وتأكيد الحضور الأنيق.', openPartyStudio: 'فتح استوديو المناسبات', openWeddingStudio: 'فتح استوديو الزفاف', sharedState: 'تبقى الردود وروابط الضيوف الخاصة وماسح الدخول متزامنة بين الاستوديوهين.',
   privateLinkActive: 'الرابط الخاص نشط', awaitingReply: 'بانتظار أول رد', webQrEnabled: 'رمز الدخول جاهز',
   saveChanges: 'حفظ التعديلات', edit: 'تعديل', hide: 'إخفاء', show: 'إظهار', heading: 'العنوان', description: 'الوصف', questions: 'الأسئلة', selected: 'المحدد', notSelected: 'لم يُحدد', addBlock: 'إضافة قسم', text: 'نص', host: 'المضيف', cta: 'زر', divider: 'فاصل', spacer: 'مسافة',
   catering: 'الضيافة', dress: 'اللباس', schedule: 'الجدول', registry: 'الهدايا', song: 'طلب أغنية', faq: 'الأسئلة الشائعة', entrees: 'الأطباق', menuSwatches: 'ألوان القائمة', guest: 'الضيف', response: 'الرد', invite: 'الدعوة', catererExport: 'تصدير للضيافة', guestList: 'قائمة الضيوف', guestListTitle: 'الأشخاص الأقرب إليك.', personalLink: 'الرابط الخاص جاهز',
@@ -439,6 +448,15 @@ const ar: Record<AppTranslationKey, string> = {
   moveAllContent: 'تحريك المحتوى بالكامل',
   selectedElement: 'العنصر المحدد',
   resetElement: 'إعادة ضبط العنصر',
+  weddingBadgeLuxury: 'دعوات فاخرة',
+  weddingBadgeGuests: 'قائمة الضيوف وبطاقة الدخول',
+  partyBadgeCelebrations: 'احتفالات وجمعات',
+  partyBadgeBranding: 'للأفراد والشركات',
+  partyOccasionsSubtitle: 'أعياد ميلاد · عشاء خاص · تخرج · مناسبات عامة',
+  weddingOccasionsSubtitle: 'دعوة زفاف سينمائية وتجربة عربية فاخرة',
+  manageWeddingGuestsSubtitle: 'إدارة قائمة المدعوين لحفل الزفاف',
+  managePartyGuestsSubtitle: 'إدارة قائمة المدعوين للمناسبة',
+  publishFirstToActivate: 'انشر الدعوة أولاً لتفعيل الرابط',
 };
 
 export const appTranslations = { ar, en } satisfies Record<AppLocale, Record<AppTranslationKey, string>>;

@@ -6,6 +6,9 @@ import { AppLanguageControl, useAppLocale } from '@/i18n/app-locale';
 import { defaultPartyEvent, type PartyEventData } from '@/party/model';
 import { createDesignDraft } from '@/backend/phase2';
 
+import { DualHijriCalendar } from '@/components/DualHijriCalendar';
+import { SAUDI_TIME_ANCHORS } from '@/utils/saudiCalendar';
+
 export const initialPartyBlocks = [
   { id: 'catering', key: 'catering', enabled: true, label: 'Catering', eyebrow: 'YOUR TABLE', content: { heading: 'A seat at our table', entree: ['Rosemary chicken', 'Miso-glazed salmon', 'Garden ravioli'], swatches: ['#6D3F35', '#C48B63', '#34594B'] } },
   { id: 'dress', key: 'dress', enabled: true, label: 'Dress code', eyebrow: 'THE ATTIRE', content: { heading: 'Garden formal', note: 'A little polished, a little effortless. Suits, silk, and evening colors are encouraged.' } },
@@ -16,11 +19,12 @@ export const initialPartyBlocks = [
 ];
 
 export function CreatePartyPage() {
-  const { t } = useAppLocale();
+  const { t, locale } = useAppLocale();
   const [, navigate] = useLocation();
 
   const [name, setName] = useState('');
   const [date, setDate] = useState('');
+  const [selectedTimeAnchor, setSelectedTimeAnchor] = useState<string>('after-isha');
   const [notSureYet, setNotSureYet] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -40,11 +44,15 @@ export function CreatePartyPage() {
     setErrorMessage('');
 
     try {
+      const activeAnchor = SAUDI_TIME_ANCHORS.find((a) => a.id === selectedTimeAnchor);
+      const chosenTime = activeAnchor ? (locale === 'ar' ? activeAnchor.labelAr : activeAnchor.labelEn) : defaultPartyEvent.startTime;
+
       const configuration = {
         ...(structuredClone(defaultPartyEvent) as PartyEventData & Record<string, unknown>),
         blocks: structuredClone(initialPartyBlocks),
         invitationLocale: 'ar',
         date: notSureYet ? '' : date.trim(),
+        startTime: chosenTime,
       };
 
       const draft = await createDesignDraft('party', name.trim(), configuration);
@@ -107,28 +115,58 @@ export function CreatePartyPage() {
               )}
             </div>
 
-            {/* Event Date (Optional) */}
-            <div>
-              <label className="qr-label" htmlFor="party-date">
+            {/* Event Date (Optional, Dual Gregorian-Hijri Calendar) */}
+            <div className="space-y-3">
+              <label className="qr-label block" htmlFor="party-date">
                 <span>{t('partyDateLabel')}</span>
               </label>
-              <input
-                id="party-date"
-                data-testid="input-party-date"
-                type="date"
-                value={notSureYet ? '' : date}
-                onChange={(e) => {
-                  setDate(e.target.value);
-                  if (errorMessage) setErrorMessage('');
-                }}
-                disabled={submitting || notSureYet}
-                className="qr-field mt-2 disabled:opacity-50"
-              />
+
+              <div className={notSureYet ? 'opacity-40 pointer-events-none' : ''}>
+                <DualHijriCalendar
+                  id="party-date"
+                  testId="input-party-date"
+                  value={notSureYet ? '' : date}
+                  onChange={(newDate) => {
+                    setDate(newDate);
+                    if (errorMessage) setErrorMessage('');
+                  }}
+                  locale={locale}
+                  disabled={submitting || notSureYet}
+                />
+
+                {/* Saudi Time Anchors */}
+                <div className="pt-2">
+                  <span className="qr-label block mb-2 text-xs font-semibold text-[var(--qr-secondary)]">
+                    {locale === 'ar' ? 'توقيت بدء الفعالية' : 'Event Timing'}
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {SAUDI_TIME_ANCHORS.map((anchor) => {
+                      const active = selectedTimeAnchor === anchor.id;
+                      return (
+                        <button
+                          key={anchor.id}
+                          type="button"
+                          onClick={() => setSelectedTimeAnchor(anchor.id)}
+                          disabled={submitting || notSureYet}
+                          className={`h-8 px-3 rounded-full text-xs font-medium transition-all ${
+                            active
+                              ? 'bg-[#0C2D24] text-white shadow-xs'
+                              : 'bg-[#FAF7F2] border border-[rgba(194,155,97,0.22)] text-[#17251F] hover:bg-[#F5EFE6]'
+                          }`}
+                        >
+                          {locale === 'ar' ? anchor.labelAr : anchor.labelEn}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
 
               {/* Not sure yet checkbox */}
-              <label className="qr-choice mt-3 cursor-pointer select-none">
+              <label className="qr-choice mt-3 cursor-pointer select-none flex items-center gap-2">
                 <input
                   type="checkbox"
+                  id="checkbox-not-sure-date"
                   data-testid="checkbox-not-sure-date"
                   checked={notSureYet}
                   onChange={(e) => {
@@ -136,6 +174,7 @@ export function CreatePartyPage() {
                     if (e.target.checked) setDate('');
                   }}
                   disabled={submitting}
+                  className="h-4 w-4 rounded border-gray-300 text-[var(--qr-primary)] focus:ring-[var(--qr-primary)] cursor-pointer"
                 />
                 <span className="text-xs sm:text-sm text-[var(--qr-secondary)] font-medium">
                   {t('notSureYet')}

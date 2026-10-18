@@ -325,34 +325,34 @@ export function PartyStudio({
       }`}
       dir={dir}
     >
-      {/* 1. TOP APP BAR (Modeled directly after Screen 10) */}
-      <header className="sticky top-0 z-40 flex items-center justify-between border-b border-[#D4AF37]/35 bg-[#FAF7F2]/95 px-4 sm:px-8 py-3.5 backdrop-blur-md">
+      {/* 1. TOP APP BAR — Sleek 56px Frosted Glass Single Bar */}
+      <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-black/[0.06] bg-[#FAF7F2]/90 px-4 sm:px-6 backdrop-blur-xl">
         {/* Left: Back Arrow & Status */}
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-2.5 min-w-0">
           <Link
             href={backHref}
-            className="focus-ring flex h-10 w-10 items-center justify-center rounded-full border border-[#D4AF37]/40 bg-white/70 text-[#0A2E23] transition hover:bg-white active:scale-95"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/[0.04] text-[#17251F] transition hover:bg-black/[0.08] active:scale-95"
             aria-label={backLabel || t('backToProjects')}
             data-testid="link-back"
           >
             <ArrowLeft
-              size={18}
+              size={16}
               className={`transition-transform ${dir === 'rtl' ? 'rotate-180' : ''}`}
             />
           </Link>
 
           <div className="min-w-0">
-            <h1 className="truncate text-sm sm:text-base font-bold text-[#0A2E23]">
+            <h1 className="truncate text-xs sm:text-sm font-semibold text-[#17251F]">
               {draftTitle || event.title || t('partyStudio')}
             </h1>
-            <div className="flex items-center gap-1.5 text-[11px] text-[#2D2421]/65">
+            <div className="flex items-center gap-1.5 text-[10px] text-[#756F66]">
               <span
-                className={`h-2 w-2 rounded-full ${
+                className={`h-1.5 w-1.5 rounded-full ${
                   saveStatus === 'saving'
-                    ? 'bg-[#D4AF37] animate-pulse'
+                    ? 'bg-[#C29B61] animate-pulse'
                     : saveStatus === 'error' || saveStatus === 'conflict'
                     ? 'bg-[#B4534B]'
-                    : 'bg-[#0A2E23]'
+                    : 'bg-[#1B6344]'
                 }`}
               />
               <span className="font-medium">
@@ -369,8 +369,8 @@ export function PartyStudio({
         </div>
 
         {/* Center/Right: Undo, Redo, Preview Toggle, Publish */}
-        <div className="flex items-center gap-2">
-          <div className="hidden sm:flex items-center gap-1 border-e border-[#D4AF37]/30 pe-2">
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="hidden sm:flex items-center gap-1 border-e border-black/[0.06] pe-2">
             <button
               type="button"
               onClick={handleUndo}
@@ -378,9 +378,9 @@ export function PartyStudio({
               aria-label={t('undo')}
               title={t('undo')}
               data-testid="button-undo"
-              className="focus-ring flex h-9 w-9 items-center justify-center rounded-full border border-[#D4AF37]/40 bg-white/60 text-[#0A2E23] transition hover:bg-white disabled:opacity-30"
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-black/[0.08] bg-white/80 text-[#17251F] transition hover:bg-white disabled:opacity-30"
             >
-              <Undo2 size={15} />
+              <Undo2 size={14} />
             </button>
             <button
               type="button"
@@ -389,9 +389,9 @@ export function PartyStudio({
               aria-label={t('redo')}
               title={t('redo')}
               data-testid="button-redo"
-              className="focus-ring flex h-9 w-9 items-center justify-center rounded-full border border-[#D4AF37]/40 bg-white/60 text-[#0A2E23] transition hover:bg-white disabled:opacity-30"
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-black/[0.08] bg-white/80 text-[#17251F] transition hover:bg-white disabled:opacity-30"
             >
-              <Redo2 size={15} />
+              <Redo2 size={14} />
             </button>
           </div>
 
@@ -400,13 +400,13 @@ export function PartyStudio({
             onClick={() => setIsPreviewOnly(!isPreviewOnly)}
             aria-pressed={isPreviewOnly}
             data-testid="button-preview-toggle"
-            className={`focus-ring inline-flex min-h-10 items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition active:scale-95 ${
+            className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition active:scale-95 ${
               isPreviewOnly
-                ? 'border-[#0A2E23] bg-[#0A2E23] text-white shadow-xs'
-                : 'border-[#D4AF37]/50 bg-white/70 text-[#0A2E23] hover:bg-white'
+                ? 'border-[#0C2D24] bg-[#0C2D24] text-white shadow-xs'
+                : 'border-black/[0.08] bg-white/80 text-[#17251F] hover:bg-white'
             }`}
           >
-            {isPreviewOnly ? <Edit3 size={14} /> : <Eye size={14} />}
+            {isPreviewOnly ? <Edit3 size={13} /> : <Eye size={13} />}
             <span>{t(isPreviewOnly ? 'editView' : 'previewView')}</span>
           </button>
 
@@ -416,9 +416,9 @@ export function PartyStudio({
               disabled={isPublishing || !publishAllowed}
               onClick={() => void onPublish()}
               data-testid="button-publish-party"
-              className="focus-ring inline-flex min-h-10 items-center gap-2 rounded-full bg-[#0A2E23] px-5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-[#144837] disabled:cursor-not-allowed disabled:opacity-40 active:scale-95"
+              className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[#0C2D24] px-3.5 text-xs font-semibold text-white shadow-xs transition hover:bg-[#144837] disabled:cursor-not-allowed disabled:opacity-40 active:scale-95"
             >
-              <Sparkles size={14} className="text-[#D4AF37]" />
+              <Sparkles size={13} className="text-[#C29B61]" />
               <span>{isPublishing ? t('publishing') : publishLabel || t('publishDraft')}</span>
             </button>
           )}

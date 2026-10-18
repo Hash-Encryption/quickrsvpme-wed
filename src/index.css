@@ -179,7 +179,8 @@
 }
 
 [dir='rtl'] .project-shell { direction: rtl; }
-[dir='rtl'] body { --app-font-sans: 'IBM Plex Sans Arabic', sans-serif; }
+[dir='rtl'] body { --app-font-sans: 'IBM Plex Sans Arabic', sans-serif; line-height: 1.6; }
+[dir='rtl'] h1, [dir='rtl'] h2, [dir='rtl'] h3, [dir='rtl'] h4, [dir='rtl'] p, [dir='rtl'] span, [dir='rtl'] button, [dir='rtl'] a { line-height: 1.5; }
 [dir='rtl'] .project-sidebar { border-right: 0; border-left: 1px solid #D9D2C5; }
 [dir='ltr'] .wedding-studio { direction: ltr; }
 [dir='rtl'] input[dir='ltr'], [dir='rtl'] textarea[dir='ltr'], [dir='rtl'] bdi { unicode-bidi: isolate; }

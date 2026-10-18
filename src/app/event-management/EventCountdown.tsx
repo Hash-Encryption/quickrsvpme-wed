@@ -83,11 +83,11 @@ export function EventCountdown({ dateStr, className = '' }: EventCountdownProps)
 
   if (time.isToday) {
     return (
-      <div className={`rounded-3xl bg-[#0C2D24] p-6 text-white text-center shadow-lg ${className}`}>
+      <div className={`rounded-3xl bg-gradient-to-br from-[#0C2D24] to-[#164236] p-6 text-white text-center shadow-lg border border-[rgba(194,155,97,0.22)] ${className}`}>
         <p className="text-xs font-semibold uppercase tracking-wider text-[#D4B363]">
           {t('timeUntilCelebration')}
         </p>
-        <p className="mt-2 text-2xl font-bold text-white">
+        <p className="mt-2 text-2xl font-bold text-[#FBF6EE]">
           🎉 {t('eventToday')}
         </p>
       </div>
@@ -96,7 +96,7 @@ export function EventCountdown({ dateStr, className = '' }: EventCountdownProps)
 
   if (time.isPassed) {
     return (
-      <div className={`rounded-3xl bg-[#0C2D24] p-6 text-white text-center shadow-lg ${className}`}>
+      <div className={`rounded-3xl bg-gradient-to-br from-[#0C2D24] to-[#164236] p-6 text-white text-center shadow-lg border border-[rgba(194,155,97,0.22)] ${className}`}>
         <p className="text-xs font-semibold uppercase tracking-wider text-[#D4B363]">
           {t('timeUntilCelebration')}
         </p>
@@ -108,7 +108,7 @@ export function EventCountdown({ dateStr, className = '' }: EventCountdownProps)
   }
 
   return (
-    <div className={`rounded-3xl bg-[#0C2D24] p-5 sm:p-7 text-white shadow-[0_12px_40px_rgba(12,45,36,0.18)] ${className}`}>
+    <div className={`rounded-3xl bg-gradient-to-br from-[#0C2D24] to-[#164236] p-5 sm:p-7 text-white shadow-[0_12px_40px_rgba(12,45,36,0.18)] border border-[rgba(194,155,97,0.22)] ${className}`}>
       <p className="text-center text-xs font-bold uppercase tracking-[0.14em] text-[#D4B363]">
         {t('timeUntilCelebration')}
       </p>
@@ -116,40 +116,40 @@ export function EventCountdown({ dateStr, className = '' }: EventCountdownProps)
       <div className="mt-5 grid grid-cols-4 gap-2 sm:gap-4 text-center">
         {/* Days */}
         <div className="flex flex-col items-center">
-          <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-white/10 text-2xl sm:text-3xl font-bold tabular-nums text-white">
+          <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-white/10 text-2xl sm:text-3xl font-bold tabular-nums text-[#FBF6EE] border border-white/10 shadow-inner">
             {time.days}
           </div>
-          <span className="mt-2 text-[11px] font-medium text-white/70">
+          <span className="mt-2 text-[11px] font-medium text-[#E5D7BE]">
             {t('countdownDays')}
           </span>
         </div>
 
         {/* Hours */}
         <div className="flex flex-col items-center">
-          <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-white/10 text-2xl sm:text-3xl font-bold tabular-nums text-white">
+          <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-white/10 text-2xl sm:text-3xl font-bold tabular-nums text-[#FBF6EE] border border-white/10 shadow-inner">
             {time.hours}
           </div>
-          <span className="mt-2 text-[11px] font-medium text-white/70">
+          <span className="mt-2 text-[11px] font-medium text-[#E5D7BE]">
             {t('countdownHours')}
           </span>
         </div>
 
         {/* Minutes */}
         <div className="flex flex-col items-center">
-          <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-white/10 text-2xl sm:text-3xl font-bold tabular-nums text-white">
+          <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-white/10 text-2xl sm:text-3xl font-bold tabular-nums text-[#FBF6EE] border border-white/10 shadow-inner">
             {time.minutes}
           </div>
-          <span className="mt-2 text-[11px] font-medium text-white/70">
+          <span className="mt-2 text-[11px] font-medium text-[#E5D7BE]">
             {t('countdownMinutes')}
           </span>
         </div>
 
         {/* Seconds */}
         <div className="flex flex-col items-center">
-          <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-white/10 text-2xl sm:text-3xl font-bold tabular-nums text-white">
+          <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-white/10 text-2xl sm:text-3xl font-bold tabular-nums text-[#FBF6EE] border border-white/10 shadow-inner">
             {time.seconds}
           </div>
-          <span className="mt-2 text-[11px] font-medium text-white/70">
+          <span className="mt-2 text-[11px] font-medium text-[#E5D7BE]">
             {t('countdownSeconds')}
           </span>
         </div>

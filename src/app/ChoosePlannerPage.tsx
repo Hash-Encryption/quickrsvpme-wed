@@ -52,32 +52,47 @@ export function ChoosePlannerPage() {
           <Link
             href="/planner/wedding"
             data-testid="link-choose-wedding"
-            className="qr-card group relative flex flex-col justify-between overflow-hidden p-7 sm:p-9 transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--qr-primary)] hover:shadow-md focus-visible:outline-2 focus-visible:outline-[var(--qr-primary)]"
+            className="qr-card group relative flex flex-col justify-between overflow-hidden p-6 sm:p-7 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:border-[#C29B61]/40 focus-visible:outline-2 focus-visible:outline-[var(--qr-primary)]"
           >
             <div>
-              <div className="flex items-center justify-between">
-                <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--qr-gold-subtle)] text-[var(--qr-on-gold)] shadow-sm">
-                  <Heart size={32} strokeWidth={1.75} aria-hidden="true" />
-                </span>
-                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--qr-primary)] text-white transition group-hover:scale-105">
-                  <ArrowRight
-                    size={18}
-                    className={`transition-transform duration-200 ${dir === 'rtl' ? 'rotate-180 group-hover:-translate-x-1' : 'group-hover:translate-x-1'}`}
-                    aria-hidden="true"
-                  />
-                </span>
+              {/* Tasteful Visual Header Banner: warm champagne & emerald arch motif */}
+              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0C2D24] via-[#143D32] to-[#1F5445] p-5 sm:p-6 text-white shadow-inner">
+                <div className="pointer-events-none absolute -end-6 -top-6 h-28 w-28 rounded-full border border-[#D4AF37]/25 bg-[#D4AF37]/10 blur-sm" />
+                <div className="pointer-events-none absolute end-10 bottom-0 h-16 w-24 rounded-t-full border-t border-s border-e border-[#D4AF37]/30 bg-white/[0.04]" />
+                <div className="relative flex items-center justify-between">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-[#E8D4A8] backdrop-blur-md border border-white/15 shadow-sm">
+                    <Heart size={24} strokeWidth={1.8} aria-hidden="true" />
+                  </span>
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur-md transition-transform duration-200 group-hover:scale-110 group-hover:bg-[#D4AF37] group-hover:text-[#0C2D24]">
+                    <ArrowRight
+                      size={16}
+                      className={`transition-transform duration-200 ${dir === 'rtl' ? 'rotate-180 group-hover:-translate-x-0.5' : 'group-hover:translate-x-0.5'}`}
+                      aria-hidden="true"
+                    />
+                  </span>
+                </div>
+                <div className="relative mt-4">
+                  <span className="inline-block text-[10px] font-bold uppercase tracking-[.14em] text-[#E8D4A8]/90">
+                    {t('weddingSuite')}
+                  </span>
+                </div>
               </div>
-              <h2 className="qr-card-title mt-7 text-2xl font-bold text-[var(--qr-primary)]">
+
+              <h2 className="qr-card-title mt-5 text-2xl font-bold text-[var(--qr-primary)]">
                 {t('weddingPlanner')}
               </h2>
-              <p className="qr-secondary mt-2 text-sm leading-6">
+              <p className="qr-secondary mt-1.5 text-sm leading-6">
                 {t('weddingPlannerCardSubtitle')}
               </p>
             </div>
 
-            <div className="mt-8 pt-5 border-t border-[var(--qr-divider)] flex items-center justify-between text-xs text-[var(--qr-secondary)] font-medium">
-              <span>{t('weddingInvitation')}</span>
-              <span className="qr-gold-text font-semibold">9:16 Mobile-First</span>
+            <div className="mt-6 pt-4 border-t border-[rgba(194,155,97,0.16)] flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--qr-secondary)] font-medium">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FAF7F2] px-3 py-1 text-[11px] font-semibold text-[#0C2D24] border border-[rgba(194,155,97,0.22)]">
+                {t('weddingBadgeLuxury')}
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FAF7F2] px-3 py-1 text-[11px] font-semibold text-[#8B7040] border border-[rgba(194,155,97,0.22)]">
+                {t('weddingBadgeGuests')}
+              </span>
             </div>
           </Link>
 
@@ -85,32 +100,47 @@ export function ChoosePlannerPage() {
           <Link
             href="/planner/party"
             data-testid="link-choose-party"
-            className="qr-card group relative flex flex-col justify-between overflow-hidden p-7 sm:p-9 transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--qr-primary)] hover:shadow-md focus-visible:outline-2 focus-visible:outline-[var(--qr-primary)]"
+            className="qr-card group relative flex flex-col justify-between overflow-hidden p-6 sm:p-7 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:border-[#C29B61]/40 focus-visible:outline-2 focus-visible:outline-[var(--qr-primary)]"
           >
             <div>
-              <div className="flex items-center justify-between">
-                <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--qr-primary-subtle)] text-[var(--qr-primary)] shadow-sm">
-                  <PartyPopper size={32} strokeWidth={1.75} aria-hidden="true" />
-                </span>
-                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--qr-primary)] text-white transition group-hover:scale-105">
-                  <ArrowRight
-                    size={18}
-                    className={`transition-transform duration-200 ${dir === 'rtl' ? 'rotate-180 group-hover:-translate-x-1' : 'group-hover:translate-x-1'}`}
-                    aria-hidden="true"
-                  />
-                </span>
+              {/* Tasteful Visual Header Banner: deep midnight/gold & celebratory motif */}
+              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#111827] via-[#1E293B] to-[#0F172A] p-5 sm:p-6 text-white shadow-inner">
+                <div className="pointer-events-none absolute -end-6 -top-6 h-28 w-28 rounded-full border border-amber-400/20 bg-amber-400/10 blur-sm" />
+                <div className="pointer-events-none absolute end-8 -bottom-4 h-20 w-20 rounded-full border border-white/10 bg-white/[0.04]" />
+                <div className="relative flex items-center justify-between">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-amber-300 backdrop-blur-md border border-white/15 shadow-sm">
+                    <PartyPopper size={24} strokeWidth={1.8} aria-hidden="true" />
+                  </span>
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur-md transition-transform duration-200 group-hover:scale-110 group-hover:bg-amber-400 group-hover:text-[#111827]">
+                    <ArrowRight
+                      size={16}
+                      className={`transition-transform duration-200 ${dir === 'rtl' ? 'rotate-180 group-hover:-translate-x-0.5' : 'group-hover:translate-x-0.5'}`}
+                      aria-hidden="true"
+                    />
+                  </span>
+                </div>
+                <div className="relative mt-4">
+                  <span className="inline-block text-[10px] font-bold uppercase tracking-[.14em] text-amber-300/90">
+                    {t('partyEvents')}
+                  </span>
+                </div>
               </div>
-              <h2 className="qr-card-title mt-7 text-2xl font-bold text-[var(--qr-primary)]">
+
+              <h2 className="qr-card-title mt-5 text-2xl font-bold text-[var(--qr-primary)]">
                 {t('partyPlanner')}
               </h2>
-              <p className="qr-secondary mt-2 text-sm leading-6">
+              <p className="qr-secondary mt-1.5 text-sm leading-6">
                 {t('partyPlannerCardSubtitle')}
               </p>
             </div>
 
-            <div className="mt-8 pt-5 border-t border-[var(--qr-divider)] flex items-center justify-between text-xs text-[var(--qr-secondary)] font-medium">
-              <span>{t('partyEvents')}</span>
-              <span className="text-[var(--qr-primary)] font-semibold">Modular Blocks</span>
+            <div className="mt-6 pt-4 border-t border-[rgba(194,155,97,0.16)] flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--qr-secondary)] font-medium">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FAF7F2] px-3 py-1 text-[11px] font-semibold text-[#0C2D24] border border-[rgba(194,155,97,0.22)]">
+                {t('partyBadgeCelebrations')}
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FAF7F2] px-3 py-1 text-[11px] font-semibold text-[#8B7040] border border-[rgba(194,155,97,0.22)]">
+                {t('partyBadgeBranding')}
+              </span>
             </div>
           </Link>
         </div>

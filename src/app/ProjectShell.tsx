@@ -97,7 +97,7 @@ export function ProjectShell({ project, section, children }: { project: ProjectS
                 <AppLanguageControl compact />
                 <Link
                   href={project.type === 'wedding' ? '/planner/wedding' : '/planner/party'}
-                  className="qr-button qr-button--secondary text-xs"
+                  className="h-8 px-3 text-xs font-semibold rounded-full border border-black/10 bg-white/80 backdrop-blur-sm shadow-xs transition hover:bg-white active:scale-95 inline-flex items-center justify-center text-[var(--qr-primary)]"
                 >
                   {t('projects')}
                 </Link>

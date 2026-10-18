@@ -114,6 +114,13 @@ export function PartyTemplateSelectionPage() {
                 const name = locale === 'ar' ? tpl.nameAr : tpl.name;
                 const desc = locale === 'ar' ? tpl.descriptionAr : tpl.description;
 
+                const tagLabel = {
+                  corporate: locale === 'ar' ? 'مهني ورسمي · تركيز على الهوية' : 'Professional · Brand-focused',
+                  birthday: locale === 'ar' ? 'احتفالي · دافئ ومبهج' : 'Festive · Warm & joyful',
+                  'baby-shower': locale === 'ar' ? 'ناعم وأنيق · استقبال ومواليد' : 'Delicate · Soft & sweet',
+                  custom: locale === 'ar' ? 'شامل · تجمعات، عشاء وتخرج' : 'Universal · General events',
+                }[tpl.id as PartyTemplateId] || '';
+
                 return (
                   <button
                     key={tpl.id}
@@ -122,41 +129,117 @@ export function PartyTemplateSelectionPage() {
                     aria-checked={isSelected}
                     data-testid={`template-card-${tpl.id}`}
                     onClick={() => setSelectedTemplate(tpl.id)}
-                    className={`qr-card relative flex flex-col justify-between p-7 text-start transition-all cursor-pointer ${
+                    className={`qr-card relative flex flex-col justify-between p-5 text-start transition-all cursor-pointer rounded-2xl ${
                       isSelected
-                        ? 'border-2 border-[var(--qr-primary)] bg-[var(--qr-primary-subtle)]/40 shadow-md ring-2 ring-[var(--qr-primary)]/20'
-                        : 'border border-[var(--qr-border)] hover:border-[var(--qr-primary)]/60 hover:bg-[var(--qr-subtle)]/40 hover:shadow-xs'
+                        ? 'border-2 border-[#0C2D24] bg-white shadow-lg ring-2 ring-[#0C2D24]'
+                        : 'border border-[rgba(194,155,97,0.22)] bg-white/95 hover:border-[var(--qr-primary)]/60 hover:shadow-xs'
                     }`}
                   >
                     <div>
-                      <div className="flex items-center justify-between mb-4">
-                        <span className={`party-template-swatch party-template-swatch--${tpl.id}`} />
+                      {/* Top Action & Selection Badge */}
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-bold text-[#8B7040] uppercase tracking-wider">
+                          {tpl.id}
+                        </span>
                         {isSelected ? (
-                          <span className="flex items-center gap-1.5 text-xs font-bold text-[var(--qr-primary)] bg-white px-3 py-1 rounded-full border border-[var(--qr-primary)]/25 shadow-xs">
-                            <Check size={14} strokeWidth={2.5} aria-hidden="true" />
+                          <span className="flex items-center gap-1.5 text-xs font-bold text-[#0C2D24] bg-[#F5EFE6] px-2.5 py-1 rounded-full border border-[#C29B61]/30 shadow-xs">
+                            <Check size={13} strokeWidth={2.5} aria-hidden="true" />
                             <span>{t('templateSelected')}</span>
                           </span>
                         ) : (
-                          <span className="h-6 w-6 rounded-full border-2 border-[#d1c7b7]" aria-hidden="true" />
+                          <span className="h-5 w-5 rounded-full border border-[#d1c7b7] bg-white/80" aria-hidden="true" />
                         )}
                       </div>
 
-                      <h3 className="qr-card-title text-lg font-bold text-[var(--qr-primary)] mt-2">
+                      {/* Visual Miniature Invitation Preview */}
+                      <div className="mb-4">
+                        {tpl.id === 'corporate' && (
+                          <div className="h-28 rounded-xl p-3.5 flex flex-col justify-between overflow-hidden bg-[#0F1E2E] text-white border border-[#1E3A54] shadow-inner relative">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-semibold tracking-wider text-[#C29B61] uppercase bg-[#C29B61]/15 px-2 py-0.5 rounded">
+                                {locale === 'ar' ? 'أعمال' : 'Executive'}
+                              </span>
+                              <span className="h-2 w-2 rounded-full bg-[#C29B61]" />
+                            </div>
+                            <div className="space-y-1">
+                              <div className="h-2 w-3/4 rounded bg-white/80" />
+                              <div className="h-1.5 w-1/2 rounded bg-white/40" />
+                            </div>
+                            <div className="flex items-center justify-between pt-1 border-t border-white/10 text-[9px] text-[#A0B0C0] tabular-nums">
+                              <span>{locale === 'ar' ? 'دعوة رسمية' : 'Formal Invitation'}</span>
+                              <span className="text-[#C29B61]">★ VIP</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {tpl.id === 'birthday' && (
+                          <div className="h-28 rounded-xl p-3.5 flex flex-col justify-between overflow-hidden bg-[#FFF6ED] text-[#2D2421] border border-[#F3D7C5] shadow-inner relative">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-semibold tracking-wider text-[#C86D51] uppercase bg-[#C86D51]/15 px-2 py-0.5 rounded">
+                                {locale === 'ar' ? 'احتفال' : 'Festive'}
+                              </span>
+                              <span className="text-sm">✨</span>
+                            </div>
+                            <div className="space-y-1">
+                              <div className="h-2 w-2/3 rounded bg-[#C86D51]/90" />
+                              <div className="h-1.5 w-1/3 rounded bg-[#C86D51]/40" />
+                            </div>
+                            <div className="flex items-center justify-between pt-1 border-t border-[#C86D51]/20 text-[9px] text-[#8C5D4E] tabular-nums">
+                              <span>{locale === 'ar' ? 'حفلة خاصة' : 'Private Party'}</span>
+                              <span className="font-bold text-[#C86D51]">RSVP</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {tpl.id === 'baby-shower' && (
+                          <div className="h-28 rounded-xl p-3.5 flex flex-col justify-between overflow-hidden bg-[#F2F6F3] text-[#1E3025] border border-[#CFDFD4] shadow-inner relative">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-semibold tracking-wider text-[#5E826B] uppercase bg-[#5E826B]/15 px-2 py-0.5 rounded">
+                                {locale === 'ar' ? 'مواليد' : 'Delicate'}
+                              </span>
+                              <span className="h-2 w-2 rounded-full bg-[#5E826B]" />
+                            </div>
+                            <div className="space-y-1 text-center">
+                              <div className="h-2 w-1/2 mx-auto rounded bg-[#5E826B]/80" />
+                              <div className="h-1.5 w-1/3 mx-auto rounded bg-[#5E826B]/40" />
+                            </div>
+                            <div className="flex items-center justify-between pt-1 border-t border-[#5E826B]/20 text-[9px] text-[#4E6B58] tabular-nums">
+                              <span>{locale === 'ar' ? 'استقبال مولود' : 'Welcome Baby'}</span>
+                              <span className="text-[#5E826B]">🌿</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {tpl.id === 'custom' && (
+                          <div className="h-28 rounded-xl p-3.5 flex flex-col justify-between overflow-hidden bg-[#F8F4EC] text-[#1E242B] border border-[#DFD7C7] shadow-inner relative">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-semibold tracking-wider text-[#8B7040] uppercase bg-[#8B7040]/15 px-2 py-0.5 rounded">
+                                {locale === 'ar' ? 'عام' : 'Universal'}
+                              </span>
+                              <span className="text-sm">✦</span>
+                            </div>
+                            <div className="space-y-1">
+                              <div className="h-2 w-3/5 rounded bg-[#1E242B]/80" />
+                              <div className="h-1.5 w-2/5 rounded bg-[#1E242B]/40" />
+                            </div>
+                            <div className="flex items-center justify-between pt-1 border-t border-[#8B7040]/20 text-[9px] text-[#7A6A53] tabular-nums">
+                              <span>{locale === 'ar' ? 'تجمع & استراحة' : 'Gathering & Dinner'}</span>
+                              <span className="font-semibold text-[#8B7040]">Entry Pass</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <h3 className="qr-card-title text-base sm:text-lg font-bold text-[var(--qr-primary)]">
                         {name}
                       </h3>
-                      <p className="qr-secondary text-xs leading-5 mt-1.5">
+                      <p className="qr-secondary text-xs leading-5 mt-1">
                         {desc}
                       </p>
                     </div>
 
-                    <div className="mt-6 pt-3.5 border-t border-[var(--qr-divider)] flex items-center justify-between text-[11px] font-semibold text-[var(--qr-secondary)]">
-                      <span>
-                        {tpl.id === 'corporate' && 'Professional · Brand-focused'}
-                        {tpl.id === 'birthday' && 'Festive · Warm & joyful'}
-                        {tpl.id === 'baby-shower' && 'Delicate · Soft & sweet'}
-                        {tpl.id === 'custom' && 'Universal · General events'}
-                      </span>
-                      <span className="text-[10px] tracking-wider uppercase opacity-70 font-mono">{tpl.id}</span>
+                    <div className="mt-5 pt-3 border-t border-[rgba(194,155,97,0.16)] flex items-center justify-between text-[11px] font-medium text-[var(--qr-secondary)]">
+                      <span>{tagLabel}</span>
                     </div>
                   </button>
                 );

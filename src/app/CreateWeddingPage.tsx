@@ -9,13 +9,17 @@ import { saveWeddingConfig } from '@/backend/phase2';
 import { useAuth } from '@/auth/AuthProvider';
 import { buildProjectRoute } from './projects';
 
+import { DualHijriCalendar } from '@/components/DualHijriCalendar';
+import { SAUDI_TIME_ANCHORS } from '@/utils/saudiCalendar';
+
 export function CreateWeddingPage() {
-  const { t } = useAppLocale();
+  const { t, locale } = useAppLocale();
   const [, navigate] = useLocation();
   const auth = useAuth();
 
   const [name, setName] = useState('');
   const [date, setDate] = useState('');
+  const [selectedTimeAnchor, setSelectedTimeAnchor] = useState<string>('after-isha');
   const [showHijriDate, setShowHijriDate] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -39,16 +43,22 @@ export function CreateWeddingPage() {
     setErrorMessage('');
 
     try {
+      const activeAnchor = SAUDI_TIME_ANCHORS.find((a) => a.id === selectedTimeAnchor);
+      const chosenTime = activeAnchor ? (locale === 'ar' ? activeAnchor.labelAr : activeAnchor.labelEn) : defaultWeddingEvent.startTime;
+
       const configuration = {
         ...(structuredClone(defaultWeddingEvent) as WeddingEventData & Record<string, unknown>),
         gregorianDate: date.trim(),
         hijriDate: derivedHijri || defaultWeddingEvent.hijriDate,
         eventDay: derivedDay || defaultWeddingEvent.eventDay,
+        startTime: chosenTime,
         showHijriDate,
         title: name.trim(),
       };
 
-      const startsAt = date.trim() ? new Date(date.trim()).toISOString() : null;
+      const startsAt = date.trim()
+        ? new Date(`${date.trim()}T${activeAnchor?.time || '20:00'}:00Z`).toISOString()
+        : null;
       const newEvent = await createEvent({
         productId: 'wedding',
         title: name.trim(),
@@ -116,48 +126,59 @@ export function CreateWeddingPage() {
               )}
             </div>
 
-            {/* Wedding Date */}
+            {/* Wedding Date (Dual Gregorian-Hijri Calendar) */}
             <div className="space-y-3">
-              <div>
-                <label className="qr-label" htmlFor="wedding-date">
-                  <span>{t('weddingDateLabel')} ({t('gregorianDate')})</span>
-                  <span className="qr-gold-text ms-1" aria-hidden="true">*</span>
-                </label>
-                <input
-                  id="wedding-date"
-                  data-testid="input-wedding-date"
-                  type="date"
-                  required
-                  value={date}
-                  onChange={(e) => {
-                    setDate(e.target.value);
-                    if (errorMessage) setErrorMessage('');
-                  }}
-                  onBlur={() => setTouched((prev) => ({ ...prev, date: true }))}
-                  aria-invalid={Boolean(dateError)}
-                  aria-describedby={dateError ? 'wedding-date-error' : undefined}
-                  className="qr-field mt-2"
-                  disabled={submitting}
-                />
-                {dateError && (
-                  <p id="wedding-date-error" className="qr-field-error" role="alert">
-                    {dateError}
-                  </p>
-                )}
-              </div>
+              <label className="qr-label block" htmlFor="wedding-date">
+                <span>{t('weddingDateLabel')}</span>
+                <span className="qr-gold-text ms-1" aria-hidden="true">*</span>
+              </label>
 
-              {date && derivedHijri && (
-                <div className="rounded-lg bg-[var(--qr-surface-muted)] p-3 text-sm">
-                  <div className="text-xs font-semibold text-[var(--qr-secondary)] uppercase tracking-wide">
-                    {t('hijriDate')}
-                  </div>
-                  <div className="mt-1 font-medium text-[var(--qr-primary)]" dir="rtl">
-                    {derivedHijri}
-                  </div>
-                </div>
+              <DualHijriCalendar
+                id="wedding-date"
+                testId="input-wedding-date"
+                value={date}
+                onChange={(newDate) => {
+                  setDate(newDate);
+                  if (errorMessage) setErrorMessage('');
+                  setTouched((prev) => ({ ...prev, date: true }));
+                }}
+                locale={locale}
+                showHijri={showHijriDate}
+                disabled={submitting}
+              />
+              {dateError && (
+                <p id="wedding-date-error" className="qr-field-error" role="alert">
+                  {dateError}
+                </p>
               )}
 
-              <div className="flex items-center gap-2 pt-1">
+              {/* Saudi Time Anchors */}
+              <div className="pt-2">
+                <span className="qr-label block mb-2 text-xs font-semibold text-[var(--qr-secondary)]">
+                  {locale === 'ar' ? 'توقيت بدء الحفل' : 'Ceremony Timing'}
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  {SAUDI_TIME_ANCHORS.map((anchor) => {
+                    const active = selectedTimeAnchor === anchor.id;
+                    return (
+                      <button
+                        key={anchor.id}
+                        type="button"
+                        onClick={() => setSelectedTimeAnchor(anchor.id)}
+                        className={`h-8 px-3 rounded-full text-xs font-medium transition-all ${
+                          active
+                            ? 'bg-[#0C2D24] text-white shadow-xs'
+                            : 'bg-[#FAF7F2] border border-[rgba(194,155,97,0.22)] text-[#17251F] hover:bg-[#F5EFE6]'
+                        }`}
+                      >
+                        {locale === 'ar' ? anchor.labelAr : anchor.labelEn}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
                 <input
                   id="show-hijri-date"
                   data-testid="checkbox-show-hijri"
@@ -166,7 +187,7 @@ export function CreateWeddingPage() {
                   onChange={(e) => setShowHijriDate(e.target.checked)}
                   className="h-4 w-4 rounded border-gray-300 text-[var(--qr-primary)] focus:ring-[var(--qr-primary)] cursor-pointer"
                 />
-                <label htmlFor="show-hijri-date" className="text-sm cursor-pointer select-none">
+                <label htmlFor="show-hijri-date" className="text-xs sm:text-sm cursor-pointer select-none font-medium text-[#17251F]">
                   {t('showHijriOnInvitation')}
                 </label>
               </div>

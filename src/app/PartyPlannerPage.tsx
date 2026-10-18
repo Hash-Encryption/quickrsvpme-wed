@@ -137,25 +137,6 @@ export function PartyPlannerPage({ initialDrafts, initialCommercial }: { initial
           </div>
         </section>
 
-        {/* Prominent Create Party Card */}
-        <section className="mb-8">
-          <Link
-            href="/planner/party/new"
-            data-testid="link-create-party"
-            className="qr-card group flex flex-col items-center justify-center border-2 border-dashed border-[#d1c7b7] bg-[var(--qr-surface)] p-8 sm:p-10 text-center transition-all duration-200 hover:border-[var(--qr-primary)] hover:bg-[var(--qr-primary-subtle)]/25 hover:shadow-md"
-          >
-            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--qr-primary)] text-white shadow-sm transition-transform group-hover:scale-105">
-              <Plus size={26} strokeWidth={2.2} aria-hidden="true" />
-            </span>
-            <h2 className="qr-card-title mt-4 text-xl font-bold text-[var(--qr-primary)]">
-              {t('createNewParty')}
-            </h2>
-            <p className="qr-secondary mt-1 text-xs sm:text-sm">
-              {t('partyCardSubtitle')}
-            </p>
-          </Link>
-        </section>
-
         {/* Real Backend Parties List Section */}
         <section data-testid="section-my-parties">
           {auth.degraded?.events && (
@@ -166,37 +147,54 @@ export function PartyPlannerPage({ initialDrafts, initialCommercial }: { initial
               </button>
             </div>
           )}
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="qr-section-title text-lg font-bold text-[var(--qr-text)] flex items-center gap-2">
-              <span>{t('myPartiesCount')}</span>
-              <span className="text-xs font-normal text-[var(--qr-secondary)]">({liveEvents.length})</span>
-            </h2>
-          </div>
 
           {loading ? (
-            <div className="py-8">
+            <div className="py-12">
               <LoadingState label={t('loading')} />
             </div>
           ) : error ? (
             <ErrorState title={t('appErrorTitle')} description={error} />
           ) : liveEvents.length === 0 ? (
-            /* State A — No Parties Empty State */
-            <div className="qr-card py-12 px-6 text-center">
+            /* State A — Refined Single Luxury Empty State */
+            <div className="qr-card py-14 px-6 text-center my-4">
               <EmptyState
-                icon={<PartyPopper size={36} strokeWidth={1.5} className="qr-gold-text mx-auto" aria-hidden="true" />}
+                icon={
+                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--qr-primary)]/8 text-[var(--qr-primary)] mx-auto mb-2">
+                    <PartyPopper size={28} strokeWidth={1.8} className="qr-gold-text" aria-hidden="true" />
+                  </span>
+                }
                 title={t('noPartiesYet')}
                 description={t('noPartiesYetSubtitle')}
                 action={
-                  <Link href="/planner/party/new" className="qr-button qr-button--primary mt-2">
-                    <Sparkles size={16} aria-hidden="true" />
-                    {t('createNewParty')}
+                  <Link
+                    href="/planner/party/new"
+                    data-testid="link-create-party"
+                    className="qr-button qr-button--primary mt-3 h-11 px-6 text-sm font-semibold shadow-sm"
+                  >
+                    <Plus size={18} strokeWidth={2.2} aria-hidden="true" />
+                    <span>{t('createNewParty')}</span>
                   </Link>
                 }
               />
             </div>
           ) : (
-            /* State B — Existing Parties List */
-            <div className="grid gap-4 sm:grid-cols-2">
+            /* State B — Existing Backend Parties List with compact header CTA */
+            <>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="qr-section-title text-lg font-bold text-[var(--qr-text)] flex items-center gap-2">
+                  <span>{t('myPartiesCount')}</span>
+                  <span className="text-xs font-normal text-[var(--qr-secondary)] tabular-nums">({liveEvents.length})</span>
+                </h2>
+                <Link
+                  href="/planner/party/new"
+                  data-testid="link-create-party"
+                  className="qr-button qr-button--primary text-xs h-9 px-3.5 gap-1.5 font-semibold shadow-xs"
+                >
+                  <Plus size={16} strokeWidth={2.2} aria-hidden="true" />
+                  <span>{t('createNewParty')}</span>
+                </Link>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
               {liveEvents.map((event) => {
                 const statusTone =
                   event.lifecycle_status === 'active'
@@ -260,6 +258,7 @@ export function PartyPlannerPage({ initialDrafts, initialCommercial }: { initial
                 );
               })}
             </div>
+            </>
           )}
         </section>
 

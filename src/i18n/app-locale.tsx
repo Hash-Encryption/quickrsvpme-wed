@@ -37,5 +37,15 @@ export function useAppLocale() {
 
 export function AppLanguageControl({ compact = false }: { compact?: boolean }) {
   const { locale, setLocale, t } = useAppLocale();
-  return <button type="button" onClick={() => setLocale(locale === 'ar' ? 'en' : 'ar')} className="focus-ring min-h-11 rounded-full border border-current/25 px-3 text-xs font-semibold" aria-label={t('appLanguage')} lang={locale === 'ar' ? 'en' : 'ar'}>{compact ? (locale === 'ar' ? 'EN' : 'ع') : t('language')}</button>;
+  return (
+    <button
+      type="button"
+      onClick={() => setLocale(locale === 'ar' ? 'en' : 'ar')}
+      className="focus-ring h-8 px-3 text-xs font-semibold rounded-full border border-black/10 bg-white/80 backdrop-blur-sm shadow-xs transition hover:bg-white active:scale-95 text-[var(--qr-primary)] shrink-0"
+      aria-label={t('appLanguage')}
+      lang={locale === 'ar' ? 'en' : 'ar'}
+    >
+      {compact ? (locale === 'ar' ? 'EN' : 'ع') : t('language')}
+    </button>
+  );
 }
