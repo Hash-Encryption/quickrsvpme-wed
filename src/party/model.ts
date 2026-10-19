@@ -24,6 +24,41 @@ export type PartyStyleDefinition = {
   motif: PartyMotif;
 };
 
+export type BlockKey =
+  | 'catering'
+  | 'dress'
+  | 'schedule'
+  | 'registry'
+  | 'song'
+  | 'faq'
+  | 'text'
+  | 'venue'
+  | 'host'
+  | 'cta'
+  | 'divider'
+  | 'spacer';
+
+export type BlockContent = {
+  heading: string;
+  entree?: string[];
+  swatches?: string[];
+  questions?: { q: string; a: string }[];
+  note?: string;
+  url?: string;
+  mode?: 'note' | 'menu';
+  scheduleItems?: { time: string; title: string }[];
+  dressPreset?: string;
+};
+
+export type StudioBlock = {
+  id: string;
+  key: BlockKey;
+  enabled: boolean;
+  label: string;
+  eyebrow: string;
+  content: BlockContent;
+};
+
 export type PartyEventData = {
   title: string;
   hostName?: string;
@@ -44,6 +79,20 @@ export type PartyEventData = {
   motion: PartyMotion;
   decorations: boolean;
   badgeText?: string | null;
+  occasionPresetId?: string;
+  logoUrl?: string | null;
+  logoSize?: 'sm' | 'md' | 'lg';
+  logoShape?: 'original' | 'circle' | 'rounded';
+  backgroundImageUrl?: string | null;
+  backgroundFitMode?: 'cover' | 'contain';
+  backgroundOverlayOpacity?: number;
+  brandPalette?: string[];
+  titleScale?: 'sm' | 'md' | 'lg' | 'xl';
+  hijriDate?: string;
+  showHijriDate?: boolean;
+  timeLabel?: string;
+  mapUrl?: string;
+  etiquetteBadges?: string[];
 };
 
 export const partyStyles: Record<string, PartyStyleDefinition> = {
@@ -363,6 +412,21 @@ export function mergePartyEvent(value: Partial<PartyEventData> | null | undefine
   if (value?.subtitle !== undefined) result.subtitle = typeof value.subtitle === 'string' ? value.subtitle : '';
   if (value?.badgeText !== undefined) result.badgeText = typeof value.badgeText === 'string' ? value.badgeText : '';
 
+  if (value?.occasionPresetId !== undefined) result.occasionPresetId = typeof value.occasionPresetId === 'string' ? value.occasionPresetId : undefined;
+  if (value?.logoUrl !== undefined) result.logoUrl = typeof value.logoUrl === 'string' ? value.logoUrl : null;
+  if (value?.logoSize !== undefined) result.logoSize = ['sm', 'md', 'lg'].includes(value.logoSize as string) ? (value.logoSize as 'sm' | 'md' | 'lg') : 'md';
+  if (value?.logoShape !== undefined) result.logoShape = ['original', 'circle', 'rounded'].includes(value.logoShape as string) ? (value.logoShape as 'original' | 'circle' | 'rounded') : 'original';
+  if (value?.backgroundImageUrl !== undefined) result.backgroundImageUrl = typeof value.backgroundImageUrl === 'string' ? value.backgroundImageUrl : null;
+  if (value?.backgroundFitMode !== undefined) result.backgroundFitMode = value.backgroundFitMode === 'contain' ? 'contain' : 'cover';
+  if (value?.backgroundOverlayOpacity !== undefined) result.backgroundOverlayOpacity = typeof value.backgroundOverlayOpacity === 'number' ? Math.max(0, Math.min(0.85, value.backgroundOverlayOpacity)) : 0.45;
+  if (value?.brandPalette !== undefined && Array.isArray(value.brandPalette)) result.brandPalette = value.brandPalette.filter((c): c is string => typeof c === 'string');
+  if (value?.titleScale !== undefined) result.titleScale = ['sm', 'md', 'lg', 'xl'].includes(value.titleScale as string) ? (value.titleScale as 'sm' | 'md' | 'lg' | 'xl') : 'lg';
+  if (value?.hijriDate !== undefined) result.hijriDate = typeof value.hijriDate === 'string' ? value.hijriDate : undefined;
+  if (value?.showHijriDate !== undefined) result.showHijriDate = Boolean(value.showHijriDate);
+  if (value?.timeLabel !== undefined) result.timeLabel = typeof value.timeLabel === 'string' ? value.timeLabel : undefined;
+  if (value?.mapUrl !== undefined) result.mapUrl = typeof value.mapUrl === 'string' ? value.mapUrl : undefined;
+  if (value?.etiquetteBadges !== undefined && Array.isArray(value.etiquetteBadges)) result.etiquetteBadges = value.etiquetteBadges.filter((b): b is string => typeof b === 'string');
+
   // If user hasn't explicitly supplied styleId, hostName, subtitle, badgeText, keep shape identical to defaultPartyEvent
   if (!value?.styleId && value?.templateId === undefined && value?.hostName === undefined && value?.subtitle === undefined && value?.badgeText === undefined) {
     delete result.styleId;
@@ -423,3 +487,160 @@ export function formatPartyDate(value: string, locale: InvitationLocale): string
     ? value
     : new Intl.DateTimeFormat(locale === 'ar' ? 'ar-SA' : 'en-GB', { day: 'numeric', month: 'long', year: 'numeric' }).format(date);
 }
+
+export type OccasionBlueprint = {
+  id: string;
+  icon: string;
+  titleAr: string;
+  titleEn: string;
+  subtitleAr: string;
+  subtitleEn: string;
+  wordingAr: string;
+  wordingEn: string;
+  templateId: PartyTemplateId;
+  styleId: string;
+  badgeTextAr: string;
+  badgeTextEn: string;
+  recommendedBlockKeys: ('catering' | 'dress' | 'schedule' | 'registry' | 'song' | 'faq' | 'text' | 'venue' | 'host' | 'cta' | 'divider' | 'spacer')[];
+  etiquetteBadgesAr?: string[];
+  etiquetteBadgesEn?: string[];
+};
+
+export const OCCASION_BLUEPRINTS: OccasionBlueprint[] = [
+  {
+    id: 'corporate-gala',
+    icon: '🏢',
+    titleAr: 'حفل العشاء السنوي والتكريم',
+    titleEn: 'Annual Corporate Gala & Awards',
+    subtitleAr: 'احتفاء بالإنجازات والشركاء المتميزين',
+    subtitleEn: 'Honoring Excellence & Strategic Partnerships',
+    wordingAr: 'يسر مجلس الإدارة دعوتكم لحضور حفل العشاء السنوي وتكريم نخبة الإنجازات والشركاء في أمسية استثنائية تجمع قادة الأعمال.',
+    wordingEn: 'The Board of Directors cordially invites you to our Annual Gala Dinner celebrating outstanding achievements and executive leadership.',
+    templateId: 'corporate',
+    styleId: 'executive-navy',
+    badgeTextAr: 'دعوة خاصة · VIP',
+    badgeTextEn: 'VIP INVITATION',
+    recommendedBlockKeys: ['schedule', 'catering', 'faq'],
+    etiquetteBadgesAr: ['الدخول ببطاقة الدعوة', 'خدمة صف السيارات (Valet)'],
+    etiquetteBadgesEn: ['Admission by VIP pass', 'Valet parking available'],
+  },
+  {
+    id: 'suhoor-ramadan',
+    icon: '🌙',
+    titleAr: 'أمسية الغبقة والسحور الرمضاني',
+    titleEn: 'Ramadan Suhoor & Ghabga Gathering',
+    subtitleAr: 'في ليالي الخير والبركة',
+    subtitleEn: 'Blessed Gatherings of the Holy Month',
+    wordingAr: 'يسعدنا ويشرفنا لقاؤكم على مائدة السحور الرمضاني المبارك، سائلين المولى عز وجل أن يتقبل منا ومنكم صالح الأعمال.',
+    wordingEn: 'We are delighted to invite you to our Ramadan Suhoor evening, celebrating the spirit of community and blessings.',
+    templateId: 'corporate',
+    styleId: 'royal-emerald',
+    badgeTextAr: 'سحور مبارك · غبقة رمضانية',
+    badgeTextEn: 'RAMADAN SUHOOR',
+    recommendedBlockKeys: ['catering', 'venue'],
+    etiquetteBadgesAr: ['الدخول ببطاقة الدعوة'],
+    etiquetteBadgesEn: ['Private invitation pass'],
+  },
+  {
+    id: 'medical-tech-forum',
+    icon: '🩺',
+    titleAr: 'ملتقى الابتكار والريادة المهني',
+    titleEn: 'Healthcare & Innovation Summit',
+    subtitleAr: 'نحو مستقبل ريادي متقدم',
+    subtitleEn: 'Transforming Industry Frontiers',
+    wordingAr: 'نتشرف بدعوتكم لحضور ملتقى الابتكار التخصصي، بمشاركة نخبة من المتحدثين والخبراء لمناقشة أحدث الرؤى والتجارب الرائدة.',
+    wordingEn: 'Join distinguished industry experts and keynote visionaries at the flagship Professional Forum and Innovation Showcase.',
+    templateId: 'corporate',
+    styleId: 'monochrome-slate',
+    badgeTextAr: 'ملتقى مهني · دعوة رسمية',
+    badgeTextEn: 'PROFESSIONAL SUMMIT',
+    recommendedBlockKeys: ['schedule', 'venue', 'cta'],
+    etiquetteBadgesAr: ['الدخول ببطاقة الدعوة', 'خدمة صف السيارات (Valet)'],
+    etiquetteBadgesEn: ['Registration pass required', 'Valet parking available'],
+  },
+  {
+    id: 'brand-opening',
+    icon: '☕',
+    titleAr: 'حفل التدشين والافتتاح الرسمي',
+    titleEn: 'Grand Brand Opening & Launch',
+    subtitleAr: 'انطلاقة فصل جديد من الإبداع',
+    subtitleEn: 'A New Chapter of Distinction',
+    wordingAr: 'يسرنا دعوتكم لمشاركتنا لحظة التدشين والافتتاح الرسمي لفرعنا الجديد، لنحتفي معاً ببداية استثنائية وتجربة فريدة.',
+    wordingEn: 'We warmly welcome you to join us for our exclusive Grand Opening and Launch Reception, unveiling an inspiring new experience.',
+    templateId: 'corporate',
+    styleId: 'executive-navy',
+    badgeTextAr: 'تدشين وافتتاح رسمي',
+    badgeTextEn: 'GRAND OPENING',
+    recommendedBlockKeys: ['venue', 'text', 'cta'],
+    etiquetteBadgesAr: ['الدخول ببطاقة الدعوة'],
+    etiquetteBadgesEn: ['VIP Guest Pass'],
+  },
+  {
+    id: 'graduation',
+    icon: '🎓',
+    titleAr: 'حفل تخرج وتكريم الإنجاز',
+    titleEn: 'Graduation & Honor Celebration',
+    subtitleAr: 'فرحة ثمرة الجهد والنجاح',
+    subtitleEn: 'Celebrating Dedication & Bright Futures',
+    wordingAr: 'بكل فخر وسرور، نتشرف بدعوتكم لمشاركتنا فرحة التخرج والاحتفاء بمسيرة ملؤها الاجتهاد والتميز.',
+    wordingEn: 'With pride and joy, we invite you to celebrate our graduation milestone and the exciting journey ahead.',
+    templateId: 'custom',
+    styleId: 'obsidian-gold',
+    badgeTextAr: 'حفل تخرج وتفوق',
+    badgeTextEn: 'GRADUATION GALA',
+    recommendedBlockKeys: ['text', 'song'],
+    etiquetteBadgesAr: ['جنة الأطفال منازلهم'],
+    etiquetteBadgesEn: ['Adults only ceremony'],
+  },
+  {
+    id: 'majlis-gathering',
+    icon: '🏡',
+    titleAr: 'لقاء المجلس والاستراحة العائلية',
+    titleEn: 'Majlis Gathering & Evening Soirée',
+    subtitleAr: 'جلسة محبة وألفة تجمع الأحبة',
+    subtitleEn: 'An Evening of Warmth & Fellowship',
+    wordingAr: 'نتشرف بحضوركم الكريم في مجلسنا العامر ونسعد بطيب اللقاء وتبادل الأحاديث الودية في أجواء أخوية دافئة.',
+    wordingEn: 'We look forward to welcoming you to our Majlis gathering for a warm evening of hospitality and companionship.',
+    templateId: 'custom',
+    styleId: 'desert-sand',
+    badgeTextAr: 'مجلس عائلي · لقاء أحبة',
+    badgeTextEn: 'MAJLIS RECEPTION',
+    recommendedBlockKeys: ['catering', 'venue'],
+    etiquetteBadgesAr: [],
+    etiquetteBadgesEn: [],
+  },
+  {
+    id: 'birthday-festive',
+    icon: '🎂',
+    titleAr: 'أمسية عيد ميلاد واحتفال',
+    titleEn: 'Birthday Festive Celebration',
+    subtitleAr: 'عام جديد من الفرح والذكريات الجميلة',
+    subtitleEn: 'Another Year of Joy & Memories',
+    wordingAr: 'يسعدني دعوتكم لمشاركتي أجمل اللحظات والاحتفال بذكرى ميلادي في أمسية مليئة بالبهجة والمرح والموسيقى.',
+    wordingEn: 'Join us for a vibrant night of laughter, dancing, and celebratory toasts as we mark another wonderful year.',
+    templateId: 'birthday',
+    styleId: 'celebration-berry',
+    badgeTextAr: 'حفل ميلاد مميز',
+    badgeTextEn: 'BIRTHDAY BASH',
+    recommendedBlockKeys: ['text', 'song'],
+    etiquetteBadgesAr: [],
+    etiquetteBadgesEn: [],
+  },
+  {
+    id: 'baby-reception',
+    icon: '👶',
+    titleAr: 'حفاوة واستقبال المولود الجديد',
+    titleEn: 'Baby Reception & Welcome Blessing',
+    subtitleAr: 'أهلاً بنبض جديد يملأ دنيانا نوراً',
+    subtitleEn: 'Welcoming Our Precious Blessing',
+    wordingAr: 'الحمد لله على تمام النعمة واكتمال المنة، يسرنا دعوتكم لمشاركتنا فرحة قدوم مولودنا الغالي ومشاركتنا أصدق الدعوات.',
+    wordingEn: 'Blessed with love and gratitude, we invite you to celebrate the joyful arrival of our precious little one.',
+    templateId: 'baby-shower',
+    styleId: 'blush-cloud',
+    badgeTextAr: 'استقبال مواليد · فرحة عمر',
+    badgeTextEn: 'WELCOME LITTLE ONE',
+    recommendedBlockKeys: ['text', 'registry'],
+    etiquetteBadgesAr: ['ممنوع التصوير'],
+    etiquetteBadgesEn: ['No photography please'],
+  },
+];

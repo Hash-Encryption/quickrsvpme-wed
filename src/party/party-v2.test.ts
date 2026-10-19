@@ -7,16 +7,23 @@ import {
   defaultPartyEvent,
   formatPartyDate,
   mergePartyEvent,
+  OCCASION_BLUEPRINTS,
   partyStyles,
   partyTemplates,
   resolvePartyStyleId,
   resolvePartyTemplateId,
+  type OccasionBlueprint,
   type PartyEventData,
   type PartyTemplateId,
+  type StudioBlock,
+  type BlockKey,
 } from './model.ts';
 import { appTranslations } from '../i18n/app-locale-data.ts';
 import { partyInvitationT, type PartyInvitationKey } from '../i18n/party.ts';
-import type { StudioBlock, BlockKey } from './PartyInvitationRenderer.tsx';
+import {
+  SAUDI_LUXURY_PALETTES,
+  extractColorsFromImageDataUrl,
+} from '../utils/brandColorExtractor.ts';
 
 test('Phase 3: 4 Genuine Template Families with distinct motifs and default styles', () => {
   const families: PartyTemplateId[] = ['corporate', 'birthday', 'baby-shower', 'custom'];
@@ -468,3 +475,120 @@ test('Phase 3 Regression: Multi-block visibility, ordering, and disabled-filteri
   assert.deepEqual(previewBlocks, publicBlocks);
 });
 
+test('Phase 2 Master Revamp: 6 Curated Saudi Luxury Palettes and Brand Color Engine', async () => {
+  assert.equal(SAUDI_LUXURY_PALETTES.length, 6);
+
+  for (const pal of SAUDI_LUXURY_PALETTES) {
+    assert.ok(pal.id.length > 0);
+    assert.ok(pal.name.length > 0);
+    assert.ok(pal.nameAr.length > 0);
+    assert.ok(pal.description.length > 0);
+    assert.ok(pal.descriptionAr.length > 0);
+    assert.match(pal.backgroundColor, /^#[0-9A-Fa-f]{6}$/);
+    assert.match(pal.primaryColor, /^#[0-9A-Fa-f]{6}$/);
+    assert.match(pal.accentColor, /^#[0-9A-Fa-f]{6}$/);
+    assert.ok(pal.swatches.length >= 4);
+    for (const swatch of pal.swatches) {
+      assert.match(swatch, /^#[0-9A-Fa-f]{6}$/);
+    }
+  }
+
+  // extractColorsFromImageDataUrl returns fallback deterministically in Node/SSR environment
+  const extracted = await extractColorsFromImageDataUrl('data:image/png;base64,invalidOrMockData');
+  assert.match(extracted.background, /^#[0-9A-Fa-f]{6}$/);
+  assert.match(extracted.primary, /^#[0-9A-Fa-f]{6}$/);
+  assert.match(extracted.accent, /^#[0-9A-Fa-f]{6}$/);
+  assert.ok(extracted.swatches.length >= 4);
+});
+
+test('Phase 2 Master Revamp: 8 1-Tap Career & Occasion Blueprints completeness', () => {
+  assert.equal(OCCASION_BLUEPRINTS.length, 8);
+
+  const blueprintIds = [
+    'corporate-gala',
+    'suhoor-ramadan',
+    'medical-tech-forum',
+    'brand-opening',
+    'graduation',
+    'majlis-gathering',
+    'birthday-festive',
+    'baby-reception',
+  ];
+
+  assert.deepEqual(OCCASION_BLUEPRINTS.map((bp) => bp.id), blueprintIds);
+
+  for (const bp of OCCASION_BLUEPRINTS) {
+    assert.ok(bp.icon.length > 0);
+    assert.ok(bp.titleAr.length > 0);
+    assert.ok(bp.titleEn.length > 0);
+    assert.ok(bp.subtitleAr.length > 0);
+    assert.ok(bp.subtitleEn.length > 0);
+    assert.ok(bp.wordingAr.length > 0);
+    assert.ok(bp.wordingEn.length > 0);
+    assert.ok(['corporate', 'birthday', 'baby-shower', 'custom'].includes(bp.templateId));
+    assert.ok(partyTemplates[bp.templateId].supportedStyles.includes(bp.styleId));
+    assert.ok(bp.badgeTextAr.length > 0);
+    assert.ok(bp.badgeTextEn.length > 0);
+    assert.ok(bp.recommendedBlockKeys.length >= 2);
+  }
+});
+
+test('Phase 2 Master Revamp: Extended PartyEventData fields merge safely and preserve defaults', () => {
+  const merged = mergePartyEvent({
+    title: 'Gala Night',
+    occasionPresetId: 'corporate-gala',
+    logoUrl: 'https://example.com/logo.png',
+    logoSize: 'lg',
+    logoShape: 'circle',
+    backgroundImageUrl: 'https://example.com/bg.jpg',
+    backgroundFitMode: 'contain',
+    backgroundOverlayOpacity: 0.6,
+    brandPalette: ['#111111', '#222222', '#D4AF37'],
+    titleScale: 'xl',
+    hijriDate: '١٥ رمضان ١٤٤٨',
+    showHijriDate: true,
+    timeLabel: 'بعد صلاة العشاء',
+    mapUrl: 'https://maps.google.com/?q=Riyadh',
+    etiquetteBadges: ['الدخول ببطاقة الدعوة', 'خدمة صف السيارات (Valet)'],
+  });
+
+  assert.equal(merged.occasionPresetId, 'corporate-gala');
+  assert.equal(merged.logoUrl, 'https://example.com/logo.png');
+  assert.equal(merged.logoSize, 'lg');
+  assert.equal(merged.logoShape, 'circle');
+  assert.equal(merged.backgroundImageUrl, 'https://example.com/bg.jpg');
+  assert.equal(merged.backgroundFitMode, 'contain');
+  assert.equal(merged.backgroundOverlayOpacity, 0.6);
+  assert.deepEqual(merged.brandPalette, ['#111111', '#222222', '#D4AF37']);
+  assert.equal(merged.titleScale, 'xl');
+  assert.equal(merged.hijriDate, '١٥ رمضان ١٤٤٨');
+  assert.equal(merged.showHijriDate, true);
+  assert.equal(merged.timeLabel, 'بعد صلاة العشاء');
+  assert.equal(merged.mapUrl, 'https://maps.google.com/?q=Riyadh');
+  assert.deepEqual(merged.etiquetteBadges, ['الدخول ببطاقة الدعوة', 'خدمة صف السيارات (Valet)']);
+});
+
+test('Phase 2 Master Revamp: Extended BlockContent structures (hospitality mode, schedule rows, dress presets)', () => {
+  const block: StudioBlock = {
+    id: 'block-catering-saudi',
+    key: 'catering',
+    enabled: true,
+    label: 'Catering',
+    eyebrow: 'HOSPITALITY',
+    content: {
+      heading: 'Saudi Hospitality',
+      mode: 'note',
+      note: 'Dignified Arabic coffee and fine dining note.',
+      scheduleItems: [
+        { time: '8:30 PM', title: 'Reception & Saudi Coffee' },
+        { time: '9:30 PM', title: 'Royal Dinner' },
+      ],
+      dressPreset: 'saudi-formal',
+    },
+  };
+
+  assert.equal(block.content.mode, 'note');
+  assert.equal(block.content.scheduleItems?.length, 2);
+  assert.equal(block.content.scheduleItems?.[0].time, '8:30 PM');
+  assert.equal(block.content.dressPreset, 'saudi-formal');
+});

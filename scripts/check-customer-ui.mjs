@@ -255,7 +255,114 @@ try {
     assert.ok(posFaq < posCta, `${mode.name}: faq must precede cta`);
   }
 
-  console.log('PASS: loading/disabled controls, chip semantics, CustomerBottomNav, AR/EN Wedding/Party navigation, 10 text contrast pairs, Party multi-block preview/public parity.');
+  // Phase 2 Master Revamp: Arabic seed auto-localization
+  const seedBlocks = [
+    {
+      id: 'catering',
+      key: 'catering',
+      enabled: true,
+      label: 'Catering',
+      eyebrow: 'YOUR TABLE',
+      content: {
+        heading: 'A seat at our table',
+        entree: ['Rosemary chicken', 'Miso-glazed salmon', 'Garden ravioli'],
+      },
+    },
+    {
+      id: 'dress',
+      key: 'dress',
+      enabled: true,
+      label: 'Dress code',
+      eyebrow: 'THE ATTIRE',
+      content: {
+        heading: 'Garden formal',
+        note: 'A little polished, a little effortless. Suits, silk, and evening colors are encouraged.',
+      },
+    },
+    {
+      id: 'schedule',
+      key: 'schedule',
+      enabled: true,
+      label: 'Schedule',
+      eyebrow: 'THE EVENING',
+      content: { heading: 'A day in full bloom' },
+    },
+    {
+      id: 'faq',
+      key: 'faq',
+      enabled: true,
+      label: 'FAQ',
+      eyebrow: 'GOOD TO KNOW',
+      content: {
+        heading: 'Before you join us',
+        questions: [{ q: 'Can I bring a plus one?', a: 'Your invitation notes your guest allowance.' }],
+      },
+    },
+  ];
+
+  const arHtml = renderToStaticMarkup(
+    h(PartyInvitationRenderer, {
+      event: defaultPartyEvent,
+      blocks: seedBlocks,
+      invitationLocale: 'ar',
+    })
+  );
+  assert.ok(arHtml.includes('الضيافة والعشاء'), 'AR seed auto-localization missing catering eyebrow');
+  assert.ok(arHtml.includes('نتشرف بحضوركم على مائدة العشاء'), 'AR seed auto-localization missing catering heading');
+  assert.ok(arHtml.includes('القهوة السعودية والضيافة الترحيبية'), 'AR seed auto-localization missing catering item');
+  assert.ok(arHtml.includes('الزي المطلوب'), 'AR seed auto-localization missing dress eyebrow');
+  assert.ok(arHtml.includes('الزي الرسمي السعودي / كاجوال أنيق'), 'AR seed auto-localization missing dress heading');
+  assert.ok(arHtml.includes('برنامج الأمسية'), 'AR seed auto-localization missing schedule eyebrow');
+  assert.ok(arHtml.includes('معلومات الوصول والمواقف'), 'AR seed auto-localization missing faq eyebrow');
+  assert.ok(arHtml.includes('هل تتوفر خدمة صف السيارات (Valet)؟'), 'AR seed auto-localization missing faq question');
+
+  // Phase 2 Master Revamp: 4 Architectural Layouts & Etiquette Badges & VIP Gate Pass QR
+  const layouts = ['corporate', 'custom', 'birthday', 'baby-shower'];
+  for (const tid of layouts) {
+    const layoutHtml = renderToStaticMarkup(
+      h(PartyInvitationRenderer, {
+        event: {
+          ...defaultPartyEvent,
+          templateId: tid,
+          title: `Milestone ${tid}`,
+          logoUrl: 'https://example.com/logo.png',
+          mapUrl: 'https://maps.google.com/?q=Riyadh',
+          etiquetteBadges: ['الدخول ببطاقة الدعوة', 'خدمة صف السيارات (Valet)'],
+        },
+        blocks: [],
+        invitationLocale: 'ar',
+      })
+    );
+    assert.ok(layoutHtml.includes(`party-template--${tid}`), `Missing template class for ${tid}`);
+    assert.ok(layoutHtml.includes(`Milestone ${tid}`), `Missing title for ${tid}`);
+    assert.ok(layoutHtml.includes('https://example.com/logo.png'), `Missing logo for ${tid}`);
+    assert.ok(layoutHtml.includes('الدخول ببطاقة الدعوة'), `Missing etiquette badge in ${tid}`);
+
+    if (tid === 'corporate') {
+      assert.ok(layoutHtml.includes('maps.google.com'), 'Corporate layout missing maps link');
+    } else if (tid === 'custom') {
+      assert.ok(layoutHtml.includes('✦'), 'Custom Majlis layout missing ornament');
+    }
+  }
+
+  // Phase 2 Master Revamp: VIP Gate Pass view with luxury QR
+  const vipPassHtml = renderToStaticMarkup(
+    h(PartyInvitationRenderer, {
+      event: defaultPartyEvent,
+      blocks: [],
+      invitationLocale: 'ar',
+      preview: true,
+      rsvpStatus: 'accepted',
+      guestName: 'سلطان بن عبدالعزيز',
+      passId: 'VIP-9988-77',
+      allowedCompanions: 1,
+    })
+  );
+  assert.ok(vipPassHtml.includes('VIP-9988-77'), 'VIP Gate Pass missing passId');
+  assert.ok(vipPassHtml.includes('سلطان بن عبدالعزيز'), 'VIP Gate Pass missing guestName');
+  assert.ok(vipPassHtml.includes('data-testid="qr-pass"'), 'VIP Gate Pass missing luxury QR pass mark');
+
+  console.log('PASS: loading/disabled controls, chip semantics, CustomerBottomNav, AR/EN Wedding/Party navigation, 10 text contrast pairs, Party multi-block preview/public parity, Phase 2 Saudi blueprints, Arabic seed auto-localization, 4 architectural layouts, VIP gate pass QR.');
 } finally {
   if (originalStorage) Object.defineProperty(globalThis, 'localStorage', originalStorage);
   else delete globalThis.localStorage;

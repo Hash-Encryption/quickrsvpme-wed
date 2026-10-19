@@ -89,6 +89,9 @@ type BlockContent = {
   questions?: { q: string; a: string }[];
   note?: string;
   url?: string;
+  mode?: 'note' | 'menu';
+  scheduleItems?: { time: string; title: string }[];
+  dressPreset?: string;
 };
 type StudioBlock = { id: string; key: BlockKey; enabled: boolean; label: string; eyebrow: string; content: BlockContent };
 type EngineState = {
