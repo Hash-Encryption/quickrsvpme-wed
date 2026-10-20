@@ -48,6 +48,11 @@ export type BlockContent = {
   mode?: 'note' | 'menu';
   scheduleItems?: { time: string; title: string }[];
   dressPreset?: string;
+  customLayout?: 'editorial-card' | 'bullet-grid' | 'image-spotlight' | 'stats-highlights';
+  bullets?: string[];
+  imageUrl?: string | null;
+  badge?: string;
+  buttonLabel?: string;
 };
 
 export type StudioBlock = {
@@ -83,8 +88,12 @@ export type PartyEventData = {
   logoUrl?: string | null;
   logoSize?: 'sm' | 'md' | 'lg';
   logoShape?: 'original' | 'circle' | 'rounded';
+  logoContainer?: 'auto-clean' | 'glass-crest' | 'white-pill' | 'raw';
+  logoPlacement?: 'top-center' | 'header-bar' | 'hero-seal' | 'both-footer';
   backgroundImageUrl?: string | null;
   backgroundFitMode?: 'cover' | 'contain';
+  backgroundMode?: 'full-pinned' | 'frame-9-16' | 'hero-banner';
+  backgroundBlur?: number;
   backgroundOverlayOpacity?: number;
   brandPalette?: string[];
   titleScale?: 'sm' | 'md' | 'lg' | 'xl';
@@ -416,8 +425,12 @@ export function mergePartyEvent(value: Partial<PartyEventData> | null | undefine
   if (value?.logoUrl !== undefined) result.logoUrl = typeof value.logoUrl === 'string' ? value.logoUrl : null;
   if (value?.logoSize !== undefined) result.logoSize = ['sm', 'md', 'lg'].includes(value.logoSize as string) ? (value.logoSize as 'sm' | 'md' | 'lg') : 'md';
   if (value?.logoShape !== undefined) result.logoShape = ['original', 'circle', 'rounded'].includes(value.logoShape as string) ? (value.logoShape as 'original' | 'circle' | 'rounded') : 'original';
+  if (value?.logoContainer !== undefined) result.logoContainer = ['auto-clean', 'glass-crest', 'white-pill', 'raw'].includes(value.logoContainer as string) ? (value.logoContainer as 'auto-clean' | 'glass-crest' | 'white-pill' | 'raw') : 'auto-clean';
+  if (value?.logoPlacement !== undefined) result.logoPlacement = ['top-center', 'header-bar', 'hero-seal', 'both-footer'].includes(value.logoPlacement as string) ? (value.logoPlacement as 'top-center' | 'header-bar' | 'hero-seal' | 'both-footer') : 'top-center';
   if (value?.backgroundImageUrl !== undefined) result.backgroundImageUrl = typeof value.backgroundImageUrl === 'string' ? value.backgroundImageUrl : null;
   if (value?.backgroundFitMode !== undefined) result.backgroundFitMode = value.backgroundFitMode === 'contain' ? 'contain' : 'cover';
+  if (value?.backgroundMode !== undefined) result.backgroundMode = ['full-pinned', 'frame-9-16', 'hero-banner'].includes(value.backgroundMode as string) ? (value.backgroundMode as 'full-pinned' | 'frame-9-16' | 'hero-banner') : 'full-pinned';
+  if (value?.backgroundBlur !== undefined) result.backgroundBlur = typeof value.backgroundBlur === 'number' ? Math.max(0, Math.min(16, value.backgroundBlur)) : 0;
   if (value?.backgroundOverlayOpacity !== undefined) result.backgroundOverlayOpacity = typeof value.backgroundOverlayOpacity === 'number' ? Math.max(0, Math.min(0.85, value.backgroundOverlayOpacity)) : 0.45;
   if (value?.brandPalette !== undefined && Array.isArray(value.brandPalette)) result.brandPalette = value.brandPalette.filter((c): c is string => typeof c === 'string');
   if (value?.titleScale !== undefined) result.titleScale = ['sm', 'md', 'lg', 'xl'].includes(value.titleScale as string) ? (value.titleScale as 'sm' | 'md' | 'lg' | 'xl') : 'lg';

@@ -23,6 +23,7 @@ import { partyInvitationT, type PartyInvitationKey } from '../i18n/party.ts';
 import {
   SAUDI_LUXURY_PALETTES,
   extractColorsFromImageDataUrl,
+  deriveBrandTheme,
 } from '../utils/brandColorExtractor.ts';
 
 test('Phase 3: 4 Genuine Template Families with distinct motifs and default styles', () => {
@@ -591,4 +592,71 @@ test('Phase 2 Master Revamp: Extended BlockContent structures (hospitality mode,
   assert.equal(block.content.scheduleItems?.length, 2);
   assert.equal(block.content.scheduleItems?.[0].time, '8:30 PM');
   assert.equal(block.content.dressPreset, 'saudi-formal');
+});
+
+test('Overhaul: mergePartyEvent safely handles backgroundMode, backgroundBlur, logoContainer, and logoPlacement', () => {
+  const merged = mergePartyEvent({
+    ...defaultPartyEvent,
+    backgroundMode: 'frame-9-16',
+    backgroundBlur: 8,
+    logoContainer: 'glass-crest',
+    logoPlacement: 'header-bar',
+  });
+
+  assert.equal(merged.backgroundMode, 'frame-9-16');
+  assert.equal(merged.backgroundBlur, 8);
+  assert.equal(merged.logoContainer, 'glass-crest');
+  assert.equal(merged.logoPlacement, 'header-bar');
+});
+
+test('Overhaul: deriveBrandTheme correctly generates dark, light, and bold brand themes', () => {
+  const dominant = '#1A365D'; // Dark Blue
+  const accent = '#D69E2E';   // Gold
+
+  const darkTheme = deriveBrandTheme(dominant, accent, 'dark');
+  assert.equal(darkTheme.name, 'Brand Dark');
+  assert.ok(darkTheme.backgroundColor.startsWith('#'));
+  assert.ok(darkTheme.primaryColor.startsWith('#'));
+  assert.ok(darkTheme.accentColor.startsWith('#'));
+
+  const lightTheme = deriveBrandTheme(dominant, accent, 'light');
+  assert.equal(lightTheme.name, 'Brand Light');
+  assert.ok(lightTheme.backgroundColor.startsWith('#'));
+  assert.ok(lightTheme.primaryColor.startsWith('#'));
+  assert.ok(lightTheme.accentColor.startsWith('#'));
+
+  const boldTheme = deriveBrandTheme(dominant, accent, 'bold');
+  assert.equal(boldTheme.name, 'Brand Bold');
+  assert.ok(boldTheme.backgroundColor.startsWith('#'));
+  assert.ok(boldTheme.primaryColor.startsWith('#'));
+  assert.ok(boldTheme.accentColor.startsWith('#'));
+});
+
+test('Overhaul: Custom Smart Section data model supports 4 layouts with bullets, image, and badges', () => {
+  const block: StudioBlock = {
+    id: 'block-custom-keynote',
+    key: 'text',
+    enabled: true,
+    label: 'Keynote Speaker',
+    eyebrow: 'SPEAKER SPOTLIGHT',
+    content: {
+      heading: 'Eng. Fahad Al-Otaibi',
+      note: 'Executive VP of Innovation delivering the opening keynote speech.',
+      customLayout: 'image-spotlight',
+      imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80',
+      badge: 'متحدث رئيسي',
+      buttonLabel: 'عرض السيرة الذاتية',
+      url: 'https://example.com/speaker',
+      bullets: [
+        '20+ years of digital transformation leadership',
+        'Keynote: The Future of Autonomous Infrastructure',
+      ],
+    },
+  };
+
+  assert.equal(block.content.customLayout, 'image-spotlight');
+  assert.equal(block.content.badge, 'متحدث رئيسي');
+  assert.equal(block.content.buttonLabel, 'عرض السيرة الذاتية');
+  assert.equal(block.content.bullets?.length, 2);
+  assert.equal(block.content.imageUrl?.includes('unsplash'), true);
 });

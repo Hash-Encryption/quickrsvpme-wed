@@ -92,6 +92,11 @@ type BlockContent = {
   mode?: 'note' | 'menu';
   scheduleItems?: { time: string; title: string }[];
   dressPreset?: string;
+  customLayout?: 'editorial-card' | 'bullet-grid' | 'image-spotlight' | 'stats-highlights';
+  bullets?: string[];
+  imageUrl?: string | null;
+  badge?: string;
+  buttonLabel?: string;
 };
 type StudioBlock = { id: string; key: BlockKey; enabled: boolean; label: string; eyebrow: string; content: BlockContent };
 type EngineState = {

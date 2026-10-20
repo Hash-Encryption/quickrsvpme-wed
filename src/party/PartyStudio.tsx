@@ -2,6 +2,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -11,9 +12,11 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  Award,
   CalendarDays,
   Camera,
   Check,
+  CheckCircle2,
   ChevronDown,
   Clock,
   Coffee,
@@ -70,10 +73,16 @@ import {
   type StudioBlock,
 } from './PartyInvitationRenderer.tsx';
 import { DualHijriCalendar } from '../components/DualHijriCalendar.tsx';
-import { SAUDI_TIME_ANCHORS } from '../utils/saudiCalendar.ts';
+import { SAUDI_TIME_ANCHORS, formatDualDateSummary } from '../utils/saudiCalendar.ts';
 import {
+  deriveBrandTheme,
   extractColorsFromImageDataUrl,
+  hexToRgb,
+  getRelativeLuminance,
+  mixColors,
+  processLogoDataUrl,
   SAUDI_LUXURY_PALETTES,
+  type ExtractedPalette,
 } from '../utils/brandColorExtractor.ts';
 
 export type PartyStudioProps = {
@@ -105,6 +114,37 @@ type HistorySnapshot = {
   invitationLocale: InvitationLocale;
 };
 
+function getBlockDefaultLabel(key: BlockKey, isArabic: boolean): string {
+  switch (key) {
+    case 'schedule':
+      return isArabic ? 'برنامج الحفل والجدول الزمني' : 'Event Agenda & Timeline';
+    case 'catering':
+      return isArabic ? 'قائمة الضيافة وتفاصيل البوفيه' : 'Hospitality & Dining';
+    case 'dress':
+      return isArabic ? 'الزي المعتمد والمظهر' : 'Dress Code & Attire';
+    case 'venue':
+      return isArabic ? 'موقع القاعة ومخطط الوصول' : 'Venue & Location';
+    case 'host':
+      return isArabic ? 'كلمة المضيف والترحيب' : 'Host Greeting';
+    case 'faq':
+      return isArabic ? 'المواقف، البوابات ومعلومات الوصول' : 'Valet, Gates & Access';
+    case 'text':
+      return isArabic ? 'قسم مخصص ذكي' : 'Custom Smart Section';
+    case 'cta':
+      return isArabic ? 'رابط تفاعلي' : 'External Action Link';
+    case 'registry':
+      return isArabic ? 'مميزات المناسبة' : 'Highlights & Gifts';
+    case 'song':
+      return isArabic ? 'ركن تهاني الضيوف' : 'Guest Wishes';
+    case 'divider':
+      return isArabic ? 'فاصل زخرفي' : 'Ornamental Divider';
+    case 'spacer':
+      return isArabic ? 'مسافة تباعد' : 'Spacing';
+    default:
+      return key;
+  }
+}
+
 const SAUDI_WORDING_PRESETS = [
   {
     label: 'رسمية للشركات',
@@ -133,6 +173,29 @@ const ETIQUETTE_BADGE_OPTIONS = [
   'ممنوع التصوير',
   'الدخول ببطاقة الدعوة',
   'خدمة صف السيارات (Valet)',
+];
+
+const LUXURY_BG_PRESETS = [
+  {
+    name: 'نجدي تراثي',
+    nameEn: 'Najdi Sandstone',
+    url: 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=1200&q=80',
+  },
+  {
+    name: 'حرير وذهب',
+    nameEn: 'Midnight Silk',
+    url: 'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&w=1200&q=80',
+  },
+  {
+    name: 'زمرد دمقسي',
+    nameEn: 'Emerald Damask',
+    url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80',
+  },
+  {
+    name: 'رخام لؤلؤي',
+    nameEn: 'Pearl Marble',
+    url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80',
+  },
 ];
 
 export function PartyStudio({
@@ -177,13 +240,19 @@ export function PartyStudio({
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [isPreviewOnly, setIsPreviewOnly] = useState(false);
   const [isExtractingColors, setIsExtractingColors] = useState(false);
+  const [autoRemoveWhiteBg, setAutoRemoveWhiteBg] = useState(true);
+  const [rawLogoUrl, setRawLogoUrl] = useState<string | null>(initialEvent.logoUrl || null);
+  const [extractedPalette, setExtractedPalette] = useState<ExtractedPalette | null>(null);
 
   // Sync props when initial changes externally
   useEffect(() => {
     setEvent(initialEvent);
     setBlocks(initialBlocks);
     setInvitationLocale(initialLocale);
-  }, [initialEvent, initialBlocks, initialLocale]);
+    if (initialEvent.logoUrl && !rawLogoUrl) {
+      setRawLogoUrl(initialEvent.logoUrl);
+    }
+  }, [initialEvent, initialBlocks, initialLocale, rawLogoUrl]);
 
   // Helper to push history snapshot
   const pushHistory = useCallback(
@@ -294,7 +363,7 @@ export function PartyStudio({
       accentColor: null,
     };
 
-    // Enable only recommended sections (2-3 sections) for clean luxury layout
+    // Enable recommended sections for clean luxury layout
     const updatedBlocks = blocks.map((b) => ({
       ...b,
       enabled: bp.recommendedBlockKeys.includes(b.key),
@@ -358,10 +427,10 @@ export function PartyStudio({
       id: crypto.randomUUID(),
       key,
       enabled: true,
-      label: t(key),
+      label: getBlockDefaultLabel(key, isArabic),
       eyebrow: key.toUpperCase(),
       content: {
-        heading: t(key),
+        heading: getBlockDefaultLabel(key, isArabic),
         note: '',
         entree: key === 'catering' ? ['Signature Dish 1', 'Signature Dish 2'] : undefined,
         swatches:
@@ -369,6 +438,7 @@ export function PartyStudio({
             ? ['#0A2E23', '#D4AF37', '#C28B55']
             : undefined,
         questions: key === 'faq' ? [{ q: 'Question 1', a: 'Answer 1' }] : undefined,
+        customLayout: key === 'text' ? 'editorial-card' : undefined,
       },
     };
     const nextBlocks = [...blocks, newBlock];
@@ -393,18 +463,23 @@ export function PartyStudio({
     setActiveTab('edit-block');
   };
 
-  const handleSelectSectionFromPreview = (sec: 'hero' | 'details' | 'wording' | 'design') => {
+  const handleSelectSectionFromPreview = (sec: string) => {
     if (sec === 'design') setActiveTab('design');
     else setActiveTab('info');
   };
 
-  // Logo file upload handler
-  const handleLogoUpload = (file: File) => {
+  // Logo file upload handler with auto white-background removal
+  const handleLogoUpload = async (file: File) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       const dataUrl = e.target?.result as string;
       if (dataUrl) {
-        updateEventFields({ logoUrl: dataUrl });
+        setRawLogoUrl(dataUrl);
+        const processed = autoRemoveWhiteBg
+          ? await processLogoDataUrl(dataUrl, true)
+          : dataUrl;
+        updateEventFields({ logoUrl: processed });
+        void extractBrandColors(dataUrl);
       }
     };
     reader.readAsDataURL(file);
@@ -422,16 +497,52 @@ export function PartyStudio({
     reader.readAsDataURL(file);
   };
 
-  // Apply colors from Logo
+  // Brand color extraction
+  const extractBrandColors = async (logoUrl: string) => {
+    setIsExtractingColors(true);
+    try {
+      const palette = await extractColorsFromImageDataUrl(logoUrl);
+      setExtractedPalette(palette);
+      updateEventFields({
+        brandPalette: palette.swatches,
+      });
+    } finally {
+      setIsExtractingColors(false);
+    }
+  };
+
+  const handleApplyLogoTheme = (mode: 'dark' | 'light' | 'bold') => {
+    if (!extractedPalette) return;
+    const theme =
+      extractedPalette.themes?.[mode] ||
+      deriveBrandTheme(
+        extractedPalette.dominantHex || extractedPalette.background,
+        extractedPalette.accentHex || extractedPalette.accent,
+        mode
+      );
+
+    updateEventFields({
+      backgroundColor: theme.backgroundColor,
+      primaryColor: theme.primaryColor,
+      accentColor: theme.accentColor,
+      brandPalette: extractedPalette.swatches,
+    });
+  };
+
   const handleApplyLogoColors = async () => {
     if (!event.logoUrl) return;
     setIsExtractingColors(true);
     try {
       const palette = await extractColorsFromImageDataUrl(event.logoUrl);
+      setExtractedPalette(palette);
+      const theme =
+        palette.themes?.dark ||
+        deriveBrandTheme(palette.dominantHex || palette.background, palette.accent, 'dark');
+
       updateEventFields({
-        backgroundColor: palette.background,
-        primaryColor: palette.primary,
-        accentColor: palette.accent,
+        backgroundColor: theme.backgroundColor,
+        primaryColor: theme.primaryColor,
+        accentColor: theme.accentColor,
         brandPalette: palette.swatches,
       });
     } finally {
@@ -441,67 +552,73 @@ export function PartyStudio({
 
   const activeBlock = blocks.find((b) => b.id === selectedBlockId);
 
+  // Active theme colors for studio previews
+  const styleKey = resolvePartyStyleId(event.templateId, event.styleId);
+  const activeStyle = partyStyles[styleKey] ?? partyStyles['luxury-emerald'];
+  const activeBg = event.backgroundColor || activeStyle.backgroundColor;
+  const activePrimary = event.primaryColor || activeStyle.primaryColor;
+  const activeAccent = event.accentColor || activeStyle.accentColor;
+
+  const isDarkCanvas = useMemo(() => {
+    try {
+      const [r, g, b] = hexToRgb(activeBg);
+      return getRelativeLuminance(r, g, b) < 0.45;
+    } catch {
+      return true;
+    }
+  }, [activeBg]);
+
+  const activeSurface = useMemo(() => {
+    if (!event.backgroundColor) return activeStyle.surfaceColor;
+    return isDarkCanvas
+      ? mixColors(activeBg, '#FFFFFF', 0.08)
+      : mixColors(activeBg, '#000000', 0.05);
+  }, [event.backgroundColor, activeBg, isDarkCanvas, activeStyle.surfaceColor]);
+
   return (
     <div
-      className={`party-studio-shell relative flex min-h-[100dvh] flex-col bg-[#FAF7F2] text-[#1F2923] antialiased ${
-        embedded ? 'rounded-3xl border border-[#D4AF37]/35 shadow-sm' : ''
-      }`}
+      className="flex min-h-[100dvh] flex-col bg-[#FAF7F2] text-[#17251F] font-sans select-none"
       dir={dir}
     >
-      {/* 1. ZONE A1: Single 56px Frosted Glass Bar */}
-      <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-black/[0.06] bg-[#FAF7F2]/90 px-4 sm:px-6 backdrop-blur-xl">
-        {/* Left: Back Arrow & Status */}
-        <div className="flex items-center gap-2.5 min-w-0">
+      {/* 1. ZONE A1: Single 56px Frosted App Bar */}
+      <header className="sticky top-0 z-40 flex h-14 w-full items-center justify-between border-b border-[#D4AF37]/35 bg-[#FAF7F2]/90 px-3 sm:px-6 backdrop-blur-md">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <Link
             href={backHref}
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/[0.04] text-[#17251F] transition hover:bg-black/[0.08] active:scale-95"
-            aria-label={backLabel || t('backToProjects')}
-            data-testid="link-back"
+            aria-label={backLabel || (isArabic ? 'رجوع' : 'Back')}
           >
-            <ArrowLeft
-              size={16}
-              className={`transition-transform ${dir === 'rtl' ? 'rotate-180' : ''}`}
-            />
+            {dir === 'rtl' ? <ArrowRight size={18} /> : <ArrowLeft size={18} />}
           </Link>
 
           <div className="min-w-0">
             <h1 className="truncate text-xs sm:text-sm font-semibold text-[#17251F]">
-              {draftTitle || event.title || t('partyStudio')}
+              {draftTitle || event.title || (isArabic ? 'حفلة جديدة' : 'Untitled Party')}
             </h1>
-            <div className="flex items-center gap-1.5 text-[10px] text-[#756F66]">
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${
-                  saveStatus === 'saving'
-                    ? 'bg-[#C29B61] animate-pulse'
-                    : saveStatus === 'error' || saveStatus === 'conflict'
-                    ? 'bg-[#B4534B]'
-                    : 'bg-[#1B6344]'
-                }`}
-              />
-              <span className="font-medium">
+            <div className="flex items-center gap-1.5 text-[11px] text-[#2D2421]/60">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#1B6B46]" />
+              <span>
                 {saveStatus === 'saving'
-                  ? t('saving')
+                  ? (isArabic ? 'جاري الحفظ...' : 'Saving...')
                   : saveStatus === 'error'
-                  ? t('saveError')
-                  : saveStatus === 'conflict'
-                  ? t('saveConflict')
-                  : t('saved')}
+                  ? (isArabic ? 'تعذر الحفظ' : 'Error saving')
+                  : (isArabic ? 'تم الحفظ' : 'Saved')}
               </span>
             </div>
           </div>
         </div>
 
-        {/* Center/Right: Undo, Redo, Preview Toggle, Publish */}
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="hidden sm:flex items-center gap-1 border-e border-black/[0.06] pe-2">
+        {/* Action Controls: Undo/Redo + Preview + Publish */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Undo / Redo */}
+          <div className="hidden sm:flex items-center gap-1 border-e border-[#D4AF37]/30 pe-2 me-1">
             <button
               type="button"
               onClick={handleUndo}
               disabled={!canUndo}
               aria-label={t('undo')}
-              title={t('undo')}
-              data-testid="button-undo"
               className="flex h-8 w-8 items-center justify-center rounded-full border border-black/[0.08] bg-white/80 text-[#17251F] transition hover:bg-white disabled:opacity-30"
+              title="Undo (Ctrl+Z)"
             >
               <Undo2 size={14} />
             </button>
@@ -510,73 +627,83 @@ export function PartyStudio({
               onClick={handleRedo}
               disabled={!canRedo}
               aria-label={t('redo')}
-              title={t('redo')}
-              data-testid="button-redo"
               className="flex h-8 w-8 items-center justify-center rounded-full border border-black/[0.08] bg-white/80 text-[#17251F] transition hover:bg-white disabled:opacity-30"
+              title="Redo (Ctrl+Y)"
             >
               <Redo2 size={14} />
             </button>
           </div>
 
+          {/* Language Switch */}
+          <AppLanguageControl />
+
+          {/* Toggle Preview Only */}
           <button
             type="button"
             onClick={() => setIsPreviewOnly(!isPreviewOnly)}
-            aria-pressed={isPreviewOnly}
-            data-testid="button-preview-toggle"
-            className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition active:scale-95 ${
+            data-testid="button-preview-mode"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-semibold transition ${
               isPreviewOnly
-                ? 'border-[#0C2D24] bg-[#0C2D24] text-white shadow-xs'
+                ? 'border-[#0A2E23] bg-[#0A2E23] text-white'
                 : 'border-black/[0.08] bg-white/80 text-[#17251F] hover:bg-white'
             }`}
           >
             {isPreviewOnly ? <Edit3 size={13} /> : <Eye size={13} />}
-            <span>{t(isPreviewOnly ? 'editView' : 'previewView')}</span>
+            <span className="hidden sm:inline">
+              {isPreviewOnly ? t('edit') : t('previewTab')}
+            </span>
           </button>
 
+          {/* Publish Button */}
           {onPublish && (
             <button
               type="button"
+              onClick={onPublish}
               disabled={isPublishing || !publishAllowed}
-              onClick={() => void onPublish()}
               data-testid="button-publish-party"
-              className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[#0C2D24] px-3.5 text-xs font-semibold text-white shadow-xs transition hover:bg-[#144837] disabled:cursor-not-allowed disabled:opacity-40 active:scale-95"
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-[#0A2E23] text-white text-xs font-bold hover:brightness-110 disabled:opacity-40 transition shadow-xs"
             >
-              <Sparkles size={13} className="text-[#C29B61]" />
-              <span>{isPublishing ? t('publishing') : publishLabel || t('publishDraft')}</span>
+              <PartyPopper size={13} />
+              <span>{publishLabel || t('publishDraft')}</span>
             </button>
           )}
         </div>
       </header>
 
-      {/* 2. ZONE A2: Card vs. VIP Pass Switcher */}
-      <div className="flex items-center justify-center gap-1.5 p-1 bg-black/[0.04] rounded-full border border-black/[0.06] w-fit mx-auto mt-4 z-20">
-        <button
-          type="button"
-          onClick={() => setViewMode('invitation')}
-          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold transition ${
-            viewMode === 'invitation'
-              ? 'bg-[#0A2E23] text-white shadow-xs'
-              : 'text-[#2D2421]/70 hover:text-[#0A2E23]'
-          }`}
-        >
-          <span>💌</span>
-          <span>{isArabic ? 'بطاقة الدعوة' : 'Invitation Card'}</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setViewMode('pass')}
-          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold transition ${
-            viewMode === 'pass'
-              ? 'bg-[#0A2E23] text-white shadow-xs'
-              : 'text-[#2D2421]/70 hover:text-[#0A2E23]'
-          }`}
-        >
-          <span>🎟️</span>
-          <span>{isArabic ? 'بطاقة الدخول QR' : 'VIP Gate Pass'}</span>
-        </button>
+      {/* 2. ZONE A2: Card vs. VIP Gate Pass Switcher */}
+      <div className="w-full max-w-md mx-auto px-4 pt-3 flex justify-center">
+        <div className="inline-flex items-center p-1 rounded-full bg-black/[0.05] border border-[#D4AF37]/30 shadow-inner">
+          <button
+            type="button"
+            onClick={() => setViewMode('invitation')}
+            data-testid="tab-view-invitation"
+            className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold transition ${
+              viewMode === 'invitation'
+                ? 'bg-[#0A2E23] text-white shadow-xs'
+                : 'text-[#2D2421]/70 hover:text-[#0A2E23]'
+            }`}
+          >
+            <span>💌</span>
+            <span>{isArabic ? 'بطاقة الدعوة' : 'Invitation Card'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setViewMode('pass')}
+            data-testid="tab-view-pass"
+            className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold transition ${
+              viewMode === 'pass'
+                ? 'bg-[#0A2E23] text-white shadow-xs'
+                : 'text-[#2D2421]/70 hover:text-[#0A2E23]'
+            }`}
+          >
+            <span>🎟️</span>
+            <span>{isArabic ? 'بطاقة الدخول QR' : 'VIP Gate Pass'}</span>
+          </button>
+        </div>
       </div>
 
-      {/* 3. ZONE B1: 1-Tap Occasion Blueprints Strip */}
+      {/* 3. ZONE B1: 8 1-Tap Saudi Occasion & Corporate Blueprints */}
       <div className="w-full max-w-2xl mx-auto px-4 mt-3 mb-1">
         <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
           {OCCASION_BLUEPRINTS.map((bp) => {
@@ -611,15 +738,32 @@ export function PartyStudio({
           className="party-device-frame relative w-full max-w-[430px] rounded-[36px] border-[6px] border-[#2A3B32]/80 bg-white shadow-2xl overflow-hidden transition-all duration-300"
         >
           {viewMode === 'pass' ? (
-            /* Standalone VIP Gate Pass View */
-            <div className="min-h-[100dvh] bg-[#0F1E2E] text-white p-6 sm:p-8 flex flex-col items-center justify-center text-center">
-              <div className="party-pass-card relative w-full overflow-hidden rounded-[28px] border border-[#D4AF37]/50 bg-[#172B3E] p-6 sm:p-8 text-center shadow-2xl">
-                <div className="absolute top-0 inset-x-0 mx-auto h-3 w-16 rounded-b-xl bg-black/40 border-b border-x border-[#D4AF37]/30" />
-                <div className="pt-2 inline-flex items-center gap-1.5 rounded-full border border-[#D4AF37]/30 bg-black/20 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-[#D4AF37]">
+            /* Standalone VIP Gate Pass View with Dynamic Surface / Colors */
+            <div
+              className="min-h-[100dvh] text-white p-6 sm:p-8 flex flex-col items-center justify-center text-center transition-colors"
+              style={{ backgroundColor: activeBg }}
+            >
+              <div
+                className="party-pass-card relative w-full overflow-hidden rounded-[28px] border p-6 sm:p-8 text-center shadow-2xl backdrop-blur-md"
+                style={{
+                  backgroundColor: activeSurface,
+                  borderColor: `${activeAccent}60`,
+                  color: activePrimary,
+                }}
+              >
+                <div className="absolute top-0 inset-x-0 mx-auto h-3 w-16 rounded-b-xl bg-black/40 border-b border-x border-[var(--party-accent)]/30" />
+                <div
+                  className="pt-2 inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-widest"
+                  style={{
+                    backgroundColor: 'rgba(0,0,0,0.2)',
+                    borderColor: `${activeAccent}50`,
+                    color: activeAccent,
+                  }}
+                >
                   <Sparkles size={11} />
                   <span>{isArabic ? 'بطاقة الدخول الرقمية · VIP' : 'DIGITAL GATE PASS'}</span>
                 </div>
-                <h3 className="mt-4 font-display text-2xl font-bold text-[#F4F7F9]">
+                <h3 className="mt-4 font-display text-2xl font-bold" style={{ color: activePrimary }}>
                   {event.title}
                 </h3>
                 {event.hostName && (
@@ -628,12 +772,24 @@ export function PartyStudio({
                 <div className="mx-auto mt-6 w-fit">
                   <QRPassMark label="VIP Pass QR" />
                 </div>
-                <div className="mt-5 rounded-2xl border border-[#D4AF37]/25 bg-black/20 p-4 text-xs text-start">
+                <div
+                  className="mt-5 rounded-2xl border p-4 text-xs text-start"
+                  style={{
+                    backgroundColor: 'rgba(0,0,0,0.2)',
+                    borderColor: `${activeAccent}35`,
+                  }}
+                >
                   <div className="flex justify-between items-center">
-                    <span className="font-mono font-bold text-[#D4AF37] tracking-widest">
+                    <span className="font-mono font-bold tracking-widest" style={{ color: activeAccent }}>
                       VIP-2026-PASS
                     </span>
-                    <span className="text-[10px] font-bold uppercase text-[#D4AF37] bg-[#D4AF37]/15 px-2 py-0.5 rounded-full">
+                    <span
+                      className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full"
+                      style={{
+                        backgroundColor: `${activeAccent}25`,
+                        color: activeAccent,
+                      }}
+                    >
                       {isArabic ? 'دخول مؤكد' : 'CONFIRMED'}
                     </span>
                   </div>
@@ -678,7 +834,6 @@ export function PartyStudio({
             type="button"
             onClick={() => setActiveTab(activeTab === 'info' ? null : 'info')}
             data-testid="tab-party-info"
-            aria-expanded={activeTab === 'info'}
             className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition ${
               activeTab === 'info'
                 ? 'text-[#0A2E23] font-bold'
@@ -686,7 +841,7 @@ export function PartyStudio({
             }`}
           >
             <span
-              className={`flex h-9 w-9 items-center justify-center rounded-full transition ${
+              className={`flex h-9 w-9 items-center justify-center rounded-xl transition ${
                 activeTab === 'info' ? 'bg-[#0A2E23] text-white shadow-xs' : 'bg-transparent'
               }`}
             >
@@ -695,12 +850,11 @@ export function PartyStudio({
             <span className="text-[11px] font-semibold">{t('infoTab')}</span>
           </button>
 
-          {/* Brand / Design Tab */}
+          {/* Design / Brand Tab */}
           <button
             type="button"
             onClick={() => setActiveTab(activeTab === 'design' ? null : 'design')}
             data-testid="tab-party-design"
-            aria-expanded={activeTab === 'design'}
             className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition ${
               activeTab === 'design'
                 ? 'text-[#0A2E23] font-bold'
@@ -708,7 +862,7 @@ export function PartyStudio({
             }`}
           >
             <span
-              className={`flex h-9 w-9 items-center justify-center rounded-full transition ${
+              className={`flex h-9 w-9 items-center justify-center rounded-xl transition ${
                 activeTab === 'design' ? 'bg-[#0A2E23] text-white shadow-xs' : 'bg-transparent'
               }`}
             >
@@ -717,12 +871,11 @@ export function PartyStudio({
             <span className="text-[11px] font-semibold">{t('designTab')}</span>
           </button>
 
-          {/* Sections Tab */}
+          {/* Sections List Tab */}
           <button
             type="button"
             onClick={() => setActiveTab(activeTab === 'sections' ? null : 'sections')}
             data-testid="tab-party-sections"
-            aria-expanded={activeTab === 'sections'}
             className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition ${
               activeTab === 'sections'
                 ? 'text-[#0A2E23] font-bold'
@@ -730,7 +883,7 @@ export function PartyStudio({
             }`}
           >
             <span
-              className={`flex h-9 w-9 items-center justify-center rounded-full transition ${
+              className={`flex h-9 w-9 items-center justify-center rounded-xl transition ${
                 activeTab === 'sections' ? 'bg-[#0A2E23] text-white shadow-xs' : 'bg-transparent'
               }`}
             >
@@ -739,74 +892,93 @@ export function PartyStudio({
             <span className="text-[11px] font-semibold">{t('sectionsTab')}</span>
           </button>
 
-          {/* Add Section Direct Action */}
+          {/* Add Section Tab */}
           <button
             type="button"
-            onClick={() => setActiveTab('add-block')}
-            data-testid="tab-party-add-block"
+            onClick={() => setActiveTab(activeTab === 'add-block' ? null : 'add-block')}
+            data-testid="button-add-section"
             className="flex flex-col items-center gap-1 p-2 rounded-2xl text-[#0A2E23] hover:opacity-85 transition"
           >
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#D4AF37] text-black font-bold shadow-xs">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#0A2E23] text-white shadow-xs">
               <Plus size={20} strokeWidth={2.5} />
             </span>
-            <span className="text-[11px] font-semibold">{t('addSection')}</span>
+            <span className="text-[11px] font-bold">{t('addSection')}</span>
           </button>
         </nav>
       )}
 
-      {/* 6. CONTEXTUAL DRAWER / BOTTOM SHEET */}
+      {/* 6. CONTEXTUAL DRAWER (BOTTOM SHEET) */}
       <AnimatePresence>
-        {activeTab && !isPreviewOnly && (
+        {activeTab && (
           <>
-            {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setActiveTab(null)}
               className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs"
-              aria-hidden="true"
             />
 
-            {/* Sheet Surface */}
             <motion.aside
               initial={{ y: '100%' }}
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-              className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-xl max-h-[85vh] overflow-y-auto rounded-t-[32px] border-t border-[#D4AF37]/50 bg-[#FAF7F2] p-6 shadow-2xl"
+              transition={{ type: 'spring', damping: 26, stiffness: 280 }}
+              className="fixed bottom-0 inset-x-0 z-50 max-h-[82vh] overflow-y-auto rounded-t-[32px] border-t border-[#D4AF37]/40 bg-[#FAF7F2] p-5 sm:p-6 shadow-2xl"
               aria-labelledby="party-sheet-title"
             >
-              {/* Top Drag Pill & Close */}
-              <div className="flex items-center justify-between pb-4 border-b border-[#D4AF37]/30">
-                <div className="flex items-center gap-2.5">
-                  <span className="h-2 w-2 rounded-full bg-[#D4AF37]" />
+              {/* Drawer Drag Pill Header */}
+              <div className="flex items-center justify-between border-b border-[#D4AF37]/25 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-[#0A2E23]" />
                   <h2 id="party-sheet-title" className="text-base font-bold text-[#0A2E23]">
-                    {activeTab === 'info' && t('eventDetails')}
-                    {activeTab === 'design' && t('designNav')}
-                    {activeTab === 'sections' && t('invitationBlocks')}
+                    {activeTab === 'info' && t('infoTab')}
+                    {activeTab === 'design' && (isArabic ? 'الهوية والتصميم والمظهر' : 'Brand & Design')}
+                    {activeTab === 'sections' && (isArabic ? 'أقسام وفقرات الدعوة' : 'Invitation Modules')}
                     {activeTab === 'edit-block' && `${t('edit')} ${activeBlock?.label || ''}`}
-                    {activeTab === 'add-block' && t('sectionCatalog')}
+                    {activeTab === 'add-block' && (isArabic ? 'دليل الأقسام والوحدات' : 'Section Catalog')}
                   </h2>
                 </div>
-
                 <button
                   type="button"
                   onClick={() => setActiveTab(null)}
-                  className="focus-ring flex h-9 w-9 items-center justify-center rounded-full border border-[#D4AF37]/40 bg-white text-[#2D2421]/70 hover:bg-black/5"
-                  aria-label={t('cancel')}
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-black/5 text-[#2D2421] hover:bg-black/10 transition"
+                  aria-label={isArabic ? 'إغلاق' : 'Close'}
                 >
                   <X size={16} />
                 </button>
               </div>
 
-              {/* SHEET A: INFORMATION (DETAILS) */}
+              {/* SHEET A: DETAILS (EVENT INFO) */}
               {activeTab === 'info' && (
                 <div className="mt-5 space-y-4">
-                  {/* 1-Tap Saudi Wording Presets */}
+                  {/* Title Scale Selector */}
                   <div>
                     <span className="block text-xs font-bold text-[#0A2E23] mb-1.5">
-                      ✨ {isArabic ? 'صياغات دعوة جاهزة' : 'Wording Presets'}
+                      📏 {isArabic ? 'حجم عنوان الدعوة' : 'Title Scale'}
+                    </span>
+                    <div className="flex gap-2">
+                      {(['sm', 'md', 'lg', 'xl'] as const).map((scale) => (
+                        <button
+                          key={scale}
+                          type="button"
+                          onClick={() => updateEventFields({ titleScale: scale })}
+                          className={`flex-1 py-1.5 rounded-xl border text-xs font-bold uppercase transition ${
+                            (event.titleScale || 'lg') === scale
+                              ? 'border-[#0A2E23] bg-[#0A2E23] text-white shadow-xs'
+                              : 'border-[#D4AF37]/40 bg-white/70 hover:bg-white text-[#0A2E23]'
+                          }`}
+                        >
+                          {scale}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 1-Tap Wording Presets */}
+                  <div>
+                    <span className="block text-xs font-bold text-[#0A2E23] mb-1.5">
+                      ✨ {isArabic ? 'صيغ دعوة جاهزة وراقية' : 'Wording Presets'}
                     </span>
                     <div className="flex flex-wrap gap-2">
                       {SAUDI_WORDING_PRESETS.map((preset, idx) => (
@@ -828,16 +1000,17 @@ export function PartyStudio({
                       value={event.title}
                       onChange={(e) => updateEventFields({ title: e.target.value })}
                       data-testid="input-party-title"
-                      className="qr-field mt-1.5"
+                      className="qr-field mt-1.5 font-display text-sm font-bold"
                     />
                   </label>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <label className="block text-xs font-bold text-[#0A2E23]">
                       <span>{t('hostNameLabel')}</span>
                       <input
                         value={event.hostName || ''}
                         onChange={(e) => updateEventFields({ hostName: e.target.value })}
+                        data-testid="input-party-host"
                         placeholder={t('hostNamePlaceholder')}
                         className="qr-field mt-1.5"
                       />
@@ -848,6 +1021,7 @@ export function PartyStudio({
                       <input
                         value={event.subtitle || ''}
                         onChange={(e) => updateEventFields({ subtitle: e.target.value })}
+                        data-testid="input-party-subtitle"
                         placeholder={t('subtitlePlaceholder')}
                         className="qr-field mt-1.5"
                       />
@@ -860,60 +1034,58 @@ export function PartyStudio({
                       rows={3}
                       value={event.invitationWording}
                       onChange={(e) => updateEventFields({ invitationWording: e.target.value })}
-                      data-testid="input-invitation-wording"
-                      className="qr-field mt-1.5"
+                      data-testid="input-party-wording"
+                      className="qr-field mt-1.5 leading-relaxed"
                     />
                   </label>
 
-                  {/* Dual Calendar with Hijri Toggle */}
-                  <div className="rounded-2xl border border-[#D4AF37]/40 bg-white/60 p-4">
+                  {/* Dual Hijri & Gregorian Calendar */}
+                  <div className="rounded-2xl border border-[#D4AF37]/40 bg-white/70 p-4">
                     <span className="block text-xs font-bold text-[#0A2E23] mb-3">
-                      📅 {isArabic ? 'تاريخ المناسبة (ميلادي وهجري)' : 'Event Date'}
+                      📅 {isArabic ? 'التقويم المزدوج (هجري وميلادي)' : 'Dual Hijri & Gregorian Date'}
                     </span>
                     <DualHijriCalendar
                       value={event.date}
-                      onChange={(d) => updateEventFields({ date: d })}
-                      locale={appLocale}
-                    />
-                    {/* Synced native input for test compatibility */}
-                    <input
-                      type="date"
-                      value={event.date}
-                      onChange={(e) => updateEventFields({ date: e.target.value })}
-                      data-testid="input-event-date"
-                      className="sr-only"
-                      tabIndex={-1}
-                      aria-hidden="true"
+                      onChange={(greg: string) => {
+                        const hijriSummary = formatDualDateSummary(greg, isArabic ? 'ar' : 'en');
+                        updateEventFields({
+                          date: greg,
+                          hijriDate: hijriSummary,
+                          showHijriDate: true,
+                        });
+                      }}
+                      locale={isArabic ? 'ar' : 'en'}
                     />
 
-                    {/* 1-Tap Toggle for Hijri Date display on card */}
-                    <label className="flex items-center gap-2.5 mt-3 pt-3 border-t border-[#D4AF37]/30 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={event.showHijriDate !== false}
-                        onChange={(e) => updateEventFields({ showHijriDate: e.target.checked })}
-                        className="h-4 w-4 rounded text-[#0A2E23]"
-                      />
-                      <span className="text-xs font-bold text-[#0A2E23]">
-                        {isArabic ? 'إظهار التاريخ الهجري على بطاقة الدعوة' : 'Show Hijri date on invitation card'}
-                      </span>
-                    </label>
+                    <div className="mt-4 flex items-center justify-between border-t border-[#D4AF37]/20 pt-3">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(event.showHijriDate)}
+                          onChange={(e) => updateEventFields({ showHijriDate: e.target.checked })}
+                          className="h-4 w-4 rounded text-[#0A2E23]"
+                        />
+                        <span className="text-xs font-bold text-[#0A2E23]">
+                          {isArabic ? 'إظهار التاريخ الهجري في بطاقة الدعوة' : 'Show Hijri date on card'}
+                        </span>
+                      </label>
+                    </div>
                   </div>
 
-                  {/* 1-Tap Saudi Time Anchors */}
+                  {/* Saudi Time Anchors */}
                   <div>
                     <span className="block text-xs font-bold text-[#0A2E23] mb-1.5">
-                      ⏰ {isArabic ? 'وقت الحفل والضيافة' : 'Event Timing'}
+                      ⏰ {isArabic ? 'توقيت المناسبة (صلوات وفترات سعودية)' : 'Timing & Anchors'}
                     </span>
-                    <div className="flex flex-wrap gap-2 mb-2">
+                    <div className="flex flex-wrap gap-2">
                       {SAUDI_TIME_ANCHORS.map((anchor) => (
                         <button
                           key={anchor.id}
                           type="button"
                           onClick={() =>
                             updateEventFields({
-                              startTime: anchor.time,
                               timeLabel: isArabic ? anchor.labelAr : anchor.labelEn,
+                              startTime: anchor.time,
                             })
                           }
                           className="px-3 py-1 rounded-full border border-[#D4AF37]/40 bg-white/70 hover:bg-white text-[11px] font-semibold text-[#0A2E23] transition"
@@ -922,21 +1094,15 @@ export function PartyStudio({
                         </button>
                       ))}
                     </div>
-                    <input
-                      type="time"
-                      value={event.startTime}
-                      onChange={(e) => updateEventFields({ startTime: e.target.value })}
-                      className="qr-field"
-                    />
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <label className="block text-xs font-bold text-[#0A2E23]">
                       <span>{t('venue')}</span>
                       <input
                         value={event.venue}
                         onChange={(e) => updateEventFields({ venue: e.target.value })}
-                        data-testid="input-event-venue"
+                        data-testid="input-party-venue"
                         className="qr-field mt-1.5"
                       />
                     </label>
@@ -946,14 +1112,14 @@ export function PartyStudio({
                       <input
                         value={event.city}
                         onChange={(e) => updateEventFields({ city: e.target.value })}
+                        data-testid="input-party-city"
                         className="qr-field mt-1.5"
                       />
                     </label>
                   </div>
 
-                  {/* Google Maps Link */}
                   <label className="block text-xs font-bold text-[#0A2E23]">
-                    <span>📍 {isArabic ? 'رابط خرائط Google' : 'Google Maps Link'}</span>
+                    <span>📍 {isArabic ? 'رابط خرائط Google للموقع' : 'Google Maps Link'}</span>
                     <input
                       type="url"
                       value={event.mapUrl || ''}
@@ -1018,40 +1184,217 @@ export function PartyStudio({
                 </div>
               )}
 
-              {/* SHEET B: DESIGN (BRAND & THEME) */}
+              {/* SHEET B: REVAMPED DESIGN (4 SLEEK STUDIO CARDS) */}
               {activeTab === 'design' && (
                 <div className="mt-5 space-y-6">
-                  {/* Company / Personal Logo Card */}
-                  <div className="rounded-2xl border border-[#D4AF37]/40 bg-white/70 p-4">
-                    <span className="block text-xs font-bold text-[#0A2E23] mb-2">
-                      🏢 {isArabic ? 'شعار الشركة أو المنظم' : 'Company or Host Logo'}
+                  {/* CARD 1: 🏛️ LAYOUT ARCHITECTURE (4 GRAPHICAL WIREFRAME CARDS) */}
+                  <div className="rounded-2xl border border-[#D4AF37]/40 bg-white/80 p-4 shadow-xs">
+                    <span className="block text-xs font-bold text-[#0A2E23] mb-1">
+                      🏛️ {isArabic ? 'تخطيط وهندسة الدعوة' : 'Layout Architecture'}
                     </span>
+                    <p className="text-[11px] text-[#2D2421]/65 mb-3">
+                      {isArabic
+                        ? 'اختر الهيكل المعماري والنمط البصري الذي يناسب طابع المناسبة'
+                        : 'Choose the visual architecture for your event poster'}
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      {Object.values(partyTemplates).map((tpl) => {
+                        const isChosen = event.templateId === tpl.id;
+                        const name = isArabic ? tpl.nameAr : tpl.name;
+                        return (
+                          <button
+                            key={tpl.id}
+                            type="button"
+                            data-testid={`button-party-template-${tpl.id}`}
+                            data-option-id={`party-template-option-${tpl.id}`}
+                            onClick={() => handleTemplateSwitch(tpl.id)}
+                            className={`focus-ring rounded-2xl border p-3 text-start transition flex flex-col justify-between ${
+                              isChosen
+                                ? 'border-[#0A2E23] bg-[#0A2E23] text-white shadow-md'
+                                : 'border-[#D4AF37]/40 bg-white hover:bg-[#FAF7F2] text-[#17251F]'
+                            }`}
+                          >
+                            {/* Graphical Wireframe Mini-Preview */}
+                            <div
+                              className={`w-full h-20 rounded-xl mb-2.5 p-2 flex flex-col justify-between border ${
+                                isChosen ? 'bg-black/30 border-white/20' : 'bg-black/[0.03] border-black/10'
+                              }`}
+                            >
+                              {tpl.id === 'corporate' && (
+                                <div className="space-y-1.5 h-full flex flex-col justify-between">
+                                  <div className="flex items-center justify-between border-b border-current/20 pb-1">
+                                    <span className="h-1.5 w-7 rounded-full bg-current opacity-70" />
+                                    <span className="h-1.5 w-4 rounded-full bg-current opacity-85" />
+                                  </div>
+                                  <div className="h-2 w-3/4 rounded bg-current opacity-90 mx-auto" />
+                                  <div className="grid grid-cols-2 gap-1 pt-0.5">
+                                    <div className="h-3.5 rounded bg-current opacity-20" />
+                                    <div className="h-3.5 rounded bg-current opacity-20" />
+                                  </div>
+                                </div>
+                              )}
+                              {tpl.id === 'custom' && (
+                                <div className="h-full border border-dashed border-current/40 rounded-lg p-1 flex flex-col items-center justify-between">
+                                  <span className="text-[9px] opacity-80 leading-none">❖</span>
+                                  <div className="h-2 w-2/3 rounded bg-current opacity-90" />
+                                  <span className="text-[8px] opacity-60 select-none leading-none">── ✦ ──</span>
+                                  <div className="h-3 w-4/5 rounded bg-current opacity-20" />
+                                </div>
+                              )}
+                              {tpl.id === 'birthday' && (
+                                <div className="h-full flex flex-col items-center justify-center relative">
+                                  <div className="w-full h-10 rounded-lg border border-current/30 bg-current/10 p-1 flex flex-col items-center justify-center shadow-xs">
+                                    <div className="h-2 w-3/4 rounded bg-current opacity-90 mb-1" />
+                                    <div className="h-1.5 w-1/2 rounded bg-current opacity-60" />
+                                  </div>
+                                  <div className="flex gap-1 mt-1">
+                                    <span className="h-1.5 w-4 rounded-full bg-current opacity-40" />
+                                    <span className="h-1.5 w-4 rounded-full bg-current opacity-40" />
+                                  </div>
+                                </div>
+                              )}
+                              {tpl.id === 'baby-shower' && (
+                                <div className="h-full border border-current/30 rounded-t-[28px] rounded-b-md p-1 flex flex-col items-center justify-between bg-current/[0.04]">
+                                  <span className="text-[9px] opacity-70 leading-none">🌿</span>
+                                  <div className="h-2 w-3/4 rounded bg-current opacity-90" />
+                                  <div className="h-1.5 w-1/2 rounded bg-current opacity-40" />
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <strong className="block text-xs font-bold">{name}</strong>
+                              {isChosen && <Check size={14} className="text-[#D4AF37]" />}
+                            </div>
+                            <p className={`text-[10px] line-clamp-1 mt-0.5 ${isChosen ? 'opacity-75' : 'text-[#2D2421]/60'}`}>
+                              {isArabic ? tpl.descriptionAr : tpl.description}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* CARD 2: 🎨 COLOR PALETTE & THEME MOOD */}
+                  <div className="rounded-2xl border border-[#D4AF37]/40 bg-white/80 p-4 shadow-xs space-y-4">
+                    <div>
+                      <span className="block text-xs font-bold text-[#0A2E23] mb-1">
+                        🎨 {isArabic ? 'باليتات فاخرة منتقاة للمناسبات السعودية' : 'Curated Luxury Palettes'}
+                      </span>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {SAUDI_LUXURY_PALETTES.map((pal) => (
+                          <button
+                            key={pal.id}
+                            type="button"
+                            onClick={() =>
+                              updateEventFields({
+                                backgroundColor: pal.backgroundColor,
+                                primaryColor: pal.primaryColor,
+                                accentColor: pal.accentColor,
+                              })
+                            }
+                            className="p-2.5 rounded-xl border border-[#D4AF37]/40 bg-white hover:bg-black/5 text-start transition flex items-center justify-between"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-bold text-[#0A2E23] truncate">
+                                {isArabic ? pal.nameAr.split('·')[0].trim() : pal.name}
+                              </p>
+                            </div>
+                            <div className="flex -space-x-1 shrink-0">
+                              <span
+                                className="h-4 w-4 rounded-full border border-white"
+                                style={{ backgroundColor: pal.backgroundColor }}
+                              />
+                              <span
+                                className="h-4 w-4 rounded-full border border-white"
+                                style={{ backgroundColor: pal.accentColor }}
+                              />
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Template Visual Styles */}
+                    <div>
+                      <span className="block text-xs font-bold text-[#0A2E23] mb-1">
+                        {t('stylePreset')}
+                      </span>
+                      <div className="grid grid-cols-3 gap-2">
+                        {partyTemplates[event.templateId]?.supportedStyles.map((styleKey) => {
+                          const s = partyStyles[styleKey];
+                          if (!s) return null;
+                          const currentStyleKey = resolvePartyStyleId(event.templateId, event.styleId);
+                          const isCurrent = currentStyleKey === s.id;
+                          const name = isArabic ? s.nameAr : s.name;
+
+                          return (
+                            <button
+                              key={s.id}
+                              type="button"
+                              data-testid={`button-party-style-${s.id}`}
+                              data-option-id={`party-style-option-${s.id}`}
+                              onClick={() => handleStyleSwitch(s.id)}
+                              className={`focus-ring rounded-xl border p-2 text-start transition flex flex-col justify-between ${
+                                isCurrent
+                                  ? 'border-[#0A2E23] bg-white ring-2 ring-[#0A2E23] shadow-xs'
+                                  : 'border-[#D4AF37]/35 bg-white/60 hover:bg-white'
+                              }`}
+                            >
+                              <div className="flex items-center gap-1 mb-1.5">
+                                <span
+                                  className="h-3.5 w-3.5 rounded-full border border-black/20"
+                                  style={{ backgroundColor: s.backgroundColor }}
+                                />
+                                <span
+                                  className="h-3.5 w-3.5 rounded-full border border-black/20"
+                                  style={{ backgroundColor: s.accentColor }}
+                                />
+                              </div>
+                              <span className="text-[11px] font-bold text-[#0A2E23] truncate">{name}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* CARD 3: 🏢 BRAND & LOGO STUDIO */}
+                  <div className="rounded-2xl border border-[#D4AF37]/40 bg-white/80 p-4 shadow-xs space-y-4">
+                    <span className="block text-xs font-bold text-[#0A2E23]">
+                      🏢 {isArabic ? 'الشعار والهوية المؤسسية' : 'Brand Logo & Theme Studio'}
+                    </span>
+
                     <div className="flex items-center gap-3">
                       {event.logoUrl ? (
                         <div className="relative">
                           <img
                             src={event.logoUrl}
                             alt="Logo"
-                            className="h-12 w-12 rounded-xl object-contain border p-1 bg-white"
+                            className="h-14 w-14 rounded-xl object-contain border p-1 bg-white shadow-xs"
                           />
                           <button
                             type="button"
-                            onClick={() => updateEventFields({ logoUrl: null })}
+                            onClick={() => {
+                              setRawLogoUrl(null);
+                              updateEventFields({ logoUrl: null, brandPalette: undefined });
+                            }}
                             className="absolute -top-1.5 -end-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#B4534B] text-white text-[10px]"
                           >
                             &times;
                           </button>
                         </div>
                       ) : (
-                        <label className="flex h-12 w-12 cursor-pointer items-center justify-center rounded-xl border border-dashed border-[#D4AF37] bg-white text-[#D4AF37] hover:bg-black/5">
-                          <Upload size={18} />
+                        <label className="flex h-14 w-14 cursor-pointer items-center justify-center rounded-xl border border-dashed border-[#D4AF37] bg-white text-[#D4AF37] hover:bg-black/5 transition shadow-xs">
+                          <Upload size={20} />
                           <input
                             type="file"
                             accept="image/*"
                             className="sr-only"
                             onChange={(e) => {
                               const f = e.target.files?.[0];
-                              if (f) handleLogoUpload(f);
+                              if (f) void handleLogoUpload(f);
                             }}
                           />
                         </label>
@@ -1059,24 +1402,103 @@ export function PartyStudio({
 
                       <div className="flex-1">
                         <label className="inline-block text-xs font-bold text-[#0A2E23] cursor-pointer">
-                          <span className="underline">{isArabic ? 'رفع شعار' : 'Upload Logo'}</span>
+                          <span className="underline">{isArabic ? 'رفع شعار المؤسسة' : 'Upload Logo'}</span>
                           <input
                             type="file"
                             accept="image/*"
                             className="sr-only"
                             onChange={(e) => {
                               const f = e.target.files?.[0];
-                              if (f) handleLogoUpload(f);
+                              if (f) void handleLogoUpload(f);
                             }}
                           />
                         </label>
                         <p className="text-[11px] text-[#2D2421]/60">PNG, SVG, JPG, WebP</p>
+
+                        {/* Auto white background removal toggle */}
+                        <label className="flex items-center gap-2 cursor-pointer mt-1.5 text-[11px] font-semibold text-[#0A2E23]">
+                          <input
+                            type="checkbox"
+                            checked={autoRemoveWhiteBg}
+                            onChange={async (e) => {
+                              const checked = e.target.checked;
+                              setAutoRemoveWhiteBg(checked);
+                              if (rawLogoUrl) {
+                                const processed = checked
+                                  ? await processLogoDataUrl(rawLogoUrl, true)
+                                  : rawLogoUrl;
+                                updateEventFields({ logoUrl: processed });
+                              }
+                            }}
+                            className="h-3.5 w-3.5 rounded text-[#0A2E23]"
+                          />
+                          <span>{isArabic ? 'إزالة الخلفية البيضاء للشعار تلقائياً' : 'Auto-remove white background'}</span>
+                        </label>
                       </div>
                     </div>
 
-                    {/* Logo Size and Shape pills + Auto-Theme */}
                     {event.logoUrl && (
-                      <div className="mt-3 pt-3 border-t border-[#D4AF37]/20 space-y-2.5">
+                      <div className="pt-3 border-t border-[#D4AF37]/20 space-y-3">
+                        {/* Logo Container Style */}
+                        <div>
+                          <span className="block text-xs font-bold text-[#0A2E23] mb-1.5">
+                            {isArabic ? 'نمط عرض الشعار' : 'Logo Container'}:
+                          </span>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                            {(
+                              [
+                                ['auto-clean', isArabic ? 'تلقائي شفاف' : 'Auto-Clean'],
+                                ['glass-crest', isArabic ? 'درع زجاجي فاخر' : 'Luxury Crest'],
+                                ['white-pill', isArabic ? 'وسادة بيضاء' : 'White Pill'],
+                                ['raw', isArabic ? 'الأصلي' : 'Raw'],
+                              ] as const
+                            ).map(([mode, label]) => (
+                              <button
+                                key={mode}
+                                type="button"
+                                onClick={() => updateEventFields({ logoContainer: mode })}
+                                className={`px-2 py-1.5 rounded-xl text-[10px] font-bold transition text-center ${
+                                  (event.logoContainer || 'auto-clean') === mode
+                                    ? 'bg-[#0A2E23] text-white shadow-xs'
+                                    : 'bg-white border text-[#0A2E23]'
+                                }`}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Logo Placement */}
+                        <div>
+                          <span className="block text-xs font-bold text-[#0A2E23] mb-1.5">
+                            {isArabic ? 'موضع الشعار' : 'Logo Placement'}:
+                          </span>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {(
+                              [
+                                ['top-center', isArabic ? 'أعلى المنتصف' : 'Top Center'],
+                                ['header-bar', isArabic ? 'شريط العنوان' : 'Header Bar'],
+                                ['both-footer', isArabic ? 'أعلى + ختم أسفل' : 'Top & Footer'],
+                              ] as const
+                            ).map(([plc, label]) => (
+                              <button
+                                key={plc}
+                                type="button"
+                                onClick={() => updateEventFields({ logoPlacement: plc })}
+                                className={`px-2 py-1.5 rounded-xl text-[10px] font-bold transition text-center ${
+                                  (event.logoPlacement || 'top-center') === plc
+                                    ? 'bg-[#0A2E23] text-white shadow-xs'
+                                    : 'bg-white border text-[#0A2E23]'
+                                }`}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Logo Size */}
                         <div className="flex items-center justify-between text-xs font-semibold">
                           <span>{isArabic ? 'الحجم' : 'Size'}:</span>
                           <div className="flex gap-1.5">
@@ -1085,7 +1507,7 @@ export function PartyStudio({
                                 key={sz}
                                 type="button"
                                 onClick={() => updateEventFields({ logoSize: sz })}
-                                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase transition ${
+                                className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase transition ${
                                   (event.logoSize || 'md') === sz
                                     ? 'bg-[#0A2E23] text-white'
                                     : 'bg-white border text-[#0A2E23]'
@@ -1097,66 +1519,73 @@ export function PartyStudio({
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between text-xs font-semibold">
-                          <span>{isArabic ? 'الشكل' : 'Shape'}:</span>
-                          <div className="flex gap-1.5">
-                            {(
-                              [
-                                ['original', isArabic ? 'أصلي' : 'Original'],
-                                ['circle', isArabic ? 'دائري' : 'Circle'],
-                                ['rounded', isArabic ? 'مستدير' : 'Rounded'],
-                              ] as const
-                            ).map(([shp, label]) => (
-                              <button
-                                key={shp}
-                                type="button"
-                                onClick={() => updateEventFields({ logoShape: shp })}
-                                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition ${
-                                  (event.logoShape || 'original') === shp
-                                    ? 'bg-[#0A2E23] text-white'
-                                    : 'bg-white border text-[#0A2E23]'
-                                }`}
-                              >
-                                {label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* 1-Tap Auto-Color from Logo Button */}
-                        <button
-                          type="button"
-                          onClick={handleApplyLogoColors}
-                          disabled={isExtractingColors}
-                          className="w-full mt-2 flex items-center justify-center gap-1.5 rounded-xl bg-[#D4AF37] px-3 py-2 text-xs font-bold text-black shadow-xs hover:brightness-105 transition"
-                        >
-                          <Sparkles size={14} />
-                          <span>
-                            {isExtractingColors
-                              ? isArabic
-                                ? 'جاري الاستخراج...'
-                                : 'Extracting...'
-                              : isArabic
-                              ? '✨ تطبيق ألوان الشعار تلقائياً'
-                              : '✨ Apply Brand Colors from Logo'}
+                        {/* Real Pixel-Extracted Colors & 3 Brand Theme Buttons */}
+                        <div className="pt-2 border-t border-[#D4AF37]/20 space-y-2">
+                          <span className="block text-xs font-bold text-[#0A2E23]">
+                            ✨ {isArabic ? 'أنماط الألوان المستخرجة من الشعار' : 'Brand Themes from Logo'}:
                           </span>
-                        </button>
+
+                          <div className="grid grid-cols-3 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleApplyLogoTheme('dark')}
+                              disabled={isExtractingColors}
+                              className="px-2.5 py-2 rounded-xl bg-[#0F1E2E] text-white text-[10px] font-bold border border-[#D4AF37]/40 shadow-xs hover:brightness-110 transition text-center"
+                            >
+                              🌙 {isArabic ? 'داكن بالهوية' : 'Brand Dark'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleApplyLogoTheme('light')}
+                              disabled={isExtractingColors}
+                              className="px-2.5 py-2 rounded-xl bg-[#FAF8F5] text-[#17251F] text-[10px] font-bold border border-[#D4AF37]/40 shadow-xs hover:brightness-105 transition text-center"
+                            >
+                              ☀️ {isArabic ? 'فاتح بالهوية' : 'Brand Light'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleApplyLogoTheme('bold')}
+                              disabled={isExtractingColors}
+                              className="px-2.5 py-2 rounded-xl bg-[#D4AF37] text-black text-[10px] font-bold shadow-xs hover:brightness-110 transition text-center"
+                            >
+                              ✨ {isArabic ? 'لون الهوية الكامل' : 'Brand Bold'}
+                            </button>
+                          </div>
+
+                          {event.brandPalette && event.brandPalette.length > 0 && (
+                            <div className="flex items-center gap-1.5 pt-1">
+                              <span className="text-[10px] text-[#2D2421]/65">
+                                {isArabic ? 'العينات المستخرجة:' : 'Swatches:'}
+                              </span>
+                              <div className="flex -space-x-1">
+                                {event.brandPalette.map((hex, i) => (
+                                  <span
+                                    key={i}
+                                    className="h-4 w-4 rounded-full border border-white shadow-2xs"
+                                    style={{ backgroundColor: hex }}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
 
-                  {/* Custom Background Photo + Readability Dimmer */}
-                  <div className="rounded-2xl border border-[#D4AF37]/40 bg-white/70 p-4">
-                    <span className="block text-xs font-bold text-[#0A2E23] mb-2">
-                      🖼️ {isArabic ? 'صورة خلفية البطاقة' : 'Background Photo'}
+                  {/* CARD 4: 🖼️ BACKDROP & LIGHTING */}
+                  <div className="rounded-2xl border border-[#D4AF37]/40 bg-white/80 p-4 shadow-xs space-y-4">
+                    <span className="block text-xs font-bold text-[#0A2E23]">
+                      🖼️ {isArabic ? 'الخلفية والإضاءة' : 'Backdrop & Lighting'}
                     </span>
+
                     <div className="flex items-center gap-3">
                       {event.backgroundImageUrl ? (
                         <div className="relative">
                           <img
                             src={event.backgroundImageUrl}
                             alt="Background"
-                            className="h-12 w-12 rounded-xl object-cover border p-1 bg-white"
+                            className="h-14 w-14 rounded-xl object-cover border p-1 bg-white shadow-xs"
                           />
                           <button
                             type="button"
@@ -1167,8 +1596,8 @@ export function PartyStudio({
                           </button>
                         </div>
                       ) : (
-                        <label className="flex h-12 w-12 cursor-pointer items-center justify-center rounded-xl border border-dashed border-[#D4AF37] bg-white text-[#D4AF37] hover:bg-black/5">
-                          <ImageIcon size={18} />
+                        <label className="flex h-14 w-14 cursor-pointer items-center justify-center rounded-xl border border-dashed border-[#D4AF37] bg-white text-[#D4AF37] hover:bg-black/5 transition shadow-xs">
+                          <ImageIcon size={20} />
                           <input
                             type="file"
                             accept="image/*"
@@ -1183,9 +1612,7 @@ export function PartyStudio({
 
                       <div className="flex-1">
                         <label className="inline-block text-xs font-bold text-[#0A2E23] cursor-pointer">
-                          <span className="underline">
-                            {isArabic ? 'رفع صورة خلفية' : 'Upload Background'}
-                          </span>
+                          <span className="underline">{isArabic ? 'رفع صورة أو إطار مخصص' : 'Upload Photo or Frame'}</span>
                           <input
                             type="file"
                             accept="image/*"
@@ -1200,33 +1627,69 @@ export function PartyStudio({
                       </div>
                     </div>
 
+                    {/* Curated Luxury Background Presets */}
+                    <div>
+                      <span className="block text-xs font-bold text-[#0A2E23] mb-1.5">
+                        {isArabic ? 'أو اختر خلفية راقية جاهزة:' : 'Or choose luxury preset:'}
+                      </span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {LUXURY_BG_PRESETS.map((preset) => (
+                          <button
+                            key={preset.name}
+                            type="button"
+                            onClick={() => updateEventFields({ backgroundImageUrl: preset.url })}
+                            className="p-1.5 rounded-xl border border-[#D4AF37]/40 bg-white hover:bg-black/5 transition text-center"
+                          >
+                            <img
+                              src={preset.url}
+                              alt={preset.name}
+                              className="h-10 w-full object-cover rounded-lg mb-1"
+                            />
+                            <span className="block text-[10px] font-bold text-[#0A2E23] truncate">
+                              {isArabic ? preset.name : preset.nameEn}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
                     {event.backgroundImageUrl && (
-                      <div className="mt-3 pt-3 border-t border-[#D4AF37]/20 space-y-2">
-                        <div className="flex items-center justify-between text-xs font-semibold">
-                          <span>{isArabic ? 'وضعية العرض' : 'Fit'}:</span>
-                          <div className="flex gap-2">
-                            {(['cover', 'contain'] as const).map((fit) => (
+                      <div className="pt-3 border-t border-[#D4AF37]/20 space-y-3">
+                        {/* 3 Visual Fill Mode Pills */}
+                        <div>
+                          <span className="block text-xs font-bold text-[#0A2E23] mb-1.5">
+                            {isArabic ? 'طريقة تثبيت الخلفية (بدون أي تكرار)' : 'Fill Mode (No Tiling)'}:
+                          </span>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {(
+                              [
+                                ['full-pinned', isArabic ? 'ملء كامل' : 'Full Cover'],
+                                ['frame-9-16', isArabic ? 'إطار دعوة' : 'Border Frame'],
+                                ['hero-banner', isArabic ? 'غلاف علوي' : 'Top Banner'],
+                              ] as const
+                            ).map(([mode, label]) => (
                               <button
-                                key={fit}
+                                key={mode}
                                 type="button"
-                                onClick={() => updateEventFields({ backgroundFitMode: fit })}
-                                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase transition ${
-                                  (event.backgroundFitMode || 'cover') === fit
-                                    ? 'bg-[#0A2E23] text-white'
+                                onClick={() => updateEventFields({ backgroundMode: mode })}
+                                className={`px-2 py-1.5 rounded-xl text-[10px] font-bold transition text-center ${
+                                  (event.backgroundMode || 'full-pinned') === mode
+                                    ? 'bg-[#0A2E23] text-white shadow-xs'
                                     : 'bg-white border text-[#0A2E23]'
                                 }`}
                               >
-                                {fit}
+                                {label}
                               </button>
                             ))}
                           </div>
                         </div>
 
+                        {/* Readability Dimmer Slider */}
                         <div>
                           <div className="flex justify-between text-xs font-semibold mb-1">
                             <span>{isArabic ? 'تعتيم الخلفية لضمان القراءة' : 'Readability Dimmer'}:</span>
                             <span className="font-mono">
-                              {Math.round((event.backgroundOverlayOpacity ?? 0.45) * 100)}%
+                              {Math.round((event.backgroundOverlayOpacity ?? 0.55) * 100)}%
                             </span>
                           </div>
                           <input
@@ -1234,9 +1697,28 @@ export function PartyStudio({
                             min="0"
                             max="0.85"
                             step="0.05"
-                            value={event.backgroundOverlayOpacity ?? 0.45}
+                            value={event.backgroundOverlayOpacity ?? 0.55}
                             onChange={(e) =>
                               updateEventFields({ backgroundOverlayOpacity: parseFloat(e.target.value) })
+                            }
+                            className="w-full accent-[#0A2E23]"
+                          />
+                        </div>
+
+                        {/* Glass Blur Slider */}
+                        <div>
+                          <div className="flex justify-between text-xs font-semibold mb-1">
+                            <span>{isArabic ? 'تغبيش زجاجي للخلفية (Apple Invites)' : 'Glass Blur'}:</span>
+                            <span className="font-mono">{event.backgroundBlur ?? 0}px</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="16"
+                            step="1"
+                            value={event.backgroundBlur ?? 0}
+                            onChange={(e) =>
+                              updateEventFields({ backgroundBlur: parseInt(e.target.value, 10) })
                             }
                             className="w-full accent-[#0A2E23]"
                           />
@@ -1244,325 +1726,35 @@ export function PartyStudio({
                       </div>
                     )}
                   </div>
-
-                  {/* Template Family Selection */}
-                  <div>
-                    <span className="block text-xs font-bold text-[#0A2E23] mb-2">
-                      {t('templateFamily')}
-                    </span>
-                    <div className="grid grid-cols-2 gap-2.5">
-                      {Object.values(partyTemplates).map((tpl) => {
-                        const isChosen = event.templateId === tpl.id;
-                        const name = isArabic ? tpl.nameAr : tpl.name;
-                        return (
-                          <button
-                            key={tpl.id}
-                            type="button"
-                            data-testid={`button-party-template-${tpl.id}`}
-                            data-option-id={`party-template-option-${tpl.id}`}
-                            onClick={() => handleTemplateSwitch(tpl.id)}
-                            className={`focus-ring rounded-2xl border p-3 text-start transition ${
-                              isChosen
-                                ? 'border-[#0A2E23] bg-[#0A2E23] text-white shadow-xs'
-                                : 'border-[#D4AF37]/40 bg-white/70 hover:bg-white'
-                            }`}
-                          >
-                            <span className={`party-template-swatch party-template-swatch--${tpl.id}`} />
-                            <strong className="mt-2 block text-xs">{name}</strong>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Coordinated Visual Style Presets */}
-                  <div>
-                    <span className="block text-xs font-bold text-[#0A2E23] mb-2">
-                      {t('stylePreset')}
-                    </span>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      {partyTemplates[event.templateId]?.supportedStyles.map((styleKey) => {
-                        const s = partyStyles[styleKey];
-                        if (!s) return null;
-                        const currentStyleKey = resolvePartyStyleId(event.templateId, event.styleId);
-                        const isCurrent = currentStyleKey === s.id;
-                        const name = isArabic ? s.nameAr : s.name;
-
-                        return (
-                          <button
-                            key={s.id}
-                            type="button"
-                            data-testid={`button-party-style-${s.id}`}
-                            data-option-id={`party-style-option-${s.id}`}
-                            onClick={() => handleStyleSwitch(s.id)}
-                            className={`focus-ring rounded-2xl border p-3 text-start transition flex flex-col justify-between ${
-                              isCurrent
-                                ? 'border-[#0A2E23] bg-white ring-2 ring-[#0A2E23] shadow-xs'
-                                : 'border-[#D4AF37]/35 bg-white/50 hover:bg-white'
-                            }`}
-                          >
-                            <div className="flex items-center gap-1.5 mb-2">
-                              <span
-                                className="h-4 w-4 rounded-full border border-black/20"
-                                style={{ backgroundColor: s.backgroundColor }}
-                              />
-                              <span
-                                className="h-4 w-4 rounded-full border border-black/20"
-                                style={{ backgroundColor: s.accentColor }}
-                              />
-                              <span
-                                className="h-4 w-4 rounded-full border border-black/20"
-                                style={{ backgroundColor: s.primaryColor }}
-                              />
-                            </div>
-                            <span className="text-xs font-bold text-[#0A2E23]">{name}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Curated Saudi Luxury Palettes */}
-                  <div>
-                    <span className="block text-xs font-bold text-[#0A2E23] mb-2">
-                      🎨 {isArabic ? 'باليتات فاخرة منتقاة للمناسبات السعودية' : 'Curated Luxury Palettes'}
-                    </span>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {SAUDI_LUXURY_PALETTES.map((pal) => (
-                        <button
-                          key={pal.id}
-                          type="button"
-                          onClick={() =>
-                            updateEventFields({
-                              backgroundColor: pal.backgroundColor,
-                              primaryColor: pal.primaryColor,
-                              accentColor: pal.accentColor,
-                            })
-                          }
-                          className="p-2.5 rounded-xl border border-[#D4AF37]/40 bg-white hover:bg-black/5 text-start transition flex items-center justify-between"
-                        >
-                          <div>
-                            <p className="text-[11px] font-bold text-[#0A2E23]">
-                              {isArabic ? pal.nameAr.split('·')[0].trim() : pal.name}
-                            </p>
-                          </div>
-                          <div className="flex -space-x-1">
-                            <span
-                              className="h-3.5 w-3.5 rounded-full border"
-                              style={{ backgroundColor: pal.backgroundColor }}
-                            />
-                            <span
-                              className="h-3.5 w-3.5 rounded-full border"
-                              style={{ backgroundColor: pal.accentColor }}
-                            />
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Segmented Pills for Typography, Layout, Motion (No ugly select dropdowns!) */}
-                  <div className="space-y-3 border-t border-[#D4AF37]/30 pt-4">
-                    {/* Typography Pills */}
-                    <div>
-                      <span className="block text-xs font-bold text-[#0A2E23] mb-1.5">
-                        {t('typography')}
-                      </span>
-                      <div className="flex gap-2">
-                        {(['display', 'modern'] as const).map((typ) => (
-                          <button
-                            key={typ}
-                            type="button"
-                            onClick={() => updateEventFields({ typography: typ })}
-                            className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition ${
-                              event.typography === typ
-                                ? 'bg-[#0A2E23] text-white border-[#0A2E23]'
-                                : 'bg-white border-[#D4AF37]/40 text-[#0A2E23]'
-                            }`}
-                          >
-                            {typ === 'display' ? t('displayStyle') : t('modernStyle')}
-                          </button>
-                        ))}
-                      </div>
-                      <select
-                        value={event.typography}
-                        onChange={(e) => updateEventFields({ typography: e.target.value as PartyTypography })}
-                        className="sr-only"
-                        tabIndex={-1}
-                      >
-                        <option value="display">{t('displayStyle')}</option>
-                        <option value="modern">{t('modernStyle')}</option>
-                      </select>
-                    </div>
-
-                    {/* Layout Pills */}
-                    <div>
-                      <span className="block text-xs font-bold text-[#0A2E23] mb-1.5">
-                        {t('layout')}
-                      </span>
-                      <div className="flex gap-2">
-                        {(['centered', 'editorial'] as const).map((lay) => (
-                          <button
-                            key={lay}
-                            type="button"
-                            onClick={() => updateEventFields({ layout: lay })}
-                            className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition ${
-                              event.layout === lay
-                                ? 'bg-[#0A2E23] text-white border-[#0A2E23]'
-                                : 'bg-white border-[#D4AF37]/40 text-[#0A2E23]'
-                            }`}
-                          >
-                            {lay === 'centered' ? t('centered') : t('editorial')}
-                          </button>
-                        ))}
-                      </div>
-                      <select
-                        value={event.layout}
-                        onChange={(e) => updateEventFields({ layout: e.target.value as PartyLayout })}
-                        className="sr-only"
-                        tabIndex={-1}
-                      >
-                        <option value="centered">{t('centered')}</option>
-                        <option value="editorial">{t('editorial')}</option>
-                      </select>
-                    </div>
-
-                    {/* Motion Pills */}
-                    <div>
-                      <span className="block text-xs font-bold text-[#0A2E23] mb-1.5">
-                        {t('motion')}
-                      </span>
-                      <div className="flex gap-2">
-                        {(['gentle', 'none'] as const).map((mot) => (
-                          <button
-                            key={mot}
-                            type="button"
-                            onClick={() => updateEventFields({ motion: mot })}
-                            className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition ${
-                              event.motion === mot
-                                ? 'bg-[#0A2E23] text-white border-[#0A2E23]'
-                                : 'bg-white border-[#D4AF37]/40 text-[#0A2E23]'
-                            }`}
-                          >
-                            {mot === 'gentle' ? t('gentle') : t('none')}
-                          </button>
-                        ))}
-                      </div>
-                      <select
-                        value={event.motion}
-                        onChange={(e) => updateEventFields({ motion: e.target.value as PartyMotion })}
-                        className="sr-only"
-                        tabIndex={-1}
-                      >
-                        <option value="gentle">{t('gentle')}</option>
-                        <option value="none">{t('none')}</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Decorations Toggle */}
-                  <label className="flex items-center gap-3 rounded-2xl border border-[#D4AF37]/40 bg-white/60 p-3.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={event.decorations}
-                      onChange={(e) => updateEventFields({ decorations: e.target.checked })}
-                      className="h-4 w-4 rounded text-[#0A2E23]"
-                    />
-                    <span className="text-xs font-bold text-[#0A2E23]">
-                      {t('decorations')}
-                    </span>
-                  </label>
-
-                  {/* Custom Colors Override */}
-                  <div className="border-t border-[#D4AF37]/30 pt-4">
-                    <p className="text-xs font-bold text-[#0A2E23] mb-3">
-                      {t('details')} &bull; Color Overrides
-                    </p>
-                    <div className="grid grid-cols-3 gap-3">
-                      <label className="text-[11px] font-semibold text-[#0A2E23]">
-                        <span>{t('background')}</span>
-                        <input
-                          type="color"
-                          value={event.backgroundColor || '#0F1E2E'}
-                          onChange={(e) => updateEventFields({ backgroundColor: e.target.value })}
-                          className="mt-1 h-9 w-full rounded-xl border p-1 cursor-pointer"
-                        />
-                      </label>
-                      <label className="text-[11px] font-semibold text-[#0A2E23]">
-                        <span>{t('primaryColor')}</span>
-                        <input
-                          type="color"
-                          value={event.primaryColor || '#FFFFFF'}
-                          onChange={(e) => updateEventFields({ primaryColor: e.target.value })}
-                          className="mt-1 h-9 w-full rounded-xl border p-1 cursor-pointer"
-                        />
-                      </label>
-                      <label className="text-[11px] font-semibold text-[#0A2E23]">
-                        <span>{t('accentColor')}</span>
-                        <input
-                          type="color"
-                          value={event.accentColor || '#D4AF37'}
-                          onChange={(e) => updateEventFields({ accentColor: e.target.value })}
-                          className="mt-1 h-9 w-full rounded-xl border p-1 cursor-pointer"
-                        />
-                      </label>
-                    </div>
-                  </div>
-
-                  {/* Invitation Language Pills */}
-                  <div className="border-t border-[#D4AF37]/30 pt-4">
-                    <span className="block text-xs font-bold text-[#0A2E23] mb-1.5">
-                      {t('invitationLanguage')}
-                    </span>
-                    <div className="flex gap-2">
-                      {(['ar', 'en'] as const).map((lng) => (
-                        <button
-                          key={lng}
-                          type="button"
-                          onClick={() => {
-                            setInvitationLocale(lng);
-                            void onSave?.(event, blocks, lng);
-                          }}
-                          className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition ${
-                            invitationLocale === lng
-                              ? 'bg-[#0A2E23] text-white border-[#0A2E23]'
-                              : 'bg-white border-[#D4AF37]/40 text-[#0A2E23]'
-                          }`}
-                        >
-                          {lng === 'ar' ? t('arabic') : t('english')}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
                 </div>
               )}
 
-              {/* SHEET C: SECTIONS (Clean Cards, No 36-Circle Clutter!) */}
+              {/* SHEET C: SECTIONS (MODULAR BLOCKS LIST) */}
               {activeTab === 'sections' && (
                 <div className="mt-5 space-y-4">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-[#2D2421]/70">
-                      {blocks.filter((b) => b.enabled).length} / {blocks.length} {t('visible')}
-                    </span>
+                    <p className="text-xs text-[#2D2421]/70">
+                      {isArabic
+                        ? 'أعد ترتيب أو تخصيص فقرات الحفل بالضغط على أي قسم:'
+                        : 'Reorder, edit, or customize event modules:'}
+                    </p>
                     <button
                       type="button"
                       onClick={() => setActiveTab('add-block')}
-                      data-testid="button-add-section-sheet"
-                      className="qr-button qr-button--primary text-xs py-1.5 px-3 min-h-9"
+                      className="inline-flex items-center gap-1 text-xs font-bold text-[#0A2E23] hover:underline"
                     >
                       <Plus size={14} />
                       <span>{t('addSection')}</span>
                     </button>
                   </div>
 
-                  {/* Section Cards */}
-                  <div className="space-y-3">
+                  <div className="space-y-2.5">
                     {blocks.map((b, idx) => (
                       <div
                         key={b.id}
                         className={`rounded-2xl border p-3.5 transition flex flex-col justify-between gap-3 ${
                           b.enabled
-                            ? 'border-[#D4AF37]/45 bg-white/90 shadow-2xs'
+                            ? 'border-[#D4AF37]/45 bg-white shadow-2xs'
                             : 'border-[#2D2421]/15 bg-black/5 opacity-55'
                         }`}
                       >
@@ -1577,11 +1769,22 @@ export function PartyStudio({
                             className="flex items-center gap-3 min-w-0 text-start flex-1"
                           >
                             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#0A2E23]/10 text-[#0A2E23]">
-                              <Edit3 size={15} />
+                              {b.key === 'catering' && <Utensils size={16} />}
+                              {b.key === 'schedule' && <CalendarDays size={16} />}
+                              {b.key === 'dress' && <Shirt size={16} />}
+                              {b.key === 'registry' && <Gift size={16} />}
+                              {b.key === 'song' && <Music2 size={16} />}
+                              {b.key === 'faq' && <HelpCircle size={16} />}
+                              {b.key === 'venue' && <MapPin size={16} />}
+                              {b.key === 'host' && <User size={16} />}
+                              {b.key === 'text' && <Sparkles size={16} />}
+                              {b.key === 'cta' && <ExternalLink size={16} />}
+                              {b.key === 'divider' && <Minus size={16} />}
+                              {b.key === 'spacer' && <Layers size={16} />}
                             </span>
                             <div className="min-w-0">
                               <p className="truncate text-xs font-bold text-[#0A2E23]">
-                                {b.label || t(b.key)}
+                                {b.label || getBlockDefaultLabel(b.key, isArabic)}
                               </p>
                               <p className="truncate text-[11px] text-[#2D2421]/65">
                                 {b.content.heading || b.key}
@@ -1594,7 +1797,7 @@ export function PartyStudio({
                             type="button"
                             onClick={() => handleToggleBlock(b.id)}
                             data-testid={`button-toggle-${b.id}`}
-                            aria-label={t(b.enabled ? 'hide' : 'show')}
+                            aria-label={isArabic ? (b.enabled ? 'إخفاء القسم' : 'إظهار القسم') : (b.enabled ? 'Hide' : 'Show')}
                             className={`focus-ring inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold transition ${
                               b.enabled
                                 ? 'bg-[#0A2E23] text-white shadow-xs'
@@ -1602,7 +1805,7 @@ export function PartyStudio({
                             }`}
                           >
                             {b.enabled ? <Eye size={13} /> : <EyeOff size={13} />}
-                            <span>{t(b.enabled ? 'visible' : 'hide')}</span>
+                            <span>{isArabic ? (b.enabled ? 'ظاهر' : 'مخفي') : (b.enabled ? 'Visible' : 'Hidden')}</span>
                           </button>
                         </div>
 
@@ -1673,7 +1876,7 @@ export function PartyStudio({
                 </div>
               )}
 
-              {/* SHEET D: UPGRADED CUSTOM BLOCK EDITORS */}
+              {/* SHEET D: UPGRADED CUSTOM BLOCK EDITORS & 4-LAYOUT CUSTOM SECTION BUILDER */}
               {activeTab === 'edit-block' && activeBlock && (
                 <div className="mt-5 space-y-4">
                   <label className="block text-xs font-bold text-[#0A2E23]">
@@ -1799,14 +2002,14 @@ export function PartyStudio({
                           onClick={() => {
                             const current = [
                               ...(activeBlock.content.scheduleItems || []),
-                              { time: '10:00 PM', title: 'فقرة جديدة' },
+                              { time: '10:00 PM', title: isArabic ? 'فقرة جديدة' : 'New Agenda Item' },
                             ];
                             handleUpdateBlockContent(activeBlock.id, { scheduleItems: current });
                           }}
                           className="text-xs font-bold text-[#0A2E23] flex items-center gap-1 mt-2"
                         >
                           <Plus size={14} />
-                          <span>{isArabic ? 'إضافة فقرة جديدة' : 'Add Item'}</span>
+                          <span>{isArabic ? 'إضافة فقرة جديدة' : 'Add Agenda Row'}</span>
                         </button>
                       </div>
                     </div>
@@ -1815,105 +2018,99 @@ export function PartyStudio({
                   {/* 2. CATERING / HOSPITALITY EDITOR */}
                   {activeBlock.key === 'catering' && (
                     <div className="space-y-3 rounded-2xl border border-[#D4AF37]/40 bg-white/70 p-4">
-                      {/* Mode Toggle: Note vs Menu */}
                       <span className="block text-xs font-bold text-[#0A2E23]">
-                        🍽️ {isArabic ? 'نوع عرض الضيافة' : 'Hospitality Display Mode'}
+                        🍽️ {isArabic ? 'نوع عرض الضيافة' : 'Hospitality Mode'}
                       </span>
-                      <div className="flex gap-2">
+                      <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
                           onClick={() =>
                             handleUpdateBlockContent(activeBlock.id, { mode: 'note' })
                           }
-                          className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition ${
-                            activeBlock.content.mode === 'note'
+                          className={`p-2.5 rounded-xl border text-xs font-bold transition text-center ${
+                            activeBlock.content.mode !== 'menu'
                               ? 'bg-[#0A2E23] text-white border-[#0A2E23]'
                               : 'bg-white border-[#D4AF37]/40 text-[#0A2E23]'
                           }`}
                         >
-                          {isArabic ? 'رسالة ضيافة وعشاء (بدون خيارات)' : 'Hospitality Note'}
+                          ☕ {isArabic ? 'كلمة ضيافة وترحيب' : 'Hospitality Note'}
                         </button>
                         <button
                           type="button"
                           onClick={() =>
                             handleUpdateBlockContent(activeBlock.id, { mode: 'menu' })
                           }
-                          className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition ${
-                            activeBlock.content.mode !== 'note'
+                          className={`p-2.5 rounded-xl border text-xs font-bold transition text-center ${
+                            activeBlock.content.mode === 'menu'
                               ? 'bg-[#0A2E23] text-white border-[#0A2E23]'
                               : 'bg-white border-[#D4AF37]/40 text-[#0A2E23]'
                           }`}
                         >
-                          {isArabic ? 'قائمة أطباق يختار منها الضيف' : 'Selectable Dishes'}
+                          🍴 {isArabic ? 'قائمة أطباق يختار منها' : 'Selectable Menu'}
                         </button>
                       </div>
 
-                      {/* Presets */}
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        {[
-                          {
-                            label: 'مأدبة عشاء فاخرة',
-                            note: 'نتشرف بحضوركم وتناول طعام العشاء على مائدتنا العامرة.',
-                            dishes: ['القهوة السعودية والضيافة', 'مأدبة العشاء الفاخرة', 'الحلويات والمشروبات'],
-                          },
-                          {
-                            label: 'سحور رمضاني',
-                            note: 'يسعدنا لقاؤكم على مائدة السحور المبارك في ليالي الخير.',
-                            dishes: ['المقبلات والتمور الفاخرة', 'أطباق السحور الرئيسية', 'الشاي والحلويات الشرقية'],
-                          },
-                          {
-                            label: 'قهوة وضيافة ترحيبية',
-                            note: 'نسعد بلقائكم وتقديم أطيب القهوة السعودية والتمور الفاخرة.',
-                            dishes: ['قهوة سعودية أصيلة', 'تمور محشوة فاخرة', 'مشروبات باردة منعشة'],
-                          },
-                        ].map((preset, idx) => (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={() =>
-                              handleUpdateBlockContent(activeBlock.id, {
-                                note: preset.note,
-                                entree: preset.dishes,
-                              })
-                            }
-                            className="px-3 py-1 rounded-full border border-[#D4AF37]/40 bg-white text-[11px] font-semibold text-[#0A2E23] hover:bg-[#FAF7F2]"
-                          >
-                            {preset.label}
-                          </button>
-                        ))}
-                      </div>
-
-                      {activeBlock.content.mode === 'note' ? (
-                        <label className="block text-xs font-bold text-[#0A2E23] pt-2">
-                          <span>{isArabic ? 'نص رسالة الضيافة' : 'Hospitality Note'}</span>
-                          <textarea
-                            rows={3}
-                            value={activeBlock.content.note || ''}
-                            onChange={(e) =>
-                              handleUpdateBlockContent(activeBlock.id, { note: e.target.value })
-                            }
-                            className="qr-field mt-1.5"
-                          />
-                        </label>
-                      ) : (
+                      {activeBlock.content.mode !== 'menu' ? (
                         <div className="pt-2">
-                          <span className="block text-xs font-bold text-[#0A2E23] mb-1.5">
-                            {t('entrees')} ({isArabic ? 'طبق في كل سطر' : 'One dish per line'})
+                          <label className="block text-xs font-bold text-[#0A2E23]">
+                            <span>{isArabic ? 'نص الضيافة الكريمة' : 'Hospitality Note'}</span>
+                            <textarea
+                              rows={3}
+                              value={
+                                activeBlock.content.note ||
+                                (isArabic
+                                  ? 'نتشرف بضيافتكم الكريمة وتقديم القهوة السعودية الأصيلة ومأدبة العشاء الفاخرة.'
+                                  : 'We are honored to welcome you with authentic hospitality.')
+                              }
+                              onChange={(e) =>
+                                handleUpdateBlockContent(activeBlock.id, { note: e.target.value })
+                              }
+                              className="qr-field mt-1.5"
+                            />
+                          </label>
+                        </div>
+                      ) : (
+                        <div className="space-y-2 pt-2">
+                          <span className="block text-xs font-bold text-[#0A2E23]">
+                            {isArabic ? 'أطباق وقائمة العشاء' : 'Menu Dishes'}
                           </span>
-                          <textarea
-                            rows={4}
-                            value={(activeBlock.content.entree || []).join('\n')}
-                            onChange={(e) =>
-                              handleUpdateBlockContent(activeBlock.id, {
-                                entree: e.target.value
-                                  .split('\n')
-                                  .map((s) => s.trim())
-                                  .filter(Boolean),
-                              })
-                            }
-                            className="qr-field font-mono text-xs"
-                            placeholder="Dish 1&#10;Dish 2&#10;Dish 3"
-                          />
+                          {(
+                            activeBlock.content.entree || [
+                              'القهوة والضيافة',
+                              'مأدبة العشاء',
+                              'الحلويات والمشروبات',
+                            ]
+                          ).map((dish, dIdx) => (
+                            <div key={dIdx} className="flex gap-2 items-center">
+                              <input
+                                type="text"
+                                value={dish}
+                                onChange={(e) => {
+                                  const current = [
+                                    ...(activeBlock.content.entree || [
+                                      'طبق 1',
+                                      'طبق 2',
+                                    ]),
+                                  ];
+                                  current[dIdx] = e.target.value;
+                                  handleUpdateBlockContent(activeBlock.id, { entree: current });
+                                }}
+                                className="qr-field flex-1 text-xs"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const current = (activeBlock.content.entree || []).filter(
+                                    (_, i) => i !== dIdx
+                                  );
+                                  handleUpdateBlockContent(activeBlock.id, { entree: current });
+                                }}
+                                className="text-[#8C302B] hover:opacity-75 p-1"
+                              >
+                                <X size={16} />
+                              </button>
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -1923,52 +2120,38 @@ export function PartyStudio({
                   {activeBlock.key === 'dress' && (
                     <div className="space-y-3 rounded-2xl border border-[#D4AF37]/40 bg-white/70 p-4">
                       <span className="block text-xs font-bold text-[#0A2E23]">
-                        👔 {isArabic ? 'أنماط الزي الجاهزة' : 'Dress Code Presets'}
+                        👔 {isArabic ? 'صيغ الزي الموصى به' : 'Dress Code Presets'}
                       </span>
                       <div className="flex flex-wrap gap-2">
                         {[
-                          {
-                            name: 'الزي الرسمي السعودي',
-                            note: 'الزي الوطني الرسمي السعودي (ثوب وشماغ أو بشت).',
-                            swatches: ['#FFFFFF', '#D4AF37', '#1A1A1A'],
-                          },
-                          {
-                            name: 'Business Formal',
-                            note: 'بدلة رسمية للرجال ولباس مهني أنيق للسيدات.',
-                            swatches: ['#0F1E2E', '#94A3B8', '#F4F7F9'],
-                          },
-                          {
-                            name: 'Black Tie',
-                            note: 'ملابس سهرة فاخرة وربطة عنق سوداء.',
-                            swatches: ['#0A0A0A', '#D4AF37', '#FFFFFF'],
-                          },
-                          {
-                            name: 'كاجوال أنيق',
-                            note: 'إطلالة أنيقة وعصرية تناسب الأمسية.',
-                            swatches: ['#3E2723', '#C28B55', '#EFEBE9'],
-                          },
-                        ].map((preset, idx) => (
+                          { label: 'الزي الرسمي السعودي', en: 'Saudi National Formal' },
+                          { label: 'كاجوال أنيق', en: 'Smart Casual' },
+                          { label: 'سهرة وبلاك تاي', en: 'Black Tie / Evening' },
+                          { label: 'بدلة أعمال رسمية', en: 'Business Formal' },
+                        ].map((dPreset, idx) => (
                           <button
                             key={idx}
                             type="button"
                             onClick={() =>
                               handleUpdateBlockContent(activeBlock.id, {
-                                dressPreset: preset.name,
-                                note: preset.note,
-                                swatches: preset.swatches,
+                                dressPreset: isArabic ? dPreset.label : dPreset.en,
+                                note: isArabic
+                                  ? `الزي المعتمد للمناسبة: ${dPreset.label}`
+                                  : `Recommended attire: ${dPreset.en}`,
+                                swatches: ['#0F1E2E', '#94A3B8', '#F4F7F9'],
                               })
                             }
                             className="px-3 py-1 rounded-full border border-[#D4AF37]/40 bg-white text-[11px] font-semibold text-[#0A2E23] hover:bg-[#FAF7F2]"
                           >
-                            {preset.name}
+                            {isArabic ? dPreset.label : dPreset.en}
                           </button>
                         ))}
                       </div>
 
                       <label className="block text-xs font-bold text-[#0A2E23] pt-2">
-                        <span>{t('description')}</span>
-                        <textarea
-                          rows={3}
+                        <span>{isArabic ? 'تفاصيل الزي' : 'Attire Details'}</span>
+                        <input
+                          type="text"
                           value={activeBlock.content.note || ''}
                           onChange={(e) =>
                             handleUpdateBlockContent(activeBlock.id, { note: e.target.value })
@@ -1979,11 +2162,11 @@ export function PartyStudio({
                     </div>
                   )}
 
-                  {/* 4. FAQ / ACCESS EDITOR */}
+                  {/* 4. FAQ / ACCESS & GATES EDITOR */}
                   {activeBlock.key === 'faq' && (
                     <div className="space-y-3 rounded-2xl border border-[#D4AF37]/40 bg-white/70 p-4">
                       <span className="block text-xs font-bold text-[#0A2E23]">
-                        ❓ {isArabic ? 'إعداد الأسئلة الشائعة وتفاصيل الوصول' : 'Access & FAQ'}
+                        🚗 {isArabic ? 'أسئلة الوصول والمواقف' : 'Access & Valet Q&A'}
                       </span>
                       <div className="space-y-3">
                         {(
@@ -1994,17 +2177,17 @@ export function PartyStudio({
                             },
                           ]
                         ).map((item, qIdx) => (
-                          <div key={qIdx} className="p-3 rounded-xl border bg-white space-y-2">
+                          <div key={qIdx} className="space-y-1.5 rounded-xl border border-black/10 p-2.5 bg-white">
                             <div className="flex justify-between items-center">
                               <span className="text-[10px] font-bold uppercase text-[#0A2E23]">
-                                السؤال #{qIdx + 1}
+                                {isArabic ? `سؤال ${qIdx + 1}` : `Question ${qIdx + 1}`}
                               </span>
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const nextQ = (
-                                    activeBlock.content.questions || []
-                                  ).filter((_, i) => i !== qIdx);
+                                  const nextQ = (activeBlock.content.questions || []).filter(
+                                    (_, i) => i !== qIdx
+                                  );
                                   handleUpdateBlockContent(activeBlock.id, { questions: nextQ });
                                 }}
                                 className="text-[#8C302B] hover:opacity-75"
@@ -2013,29 +2196,26 @@ export function PartyStudio({
                               </button>
                             </div>
                             <input
+                              type="text"
                               value={item.q}
+                              placeholder="السؤال"
                               onChange={(e) => {
-                                const nextQ = [
-                                  ...(activeBlock.content.questions || []),
-                                ];
+                                const nextQ = [...(activeBlock.content.questions || [])];
                                 nextQ[qIdx] = { ...nextQ[qIdx], q: e.target.value };
                                 handleUpdateBlockContent(activeBlock.id, { questions: nextQ });
                               }}
-                              className="qr-field text-xs font-semibold"
-                              placeholder="السؤال"
+                              className="qr-field text-xs"
                             />
                             <textarea
                               rows={2}
                               value={item.a}
+                              placeholder="الإجابة"
                               onChange={(e) => {
-                                const nextQ = [
-                                  ...(activeBlock.content.questions || []),
-                                ];
+                                const nextQ = [...(activeBlock.content.questions || [])];
                                 nextQ[qIdx] = { ...nextQ[qIdx], a: e.target.value };
                                 handleUpdateBlockContent(activeBlock.id, { questions: nextQ });
                               }}
                               className="qr-field text-xs"
-                              placeholder="الإجابة"
                             />
                           </div>
                         ))}
@@ -2044,7 +2224,10 @@ export function PartyStudio({
                           onClick={() => {
                             const nextQ = [
                               ...(activeBlock.content.questions || []),
-                              { q: 'سؤال جديد', a: 'تفاصيل الإجابة' },
+                              {
+                                q: isArabic ? 'سؤال جديد' : 'New Question',
+                                a: isArabic ? 'الإجابة والتوضيح هنا' : 'Answer details here',
+                              },
                             ];
                             handleUpdateBlockContent(activeBlock.id, { questions: nextQ });
                           }}
@@ -2057,7 +2240,246 @@ export function PartyStudio({
                     </div>
                   )}
 
-                  {/* Note / Description for other blocks */}
+                  {/* 5. TRUE CUSTOM SMART SECTION BUILDER (FOR 'text' OR CUSTOM BLOCKS) */}
+                  {activeBlock.key === 'text' && (
+                    <div className="space-y-4 rounded-2xl border border-[#D4AF37]/40 bg-white/70 p-4">
+                      {/* Visual Layout Style Selector */}
+                      <div>
+                        <span className="block text-xs font-bold text-[#0A2E23] mb-1.5">
+                          🧩 {isArabic ? 'النمط البصري للقسم المخصص' : 'Custom Section Layout'}:
+                        </span>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {(
+                            [
+                              ['editorial-card', isArabic ? '📝 بطاقة نصية' : 'Editorial'],
+                              ['bullet-grid', isArabic ? '✨ قائمة مميزات' : 'Feature Grid'],
+                              ['image-spotlight', isArabic ? '🖼️ صورة بارزة' : 'Image Spotlight'],
+                              ['stats-highlights', isArabic ? '🎤 بطاقة متحدث' : 'Speaker Card'],
+                            ] as const
+                          ).map(([layoutKey, label]) => (
+                            <button
+                              key={layoutKey}
+                              type="button"
+                              onClick={() =>
+                                handleUpdateBlockContent(activeBlock.id, { customLayout: layoutKey })
+                              }
+                              className={`p-2 rounded-xl border text-[11px] font-bold transition text-center ${
+                                (activeBlock.content.customLayout || 'editorial-card') === layoutKey
+                                  ? 'bg-[#0A2E23] text-white border-[#0A2E23] shadow-xs'
+                                  : 'bg-white border-[#D4AF37]/40 text-[#0A2E23]'
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 1-Tap Saudi Custom Templates */}
+                      <div>
+                        <span className="block text-xs font-bold text-[#0A2E23] mb-1.5">
+                          ⚡ {isArabic ? 'نماذج سعودية جاهزة بنقرة واحدة' : '1-Tap Section Templates'}:
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {[
+                            {
+                              label: '🎤 المتحدث الرئيسي',
+                              layout: 'stats-highlights' as const,
+                              patch: {
+                                heading: 'د. خالد المنصور',
+                                badge: 'المتحدث الرئيسي',
+                                note: 'الرئيس التنفيذي ومستشار الابتكار · كلمة افتتاحية حول مستقبل الاستثمار والتحول الرقمي.',
+                              },
+                            },
+                            {
+                              label: '🏆 فئات الجوائز',
+                              layout: 'bullet-grid' as const,
+                              patch: {
+                                heading: 'فئات التكريم والجوائز',
+                                note: 'سيتم خلال الحفل تكريم الإنجازات الاستثنائية للعام 2026:',
+                                bullets: [
+                                  'جائزة التميز المؤسسي والابتكار',
+                                  'جائزة أفضل شريك استراتيجي',
+                                  'جائزة القيادة الملهمة',
+                                ],
+                              },
+                            },
+                            {
+                              label: '🚗 تعليمات المواقف والبوابات',
+                              layout: 'bullet-grid' as const,
+                              patch: {
+                                heading: 'تعليمات الوصول والبوابات',
+                                note: 'لضمان انسيابية وصولكم يرجى اتباع الإرشادات التالية:',
+                                bullets: [
+                                  'دخول كبار الشخصيات عبر البوابة رقم 1',
+                                  'تتوفر خدمة صف السيارات (Valet) مجاناً عند المدخل',
+                                  'يرجى إبراز رمز QR الخاص بالدعوة عند مكتب الاستقبال',
+                                ],
+                              },
+                            },
+                            {
+                              label: '🎓 سيرة الخريج المحتفى به',
+                              layout: 'image-spotlight' as const,
+                              patch: {
+                                heading: 'الخريج: فيصل بن عبدالعزيز',
+                                note: 'خريج كلية الطب والجراحة بمرتبة الشرف الأولى. نسعد بمشاركتكم فخرنا بهذا الإنجاز المبارك.',
+                                buttonLabel: 'عرض إهداءات الحفل',
+                              },
+                            },
+                            {
+                              label: '🌙 قائمة السحور الرمضاني',
+                              layout: 'bullet-grid' as const,
+                              patch: {
+                                heading: 'مائدة السحور الرمضاني المبارك',
+                                note: 'نتشرف بضيافتكم الكريمة وتناول وجبة السحور معاً:',
+                                bullets: [
+                                  'الرطب والتمر السكري والقهوة السعودية',
+                                  'أطباق شعبية وحجازية فاخرة',
+                                  'مشروبات رمضانية وحلويات طازجة',
+                                ],
+                              },
+                            },
+                            {
+                              label: '🎁 معلومات الإهداء والحساب',
+                              layout: 'editorial-card' as const,
+                              patch: {
+                                heading: 'معلومات الإهداء ومشاركتنا الفرحة',
+                                note: 'حضوركم هو أجمل وأثمن هدية تسعدنا وتكتمل بها فرحتنا. لمن يرغب بمشاركتنا الإهداء:\nIBAN: SA0380000000608010167519',
+                              },
+                            },
+                          ].map((tPreset, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => {
+                                handleUpdateBlockContent(activeBlock.id, {
+                                  customLayout: tPreset.layout,
+                                  ...tPreset.patch,
+                                });
+                              }}
+                              className="px-2.5 py-1 rounded-full border border-[#D4AF37]/40 bg-white text-[11px] font-semibold text-[#0A2E23] hover:bg-[#FAF7F2] transition"
+                            >
+                              {tPreset.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Bullet Grid items manager */}
+                      {activeBlock.content.customLayout === 'bullet-grid' && (
+                        <div className="space-y-2 pt-2 border-t border-[#D4AF37]/20">
+                          <span className="block text-xs font-bold text-[#0A2E23]">
+                            {isArabic ? 'قائمة النقاط والمميزات' : 'Bullet Items'}:
+                          </span>
+                          {(
+                            activeBlock.content.bullets || [
+                              'الميزة أو النقطة الأولى',
+                              'الميزة أو النقطة الثانية',
+                            ]
+                          ).map((bullet, bIdx) => (
+                            <div key={bIdx} className="flex gap-2 items-center">
+                              <span className="text-xs text-[#0A2E23]">✦</span>
+                              <input
+                                type="text"
+                                value={bullet}
+                                onChange={(e) => {
+                                  const current = [...(activeBlock.content.bullets || [])];
+                                  current[bIdx] = e.target.value;
+                                  handleUpdateBlockContent(activeBlock.id, { bullets: current });
+                                }}
+                                className="qr-field flex-1 text-xs"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const current = (activeBlock.content.bullets || []).filter(
+                                    (_, i) => i !== bIdx
+                                  );
+                                  handleUpdateBlockContent(activeBlock.id, { bullets: current });
+                                }}
+                                className="text-[#8C302B] hover:opacity-75 p-1"
+                              >
+                                <X size={16} />
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const current = [
+                                ...(activeBlock.content.bullets || []),
+                                isArabic ? 'نقطة جديدة' : 'New bullet item',
+                              ];
+                              handleUpdateBlockContent(activeBlock.id, { bullets: current });
+                            }}
+                            className="text-xs font-bold text-[#0A2E23] flex items-center gap-1 mt-1"
+                          >
+                            <Plus size={14} />
+                            <span>{isArabic ? 'إضافة نقطة جديدة' : 'Add Bullet Item'}</span>
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Image spotlight / Speaker image upload */}
+                      {(activeBlock.content.customLayout === 'image-spotlight' ||
+                        activeBlock.content.customLayout === 'stats-highlights') && (
+                        <div className="space-y-2 pt-2 border-t border-[#D4AF37]/20">
+                          <span className="block text-xs font-bold text-[#0A2E23]">
+                            {activeBlock.content.customLayout === 'stats-highlights'
+                              ? isArabic
+                                ? 'صورة المتحدث أو الرمز'
+                                : 'Speaker Photo / Avatar'
+                              : isArabic
+                              ? 'صورة القسم البارزة'
+                              : 'Spotlight Image'}
+                          </span>
+                          <div className="flex items-center gap-3">
+                            {activeBlock.content.imageUrl && (
+                              <img
+                                src={activeBlock.content.imageUrl}
+                                alt="Section Image"
+                                className="h-12 w-12 rounded-xl object-cover border"
+                              />
+                            )}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) {
+                                  const reader = new FileReader();
+                                  reader.onload = (re) => {
+                                    handleUpdateBlockContent(activeBlock.id, {
+                                      imageUrl: re.target?.result as string,
+                                    });
+                                  };
+                                  reader.readAsDataURL(f);
+                                }
+                              }}
+                              className="text-xs text-[#0A2E23]"
+                            />
+                          </div>
+
+                          {activeBlock.content.customLayout === 'stats-highlights' && (
+                            <label className="block text-xs font-bold text-[#0A2E23] pt-1">
+                              <span>{isArabic ? 'شارة الصفة (مثال: المتحدث الرئيسي)' : 'Role Badge'}</span>
+                              <input
+                                type="text"
+                                value={activeBlock.content.badge || ''}
+                                onChange={(e) =>
+                                  handleUpdateBlockContent(activeBlock.id, { badge: e.target.value })
+                                }
+                                placeholder="المتحدث الرئيسي"
+                                className="qr-field mt-1 text-xs"
+                              />
+                            </label>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Note / Description for blocks that need it */}
                   {!['catering', 'faq', 'schedule', 'dress', 'divider', 'spacer'].includes(
                     activeBlock.key
                   ) && (
@@ -2075,19 +2497,38 @@ export function PartyStudio({
                   )}
 
                   {/* CTA or Registry Link URL */}
-                  {(activeBlock.key === 'cta' || activeBlock.key === 'registry') && (
-                    <label className="block text-xs font-bold text-[#0A2E23]">
-                      <span>Link URL</span>
-                      <input
-                        type="url"
-                        value={activeBlock.content.url || ''}
-                        onChange={(e) =>
-                          handleUpdateBlockContent(activeBlock.id, { url: e.target.value })
-                        }
-                        placeholder="https://..."
-                        className="qr-field mt-1.5"
-                      />
-                    </label>
+                  {(activeBlock.key === 'cta' ||
+                    activeBlock.key === 'registry' ||
+                    activeBlock.content.customLayout === 'image-spotlight' ||
+                    activeBlock.content.customLayout === 'editorial-card') && (
+                    <div className="space-y-2">
+                      <label className="block text-xs font-bold text-[#0A2E23]">
+                        <span>{isArabic ? 'رابط الزر (URL)' : 'Button Link URL'}</span>
+                        <input
+                          type="url"
+                          value={activeBlock.content.url || ''}
+                          onChange={(e) =>
+                            handleUpdateBlockContent(activeBlock.id, { url: e.target.value })
+                          }
+                          placeholder="https://..."
+                          className="qr-field mt-1.5"
+                        />
+                      </label>
+                      {activeBlock.content.url && (
+                        <label className="block text-xs font-bold text-[#0A2E23]">
+                          <span>{isArabic ? 'نص الزر' : 'Button Label'}</span>
+                          <input
+                            type="text"
+                            value={activeBlock.content.buttonLabel || ''}
+                            onChange={(e) =>
+                              handleUpdateBlockContent(activeBlock.id, { buttonLabel: e.target.value })
+                            }
+                            placeholder={isArabic ? 'فتح الرابط' : 'Open Link'}
+                            className="qr-field mt-1.5"
+                          />
+                        </label>
+                      )}
+                    </div>
                   )}
 
                   <div className="flex gap-2 pt-3">
@@ -2111,46 +2552,184 @@ export function PartyStudio({
                 </div>
               )}
 
-              {/* SHEET E: ADD NEW SECTION CATALOG */}
+              {/* SHEET E: CATEGORIZED SECTION CATALOG FOR SAUDI & CORPORATE EVENTS */}
               {activeTab === 'add-block' && (
-                <div className="mt-5 space-y-4">
-                  <p className="text-xs text-[#2D2421]/70">
-                    {t('sectionCatalogHelp')}
-                  </p>
+                <div className="mt-5 space-y-5">
+                  {/* Top Featured Hero Card: Create Custom Smart Section */}
+                  <div
+                    onClick={() => handleAddBlock('text')}
+                    className="cursor-pointer rounded-2xl border-2 border-[#D4AF37] bg-gradient-to-r from-[#0A2E23] to-[#144436] p-4 text-white shadow-md hover:scale-[1.01] transition flex items-center justify-between gap-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/20 text-[#D4AF37]">
+                        <Sparkles size={22} />
+                      </span>
+                      <div>
+                        <h3 className="font-bold text-sm text-[#FAF7F2]">
+                          🧩 {isArabic ? 'إنشاء قسم مخصص بالكامل' : 'Create Custom Smart Section'}
+                        </h3>
+                        <p className="text-xs text-white/80 mt-0.5">
+                          {isArabic
+                            ? 'أضف قسماً حراً بـ 4 أنماط: بطاقة نصية، قائمة مميزات، صورة بارزة، أو متحدث'
+                            : 'Build any section: text cards, feature bullets, image spotlight, or VIP speaker'}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="px-4 py-2 rounded-xl bg-[#D4AF37] text-black text-xs font-bold shrink-0 shadow-xs"
+                    >
+                      {isArabic ? '+ إنشاء الآن' : '+ Create'}
+                    </button>
+                  </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {(
-                      [
-                        { key: 'catering', icon: Utensils, label: t('catering') },
-                        { key: 'schedule', icon: CalendarDays, label: t('schedule') },
-                        { key: 'dress', icon: Shirt, label: t('dress') },
-                        { key: 'registry', icon: Gift, label: t('registry') },
-                        { key: 'song', icon: Music2, label: t('song') },
-                        { key: 'faq', icon: HelpCircle, label: t('faq') },
-                        { key: 'host', icon: User, label: t('host') },
-                        { key: 'venue', icon: MapPin, label: t('venue') },
-                        { key: 'text', icon: Sparkles, label: t('text') },
-                        { key: 'cta', icon: ExternalLink, label: t('cta') },
-                        { key: 'divider', icon: Minus, label: t('divider') },
-                        { key: 'spacer', icon: Layers, label: t('spacer') },
-                      ] as const
-                    ).map((cat) => {
-                      const Icon = cat.icon;
-                      return (
-                        <button
-                          key={cat.key}
-                          type="button"
-                          onClick={() => handleAddBlock(cat.key)}
-                          data-testid={`button-add-catalog-${cat.key}`}
-                          className="focus-ring flex flex-col items-center justify-center p-4 rounded-2xl border border-[#D4AF37]/40 bg-white/70 hover:bg-white hover:border-[#0A2E23] transition shadow-xs text-center"
-                        >
-                          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#0A2E23]/10 text-[#0A2E23] mb-2">
-                            <Icon size={18} />
-                          </span>
-                          <span className="text-xs font-bold text-[#0A2E23]">{cat.label}</span>
-                        </button>
-                      );
-                    })}
+                  {/* Category 1: Event Essentials */}
+                  <div className="space-y-2.5">
+                    <span className="block text-xs font-bold text-[#0A2E23]">
+                      1. {isArabic ? 'أساسيات الحفل والمناسبة' : 'Event Essentials'}
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {[
+                        {
+                          key: 'schedule' as const,
+                          icon: CalendarDays,
+                          title: isArabic ? 'برنامج الحفل والأجندة' : 'Agenda & Timeline',
+                          desc: isArabic ? 'جدول زمني لفقرات ومراسم الحفل' : 'Interactive schedule of proceedings',
+                        },
+                        {
+                          key: 'catering' as const,
+                          icon: Utensils,
+                          title: isArabic ? 'الضيافة ومأدبة العشاء' : 'Hospitality & Dining',
+                          desc: isArabic ? 'القهوة السعودية، مأدبة العشاء أو الأطباق' : 'Saudi coffee, gala dinner or menu',
+                        },
+                        {
+                          key: 'dress' as const,
+                          icon: Shirt,
+                          title: isArabic ? 'الزي المطلوب' : 'Dress Code & Attire',
+                          desc: isArabic ? 'الزي الرسمي السعودي، كاجوال أنيق أو سهرة' : 'Official attire and dress code',
+                        },
+                        {
+                          key: 'venue' as const,
+                          icon: MapPin,
+                          title: isArabic ? 'الموقع والاتجاهات' : 'Location & Directions',
+                          desc: isArabic ? 'تفاصيل القاعة ورابط خرائط Google' : 'Hall location & Google Maps pin',
+                        },
+                      ].map((item) => {
+                        const Icon = item.icon;
+                        return (
+                          <button
+                            key={item.key}
+                            type="button"
+                            onClick={() => handleAddBlock(item.key)}
+                            data-testid={`button-add-catalog-${item.key}`}
+                            className="focus-ring flex items-center gap-3 p-3.5 rounded-2xl border border-[#D4AF37]/40 bg-white hover:bg-[#FAF7F2] hover:border-[#0A2E23] transition shadow-xs text-start"
+                          >
+                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#0A2E23]/10 text-[#0A2E23]">
+                              <Icon size={18} />
+                            </span>
+                            <div className="min-w-0">
+                              <h4 className="text-xs font-bold text-[#0A2E23] truncate">{item.title}</h4>
+                              <p className="text-[11px] text-[#2D2421]/65 truncate mt-0.5">{item.desc}</p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Category 2: Corporate, Speakers & Access */}
+                  <div className="space-y-2.5">
+                    <span className="block text-xs font-bold text-[#0A2E23]">
+                      2. {isArabic ? 'الشركات والوصول والمتحدثون' : 'Corporate, Speakers & Access'}
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {[
+                        {
+                          key: 'host' as const,
+                          icon: User,
+                          title: isArabic ? 'المتحدثون / الضيوف / الداعون' : 'Speakers & VIP Hosts',
+                          desc: isArabic ? 'إبراز المتحدثين، ضيوف الشرف أو الجهة المنظمة' : 'Keynote speakers, VIPs or hosts',
+                        },
+                        {
+                          key: 'faq' as const,
+                          icon: HelpCircle,
+                          title: isArabic ? 'المواقف، البوابات ومعلومات الوصول' : 'Valet, Gates & Access',
+                          desc: isArabic ? 'خدمة صف السيارات، البوابات وتعليمات الدخول' : 'Valet parking, gate numbers & entry',
+                        },
+                        {
+                          key: 'cta' as const,
+                          icon: ExternalLink,
+                          title: isArabic ? 'زر ورابط تفاعلي' : 'External Action Link',
+                          desc: isArabic ? 'رابط ملف الحفل، كتيب أو واتساب' : 'Brochure PDF, website or WhatsApp',
+                        },
+                      ].map((item) => {
+                        const Icon = item.icon;
+                        return (
+                          <button
+                            key={item.key}
+                            type="button"
+                            onClick={() => handleAddBlock(item.key)}
+                            data-testid={`button-add-catalog-${item.key}`}
+                            className="focus-ring flex items-center gap-3 p-3.5 rounded-2xl border border-[#D4AF37]/40 bg-white hover:bg-[#FAF7F2] hover:border-[#0A2E23] transition shadow-xs text-start"
+                          >
+                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#0A2E23]/10 text-[#0A2E23]">
+                              <Icon size={18} />
+                            </span>
+                            <div className="min-w-0">
+                              <h4 className="text-xs font-bold text-[#0A2E23] truncate">{item.title}</h4>
+                              <p className="text-[11px] text-[#2D2421]/65 truncate mt-0.5">{item.desc}</p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Category 3: Interactive & Layout */}
+                  <div className="space-y-2.5">
+                    <span className="block text-xs font-bold text-[#0A2E23]">
+                      3. {isArabic ? 'تفاعلي وتنسيق البطاقة' : 'Interactive & Layout'}
+                    </span>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                      {[
+                        {
+                          key: 'registry' as const,
+                          icon: Gift,
+                          title: isArabic ? 'مميزات المناسبة' : 'Highlights & Gifts',
+                        },
+                        {
+                          key: 'song' as const,
+                          icon: Music2,
+                          title: isArabic ? 'ركن تهاني الضيوف' : 'Guest Wishes',
+                        },
+                        {
+                          key: 'divider' as const,
+                          icon: Minus,
+                          title: isArabic ? 'فاصل ذهبي مزخرف' : 'Ornamental Divider',
+                        },
+                        {
+                          key: 'spacer' as const,
+                          icon: Layers,
+                          title: isArabic ? 'مسافة تباعد إضافية' : 'Spacing Gap',
+                        },
+                      ].map((item) => {
+                        const Icon = item.icon;
+                        return (
+                          <button
+                            key={item.key}
+                            type="button"
+                            onClick={() => handleAddBlock(item.key)}
+                            data-testid={`button-add-catalog-${item.key}`}
+                            className="focus-ring flex flex-col items-center justify-center p-3 rounded-2xl border border-[#D4AF37]/40 bg-white hover:bg-[#FAF7F2] transition shadow-xs text-center"
+                          >
+                            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#0A2E23]/10 text-[#0A2E23] mb-1.5">
+                              <Icon size={16} />
+                            </span>
+                            <h4 className="text-[11px] font-bold text-[#0A2E23] truncate w-full">{item.title}</h4>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               )}

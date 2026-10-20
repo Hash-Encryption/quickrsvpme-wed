@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowDown,
   ArrowUp,
+  Award,
   CalendarDays,
   Check,
   CheckCircle2,
@@ -12,7 +13,6 @@ import {
   Copy,
   Edit3,
   ExternalLink,
-  Eye,
   EyeOff,
   Gift,
   Heart,
@@ -20,8 +20,6 @@ import {
   LockKeyhole,
   MapPin,
   Music2,
-  PartyPopper,
-  QrCode,
   Shirt,
   Sparkles,
   Trash2,
@@ -42,6 +40,7 @@ import {
   type StudioBlock,
 } from './model.ts';
 import { formatFullHijriDate } from '../utils/saudiCalendar.ts';
+import { hexToRgb, getRelativeLuminance, mixColors } from '../utils/brandColorExtractor.ts';
 
 export type RSVPStatus = 'pending' | 'accepted' | 'declined';
 export type { BlockKey, BlockContent, StudioBlock };
@@ -60,8 +59,9 @@ export type PartyInvitationRendererProps = {
   preview?: boolean;
   song?: string;
   meal?: string;
-  invitationLocale: InvitationLocale;
+  invitationLocale?: InvitationLocale;
   uiLocale?: 'en' | 'ar';
+  activeTab?: 'card' | 'pass';
   onRsvp?: (status: RSVPStatus, count?: number) => void;
   onSongChange?: (song: string) => void;
   onMealChange?: (meal: string) => void;
@@ -69,7 +69,7 @@ export type PartyInvitationRendererProps = {
   isEditMode?: boolean;
   selectedBlockId?: string | null;
   onSelectBlock?: (id: string) => void;
-  onSelectSection?: (section: 'hero' | 'details' | 'wording' | 'design') => void;
+  onSelectSection?: (sectionKey: string) => void;
   onMoveBlock?: (index: number, direction: -1 | 1) => void;
   onToggleBlock?: (id: string) => void;
   onDeleteBlock?: (id: string) => void;
@@ -81,12 +81,10 @@ export type PartyInvitationRendererProps = {
  * High-density luxury SVG QR Code with finder patterns for Apple Wallet & VIP Gate Pass
  */
 export function QRPassMark({ label }: { label: string }) {
-  // Deterministic 11x11 pattern with authentic 3x3 finder patterns in top-left, top-right, bottom-left
   const matrix = useMemo(() => {
     const size = 11;
     const grid: boolean[][] = Array.from({ length: size }, () => Array(size).fill(false));
 
-    // Helper to paint finder pattern
     const paintFinder = (row: number, col: number) => {
       for (let r = 0; r < 3; r++) {
         for (let c = 0; c < 3; c++) {
@@ -99,7 +97,6 @@ export function QRPassMark({ label }: { label: string }) {
     paintFinder(0, 8);
     paintFinder(8, 0);
 
-    // Decorative timing patterns
     for (let i = 3; i < 8; i++) {
       grid[1][i] = i % 2 === 0;
       grid[i][1] = i % 2 === 0;
@@ -107,14 +104,12 @@ export function QRPassMark({ label }: { label: string }) {
       grid[9][i] = i % 2 === 1;
     }
 
-    // Dynamic data bits
     for (let r = 3; r < 8; r++) {
       for (let c = 3; c < 8; c++) {
         grid[r][c] = (r * 7 + c * 13 + 5) % 3 < 2;
       }
     }
 
-    // Pass ID corner bits
     grid[0][4] = true;
     grid[0][6] = true;
     grid[10][4] = true;
@@ -142,11 +137,6 @@ export function QRPassMark({ label }: { label: string }) {
             />
           ))
         )}
-      </div>
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div className="h-6 w-6 rounded-md bg-white/95 border border-[var(--party-accent)]/80 flex items-center justify-center shadow-xs">
-          <Sparkles size={11} className="text-[#C28B55]" />
-        </div>
       </div>
     </div>
   );
@@ -242,6 +232,7 @@ export function PartyInvitationRenderer({
   meal = '',
   invitationLocale,
   uiLocale = 'ar',
+  activeTab,
   onRsvp,
   onSongChange,
   onMealChange,
@@ -260,14 +251,29 @@ export function PartyInvitationRenderer({
   const [localSong, setLocalSong] = useState(song);
   const [heroSelected, setHeroSelected] = useState(false);
 
-  const isArabic = invitationLocale === 'ar';
+  const effectiveLocale: InvitationLocale = invitationLocale ?? (uiLocale === 'en' ? 'en' : 'ar');
+  const isArabic = effectiveLocale === 'ar';
   const styleKey = resolvePartyStyleId(event.templateId, event.styleId);
   const style = partyStyles[styleKey] ?? partyStyles['luxury-emerald'];
 
   const bg = event.backgroundColor || style.backgroundColor;
   const primary = event.primaryColor || style.primaryColor;
   const accent = event.accentColor || style.accentColor;
-  const surface = style.surfaceColor;
+
+  // Dynamically calculate surface color based on the active background to eliminate hardcoded navy boxes
+  const isDarkBg = useMemo(() => {
+    try {
+      const [r, g, b] = hexToRgb(bg);
+      return getRelativeLuminance(r, g, b) < 0.45;
+    } catch {
+      return true;
+    }
+  }, [bg]);
+
+  const surface = useMemo(() => {
+    if (!event.backgroundColor) return style.surfaceColor;
+    return isDarkBg ? mixColors(bg, '#FFFFFF', 0.08) : mixColors(bg, '#000000', 0.05);
+  }, [event.backgroundColor, bg, isDarkBg, style.surfaceColor]);
 
   const partyStyle = {
     '--party-bg': bg,
@@ -291,12 +297,12 @@ export function PartyInvitationRenderer({
   const isCustom = event.templateId === 'custom';
 
   const defaultBadge = isCorporate
-    ? partyInvitationT(invitationLocale, 'corporateBadge')
+    ? partyInvitationT(effectiveLocale, 'corporateBadge')
     : isBirthday
-    ? partyInvitationT(invitationLocale, 'birthdayBadge')
+    ? partyInvitationT(effectiveLocale, 'birthdayBadge')
     : isBabyShower
-    ? partyInvitationT(invitationLocale, 'babyShowerBadge')
-    : partyInvitationT(invitationLocale, 'customBadge');
+    ? partyInvitationT(effectiveLocale, 'babyShowerBadge')
+    : partyInvitationT(effectiveLocale, 'customBadge');
 
   const badgeText = event.badgeText?.trim() || defaultBadge;
 
@@ -321,38 +327,132 @@ export function PartyInvitationRenderer({
     rounded: 'rounded-2xl object-cover',
   }[event.logoShape || 'original'];
 
+  const logoContainerMode = event.logoContainer || 'auto-clean';
+  const logoPlacement = event.logoPlacement || 'top-center';
+
+  // Render logo with container styling
+  const renderLogo = (customClass = '') => {
+    if (!event.logoUrl) return null;
+
+    const imgEl = (
+      <img
+        src={event.logoUrl}
+        alt="Brand Logo"
+        className={`transition-all ${logoSizeClass} ${logoShapeClass} ${customClass}`}
+      />
+    );
+
+    if (logoContainerMode === 'glass-crest') {
+      return (
+        <div className="px-5 py-2.5 rounded-2xl bg-white/95 backdrop-blur-md shadow-lg border border-[var(--party-accent)]/30 inline-flex items-center justify-center">
+          {imgEl}
+        </div>
+      );
+    }
+
+    if (logoContainerMode === 'white-pill') {
+      return (
+        <div className="px-4 py-2 rounded-full bg-white shadow-md inline-flex items-center justify-center">
+          {imgEl}
+        </div>
+      );
+    }
+
+    // 'auto-clean' / 'raw'
+    return <div className="inline-block drop-shadow-md">{imgEl}</div>;
+  };
+
   const handleHeroClick = () => {
     if (!isEditMode) return;
     setHeroSelected(true);
     onSelectSection?.('hero');
   };
 
+  const bgMode = event.backgroundMode || 'full-pinned';
+  const bgBlur = event.backgroundBlur ?? 0;
+  const overlayOpacity = event.backgroundOverlayOpacity ?? 0.55;
+
   return (
     <div
       style={partyStyle}
       className={`party-invitation party-template--${event.templateId} party-layout--${event.layout} party-type--${event.typography} party-motion--${event.motion} min-h-[100dvh] overflow-x-hidden text-[var(--party-primary)] select-text relative transition-colors duration-300 ${preview ? 'party-invitation--preview' : ''}`}
-      lang={invitationLocale}
-      dir={localeDirection(invitationLocale)}
+      lang={effectiveLocale}
+      dir={localeDirection(effectiveLocale)}
     >
-      {/* Background Custom Image with Contrast Dimmer */}
+      {/* 1. BACKGROUND ENGINE (Zero Tiling/Repeating + 3 Fill Modes + Blur) */}
       {event.backgroundImageUrl && (
-        <div
-          className="pointer-events-none absolute inset-0 z-0 bg-cover bg-center transition-opacity"
-          style={{
-            backgroundImage: `url(${event.backgroundImageUrl})`,
-            backgroundSize: event.backgroundFitMode || 'cover',
-          }}
-        >
+        <>
+          {bgMode === 'full-pinned' && (
+            <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden="true">
+              <img
+                src={event.backgroundImageUrl}
+                alt=""
+                className="w-full h-full object-cover object-center"
+                style={{
+                  filter: bgBlur > 0 ? `blur(${bgBlur}px) scale(1.05)` : undefined,
+                }}
+              />
+              <div
+                className="absolute inset-0"
+                style={{
+                  backgroundColor: bg,
+                  opacity: overlayOpacity,
+                }}
+              />
+              {/* Bottom melt fade so long scrolling sections seamlessly match canvas background */}
+              <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-[var(--party-bg)] to-transparent" />
+            </div>
+          )}
+
+          {bgMode === 'frame-9-16' && (
+            <div
+              className="pointer-events-none absolute inset-0 z-0"
+              style={{
+                backgroundImage: `url(${event.backgroundImageUrl})`,
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: '100% 100%',
+                backgroundPosition: 'center',
+                filter: bgBlur > 0 ? `blur(${bgBlur}px)` : undefined,
+              }}
+              aria-hidden="true"
+            >
+              <div
+                className="absolute inset-0"
+                style={{
+                  backgroundColor: bg,
+                  opacity: overlayOpacity * 0.45,
+                }}
+              />
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Top Banner Mode (Header Image) */}
+      {event.backgroundImageUrl && bgMode === 'hero-banner' && (
+        <div className="relative w-full h-56 sm:h-64 overflow-hidden z-0">
+          <img
+            src={event.backgroundImageUrl}
+            alt=""
+            className="w-full h-full object-cover object-center"
+            style={{
+              filter: bgBlur > 0 ? `blur(${bgBlur}px)` : undefined,
+            }}
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-[var(--party-bg)] via-[var(--party-bg)]/40 to-transparent" />
           <div
-            className="absolute inset-0 bg-black"
-            style={{ opacity: event.backgroundOverlayOpacity ?? 0.45 }}
+            className="absolute inset-0"
+            style={{
+              backgroundColor: bg,
+              opacity: overlayOpacity * 0.35,
+            }}
           />
         </div>
       )}
 
       {/* Background Decorative Layer */}
       {event.decorations && (
-        <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+        <div className="pointer-events-none absolute inset-0 overflow-hidden z-0" aria-hidden="true">
           {isCorporate && (
             <div className="absolute inset-0 opacity-15">
               <div className="absolute left-8 top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-[var(--party-accent)] to-transparent" />
@@ -388,185 +488,307 @@ export function PartyInvitationRenderer({
       )}
 
       {/* Main Luxury Poster Container */}
-      <main className="relative z-10 mx-auto max-w-2xl px-5 sm:px-8 pt-8 pb-28">
-        {/* HERO SECTION */}
-        <section
-          onClick={handleHeroClick}
-          className={`relative text-center pb-10 pt-6 transition-all duration-200 ${
-            isEditMode
-              ? 'cursor-pointer rounded-3xl p-4 hover:ring-1 hover:ring-[var(--party-accent)]/50'
-              : ''
-          } ${
-            isEditMode && heroSelected && !selectedBlockId
-              ? 'ring-1 ring-[var(--party-accent)] shadow-xl bg-black/10 rounded-3xl'
-              : ''
-          } ${
-            isCustom
-              ? 'border border-[var(--party-accent)]/30 rounded-[28px] p-6 sm:p-8 backdrop-blur-xs shadow-sm bg-black/10'
-              : isBabyShower
-              ? 'border border-[var(--party-accent)]/30 rounded-t-[110px] rounded-b-[28px] p-8 backdrop-blur-xs bg-black/5'
-              : ''
-          }`}
-          data-testid="section-hero"
-        >
-          {/* On-Canvas Floating Action Pill Bar for Hero */}
-          {isEditMode && heroSelected && !selectedBlockId && (
-            <div
-              className="absolute -top-4 inset-x-0 mx-auto z-30 flex items-center justify-center gap-1.5 p-1 rounded-full bg-[#18201C]/95 text-white border border-[var(--party-accent)]/60 shadow-2xl backdrop-blur-md w-fit max-w-[95%]"
-              onClick={(e) => e.stopPropagation()}
+      <main className="relative z-10 mx-auto max-w-2xl px-5 sm:px-8 pt-6 pb-28">
+        {/* On-Canvas Floating Action Pill Bar for Hero */}
+        {isEditMode && heroSelected && !selectedBlockId && (
+          <div
+            className="mb-4 mx-auto z-30 flex items-center justify-center gap-1.5 p-1 rounded-full bg-[#18201C]/95 text-white border border-[var(--party-accent)]/60 shadow-2xl backdrop-blur-md w-fit max-w-[95%]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => onSelectSection?.('hero')}
+              className="flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-semibold bg-white/10 hover:bg-white/20 transition"
             >
-              <button
-                type="button"
-                onClick={() => onSelectSection?.('hero')}
-                className="flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-semibold bg-white/10 hover:bg-white/20 transition"
-              >
-                <Edit3 size={11} className="text-[var(--party-accent)]" />
-                <span>{isArabic ? 'تعديل التفاصيل' : 'Edit Details'}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => onSelectSection?.('wording')}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/10 hover:bg-white/20 transition"
-              >
-                <Sparkles size={11} className="text-[var(--party-accent)]" />
-                <span>{isArabic ? 'الصياغة' : 'Wording'}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const scales: ('sm' | 'md' | 'lg' | 'xl')[] = ['sm', 'md', 'lg', 'xl'];
-                  const curr = event.titleScale || 'lg';
-                  const next = scales[(scales.indexOf(curr) + 1) % scales.length];
-                  onChangeTitleScale?.(next);
-                }}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/10 hover:bg-white/20 transition"
-                title="Change Title Size"
-              >
-                <span className="text-[var(--party-accent)] font-bold text-[10px]">
-                  📏 {(event.titleScale || 'lg').toUpperCase()}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => onSelectSection?.('design')}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/10 hover:bg-white/20 transition"
-              >
-                <span>🏷️</span>
-                <span>{isArabic ? '+ الشعار' : '+ Logo'}</span>
-              </button>
-            </div>
-          )}
-
-          {/* Logo Showcase */}
-          {event.logoUrl && (
-            <div className="mb-5 flex justify-center">
-              <img
-                src={event.logoUrl}
-                alt="Brand Logo"
-                className={`transition-all shadow-sm ${logoSizeClass} ${logoShapeClass}`}
-              />
-            </div>
-          )}
-
-          {/* Badge Pill */}
-          <div className="inline-flex items-center gap-2 rounded-full border border-[var(--party-accent)]/40 bg-[var(--party-surface)]/80 px-4 py-1.5 backdrop-blur-xs shadow-xs">
-            <span className="h-1.5 w-1.5 rounded-full bg-[var(--party-accent)]" />
-            <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[.18em] text-[var(--party-accent)]">
-              <bdi>{badgeText}</bdi>
-            </span>
+              <Edit3 size={11} className="text-[var(--party-accent)]" />
+              <span>{isArabic ? 'تعديل التفاصيل' : 'Edit Details'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onSelectSection?.('wording')}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/10 hover:bg-white/20 transition"
+            >
+              <Sparkles size={11} className="text-[var(--party-accent)]" />
+              <span>{isArabic ? 'الصياغة' : 'Wording'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const scales: ('sm' | 'md' | 'lg' | 'xl')[] = ['sm', 'md', 'lg', 'xl'];
+                const curr = event.titleScale || 'lg';
+                const next = scales[(scales.indexOf(curr) + 1) % scales.length];
+                onChangeTitleScale?.(next);
+              }}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/10 hover:bg-white/20 transition"
+              title="Change Title Size"
+            >
+              <span className="text-[var(--party-accent)] font-bold text-[10px]">
+                📏 {(event.titleScale || 'lg').toUpperCase()}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onSelectSection?.('design')}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/10 hover:bg-white/20 transition"
+            >
+              <span>🏷️</span>
+              <span>{isArabic ? '+ الشعار' : '+ Logo'}</span>
+            </button>
           </div>
+        )}
 
-          {/* Host Name */}
-          {event.hostName && (
-            <p className="mt-4 text-xs sm:text-sm font-semibold tracking-wider uppercase opacity-75">
-              <bdi>{event.hostName}</bdi>
-            </p>
-          )}
+        {/* 2. THE 4 DISTINCT ARCHITECTURAL HERO LAYOUTS */}
 
-          {/* Event Title */}
-          <h1
-            className={`mt-4 font-display font-bold leading-[1.08] text-[var(--party-primary)] break-words ${titleScaleClass}`}
-            dir="auto"
+        {/* TEMPLATE ARCHITECTURE 1: CORPORATE EXECUTIVE BENTO */}
+        {isCorporate && (
+          <section
+            onClick={handleHeroClick}
+            className={`relative pb-8 pt-4 transition-all duration-200 ${
+              isEditMode ? 'cursor-pointer hover:ring-1 hover:ring-[var(--party-accent)]/50 rounded-3xl p-3' : ''
+            } ${isEditMode && heroSelected && !selectedBlockId ? 'ring-1 ring-[var(--party-accent)] shadow-xl bg-black/10 rounded-3xl' : ''}`}
+            data-testid="section-hero"
           >
-            <bdi>{event.title}</bdi>
-          </h1>
-
-          {/* Cultural Saudi Divider for Custom/Majlis */}
-          {isCustom && (
-            <div className="my-4 flex items-center justify-center gap-2 text-[var(--party-accent)]/60 text-xs select-none">
-              <span className="h-px w-12 bg-current" />
-              <span>✦</span>
-              <span className="h-px w-12 bg-current" />
+            {/* Top Architectural Header Bar */}
+            <div className="flex items-center justify-between border-b border-[var(--party-accent)]/20 pb-4 mb-6">
+              <div className="flex items-center gap-3">
+                {event.logoUrl && (logoPlacement === 'header-bar' || logoPlacement === 'top-center') ? (
+                  renderLogo('max-h-11')
+                ) : (
+                  <span className="font-display font-bold tracking-widest text-xs uppercase text-[var(--party-accent)]">
+                    {event.hostName || 'EXECUTIVE INVITATION'}
+                  </span>
+                )}
+              </div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-[var(--party-accent)]/40 bg-[var(--party-surface)] px-3.5 py-1 shadow-xs">
+                <span className="h-1.5 w-1.5 rounded-full bg-[var(--party-accent)] animate-pulse" />
+                <span className="text-[10px] font-bold uppercase tracking-[.18em] text-[var(--party-accent)]">
+                  <bdi>{badgeText}</bdi>
+                </span>
+              </div>
             </div>
-          )}
 
-          {/* Subtitle */}
-          {event.subtitle && (
-            <p className="mt-2 text-sm sm:text-base font-medium opacity-85" dir="auto">
-              <bdi>{event.subtitle}</bdi>
-            </p>
-          )}
+            {/* Headline and Host Wording */}
+            <div className="text-center sm:text-start max-w-xl">
+              {event.hostName && (
+                <p className="text-xs sm:text-sm font-semibold tracking-widest uppercase text-[var(--party-accent)] mb-2">
+                  <bdi>{isArabic ? `بدعوة كريمة من: ${event.hostName}` : `Hosted by ${event.hostName}`}</bdi>
+                </p>
+              )}
+              <h1 className={`font-display font-bold leading-[1.08] text-[var(--party-primary)] break-words ${titleScaleClass}`} dir="auto">
+                <bdi>{event.title}</bdi>
+              </h1>
+              {event.subtitle && (
+                <p className="mt-2 text-sm sm:text-base font-medium opacity-85" dir="auto">
+                  <bdi>{event.subtitle}</bdi>
+                </p>
+              )}
+              <p className="mt-4 break-words text-sm sm:text-base leading-relaxed opacity-90 text-[var(--party-primary)]" dir="auto">
+                <bdi>{event.invitationWording}</bdi>
+              </p>
+            </div>
 
-          {/* Invitation Wording */}
-          <p
-            className="mx-auto mt-5 max-w-lg break-words text-sm sm:text-base leading-relaxed opacity-90 text-[var(--party-primary)]"
-            dir="auto"
-          >
-            <bdi>{event.invitationWording}</bdi>
-          </p>
-
-          {/* 4 Distinct Architectural Date / Venue Showcase */}
-          {isCorporate ? (
-            /* Corporate: Structured 2-column Date/Hijri & Venue/Maps glass bar */
-            <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-lg mx-auto">
-              <div className="rounded-2xl border border-[var(--party-accent)]/30 bg-[var(--party-surface)]/80 p-3.5 backdrop-blur-xs text-start">
+            {/* 2x2 Bento Info Grid */}
+            <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              {/* Bento 1: Gregorian & Hijri Date */}
+              <div className="rounded-2xl border border-[var(--party-accent)]/30 bg-[var(--party-surface)] p-4 text-start shadow-xs">
                 <div className="flex items-center gap-2 text-[var(--party-accent)] text-xs font-bold uppercase tracking-wider mb-1">
-                  <CalendarDays size={14} />
-                  <span>{formatPartyDate(event.date, invitationLocale)}</span>
+                  <CalendarDays size={15} />
+                  <span>{formatPartyDate(event.date, effectiveLocale)}</span>
                 </div>
                 {event.showHijriDate && event.date && (
-                  <p className="text-[11px] opacity-80 font-medium">
+                  <p className="text-xs opacity-80 font-medium mt-1">
                     {formatFullHijriDate(event.date, isArabic ? 'ar' : 'en')}
-                  </p>
-                )}
-                {(event.timeLabel || event.startTime) && (
-                  <p className="text-[11px] opacity-85 mt-1 flex items-center gap-1.5 font-mono" dir="ltr">
-                    <Clock size={12} className="text-[var(--party-accent)]" />
-                    <span>{event.timeLabel || event.startTime}</span>
                   </p>
                 )}
               </div>
 
-              <div className="rounded-2xl border border-[var(--party-accent)]/30 bg-[var(--party-surface)]/80 p-3.5 backdrop-blur-xs text-start flex flex-col justify-between">
+              {/* Bento 2: Time & Saudi Anchor */}
+              <div className="rounded-2xl border border-[var(--party-accent)]/30 bg-[var(--party-surface)] p-4 text-start shadow-xs">
+                <div className="flex items-center gap-2 text-[var(--party-accent)] text-xs font-bold uppercase tracking-wider mb-1">
+                  <Clock size={15} />
+                  <span>{isArabic ? 'موعد الحضور' : 'Time'}</span>
+                </div>
+                <p className="text-xs font-semibold opacity-90 mt-1" dir={isArabic ? 'rtl' : 'ltr'}>
+                  {event.timeLabel || event.startTime || (isArabic ? 'بعد صلاة العشاء' : 'Evening')}
+                </p>
+              </div>
+
+              {/* Bento 3: Venue, City & Maps Pin */}
+              <div className="rounded-2xl border border-[var(--party-accent)]/30 bg-[var(--party-surface)] p-4 text-start shadow-xs flex flex-col justify-between">
                 <div>
                   <div className="flex items-center gap-2 text-[var(--party-accent)] text-xs font-bold mb-1">
-                    <MapPin size={14} />
+                    <MapPin size={15} />
                     <bdi>{event.venue || (isArabic ? 'الموقع سيحدد لاحقاً' : 'Venue TBA')}</bdi>
                   </div>
-                  {event.city && <p className="text-[11px] opacity-80">{event.city}</p>}
+                  {event.city && <p className="text-xs opacity-75">{event.city}</p>}
                 </div>
                 {event.mapUrl && (
                   <a
                     href={event.mapUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[var(--party-accent)] hover:underline"
+                    className="mt-2 inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--party-accent)] hover:underline"
                   >
                     <span>{isArabic ? 'فتح في خرائط Google' : 'Open in Maps'}</span>
                     <ExternalLink size={11} />
                   </a>
                 )}
               </div>
+
+              {/* Bento 4: VIP Access & Attire Code */}
+              <div className="rounded-2xl border border-[var(--party-accent)]/30 bg-[var(--party-surface)] p-4 text-start shadow-xs">
+                <div className="flex items-center gap-2 text-[var(--party-accent)] text-xs font-bold uppercase tracking-wider mb-1">
+                  <Shirt size={15} />
+                  <span>{isArabic ? 'الزي والدخول' : 'Access & Attire'}</span>
+                </div>
+                <p className="text-xs font-semibold opacity-90 mt-1">
+                  {isArabic ? 'الزي الرسمي السعودي · الدخول ببطاقة الدعوة' : 'Business Formal · Invitation Required'}
+                </p>
+              </div>
             </div>
-          ) : (
-            /* Standard / Ambient floating badges */
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-2.5">
+          </section>
+        )}
+
+        {/* TEMPLATE ARCHITECTURE 2: ROYAL SAUDI MAJLIS STATIONERY */}
+        {isCustom && (
+          <section
+            onClick={handleHeroClick}
+            className={`relative text-center border-2 border-[var(--party-accent)]/40 rounded-[32px] p-6 sm:p-10 shadow-sm backdrop-blur-xs transition-all duration-200 ${
+              isEditMode ? 'cursor-pointer hover:ring-1 hover:ring-[var(--party-accent)]/50' : ''
+            } ${isEditMode && heroSelected && !selectedBlockId ? 'ring-1 ring-[var(--party-accent)]' : ''}`}
+            style={{ backgroundColor: surface }}
+            data-testid="section-hero"
+          >
+            {/* SVG Arabesque Corner Ornaments */}
+            <svg className="absolute top-2.5 start-2.5 w-7 h-7 text-[var(--party-accent)] opacity-60" viewBox="0 0 32 32" fill="none">
+              <path d="M2 14V2H14M2 2L12 12M6 2H10M2 6V10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            <svg className="absolute top-2.5 end-2.5 w-7 h-7 text-[var(--party-accent)] opacity-60" viewBox="0 0 32 32" fill="none">
+              <path d="M30 14V2H18M30 2L20 12M26 2H22M30 6V10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            <svg className="absolute bottom-2.5 start-2.5 w-7 h-7 text-[var(--party-accent)] opacity-60" viewBox="0 0 32 32" fill="none">
+              <path d="M2 18V30H14M2 30L12 20M6 30H10M2 26V22" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            <svg className="absolute bottom-2.5 end-2.5 w-7 h-7 text-[var(--party-accent)] opacity-60" viewBox="0 0 32 32" fill="none">
+              <path d="M30 18V30H18M30 30L20 20M26 30H22M30 26V22" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+
+            {/* Central Top Ceremonial Crest */}
+            <div className="mb-4 flex flex-col items-center">
+              {event.logoUrl && (logoPlacement === 'top-center' || logoPlacement === 'header-bar') ? (
+                <div className="mb-3">{renderLogo()}</div>
+              ) : (
+                <div className="h-8 w-8 rounded-full border border-[var(--party-accent)]/50 flex items-center justify-center text-[var(--party-accent)] mb-2">
+                  <span className="text-sm">❖</span>
+                </div>
+              )}
+              <div className="inline-flex items-center gap-2 rounded-full border border-[var(--party-accent)]/40 px-4 py-1 text-[10px] font-bold uppercase tracking-[.18em] text-[var(--party-accent)]">
+                <bdi>{badgeText}</bdi>
+              </div>
+            </div>
+
+            {event.hostName && (
+              <p className="mt-2 text-xs sm:text-sm font-semibold tracking-wider uppercase opacity-85">
+                <bdi>{event.hostName}</bdi>
+              </p>
+            )}
+
+            <h1 className={`mt-3 font-display font-bold leading-[1.12] text-[var(--party-primary)] break-words ${titleScaleClass}`} dir="auto">
+              <bdi>{event.title}</bdi>
+            </h1>
+
+            {/* Cultural Saudi Divider */}
+            <div className="my-4 flex items-center justify-center gap-3 text-[var(--party-accent)]/70 text-xs select-none">
+              <span className="h-px w-14 bg-current" />
+              <span>✦</span>
+              <span className="h-px w-14 bg-current" />
+            </div>
+
+            {event.subtitle && (
+              <p className="text-sm sm:text-base font-medium opacity-85" dir="auto">
+                <bdi>{event.subtitle}</bdi>
+              </p>
+            )}
+
+            <p className="mx-auto mt-4 max-w-lg break-words text-sm sm:text-base leading-relaxed opacity-90 text-[var(--party-primary)]" dir="auto">
+              <bdi>{event.invitationWording}</bdi>
+            </p>
+
+            {/* Ceremonial Date & Hijri Medallion */}
+            <div className="mt-8 inline-flex flex-col sm:flex-row items-center justify-center gap-3 rounded-2xl border border-[var(--party-accent)]/35 bg-black/15 px-6 py-3 shadow-inner">
+              <div className="flex items-center gap-2 text-xs font-semibold text-[var(--party-accent)]">
+                <CalendarDays size={15} />
+                <time dateTime={event.date}>{formatPartyDate(event.date, effectiveLocale)}</time>
+              </div>
+              {event.showHijriDate && event.date && (
+                <span className="text-xs opacity-80">
+                  &bull; {formatFullHijriDate(event.date, isArabic ? 'ar' : 'en')}
+                </span>
+              )}
+              {(event.timeLabel || event.startTime) && (
+                <span className="text-xs opacity-80 flex items-center gap-1 font-mono" dir="ltr">
+                  <Clock size={12} className="text-[var(--party-accent)]" />
+                  {event.timeLabel || event.startTime}
+                </span>
+              )}
+            </div>
+
+            {event.venue && (
+              <div className="mt-3 text-xs opacity-80 flex items-center justify-center gap-1.5">
+                <MapPin size={13} className="text-[var(--party-accent)]" />
+                <bdi>{event.venue}{event.city ? ` · ${event.city}` : ''}</bdi>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* TEMPLATE ARCHITECTURE 3: APPLE INVITES FLOATING GLASS POSTER */}
+        {isBirthday && (
+          <section
+            onClick={handleHeroClick}
+            className={`relative text-center pb-8 pt-4 transition-all duration-200 ${
+              isEditMode ? 'cursor-pointer hover:ring-1 hover:ring-[var(--party-accent)]/50 rounded-3xl p-3' : ''
+            } ${isEditMode && heroSelected && !selectedBlockId ? 'ring-1 ring-[var(--party-accent)] rounded-3xl' : ''}`}
+            data-testid="section-hero"
+          >
+            {/* Sculpted Frosted Glass Hero Card */}
+            <div className="backdrop-blur-xl bg-white/10 border border-white/25 rounded-[32px] p-6 sm:p-9 shadow-2xl relative overflow-hidden mb-6">
+              {event.logoUrl && <div className="mb-4 flex justify-center">{renderLogo()}</div>}
+
+              <div className="inline-flex items-center gap-2 rounded-full border border-[var(--party-accent)]/40 bg-[var(--party-surface)]/80 px-4 py-1.5 shadow-xs mb-4">
+                <span className="h-1.5 w-1.5 rounded-full bg-[var(--party-accent)]" />
+                <span className="text-[10px] font-bold uppercase tracking-[.18em] text-[var(--party-accent)]">
+                  <bdi>{badgeText}</bdi>
+                </span>
+              </div>
+
+              {event.hostName && (
+                <p className="text-xs sm:text-sm font-semibold tracking-wider uppercase opacity-85 mb-2">
+                  <bdi>{event.hostName}</bdi>
+                </p>
+              )}
+
+              <h1 className={`font-display font-bold leading-[1.08] text-[var(--party-primary)] break-words ${titleScaleClass}`} dir="auto">
+                <bdi>{event.title}</bdi>
+              </h1>
+
+              {event.subtitle && (
+                <p className="mt-2 text-sm sm:text-base font-medium opacity-85" dir="auto">
+                  <bdi>{event.subtitle}</bdi>
+                </p>
+              )}
+
+              <p className="mx-auto mt-4 max-w-lg break-words text-sm sm:text-base leading-relaxed opacity-90 text-[var(--party-primary)]" dir="auto">
+                <bdi>{event.invitationWording}</bdi>
+              </p>
+            </div>
+
+            {/* Floating Glass Info Chips */}
+            <div className="flex flex-wrap items-center justify-center gap-2.5">
               {event.date && (
-                <div className="flex items-center gap-2 rounded-full border border-[var(--party-accent)]/40 bg-[var(--party-surface)]/75 px-4 py-2 text-xs font-semibold backdrop-blur-xs shadow-xs">
+                <div className="flex items-center gap-2 rounded-full border border-[var(--party-accent)]/40 bg-[var(--party-surface)] px-4 py-2 text-xs font-semibold shadow-xs">
                   <CalendarDays size={14} className="text-[var(--party-accent)]" />
-                  <time dateTime={event.date}>
-                    {formatPartyDate(event.date, invitationLocale)}
-                  </time>
+                  <time dateTime={event.date}>{formatPartyDate(event.date, effectiveLocale)}</time>
                   {event.showHijriDate && (
                     <span className="opacity-75 text-[11px] font-normal ps-1">
                       &bull; {formatFullHijriDate(event.date, isArabic ? 'ar' : 'en')}
@@ -576,37 +798,86 @@ export function PartyInvitationRenderer({
               )}
 
               {(event.timeLabel || event.startTime) && (
-                <div className="flex items-center gap-2 rounded-full border border-[var(--party-accent)]/40 bg-[var(--party-surface)]/75 px-4 py-2 text-xs font-semibold backdrop-blur-xs shadow-xs">
+                <div className="flex items-center gap-2 rounded-full border border-[var(--party-accent)]/40 bg-[var(--party-surface)] px-4 py-2 text-xs font-semibold shadow-xs">
                   <Clock size={14} className="text-[var(--party-accent)]" />
                   <span dir="ltr">{event.timeLabel || event.startTime}</span>
                 </div>
               )}
 
               {event.venue && (
-                <div className="flex items-center gap-2 rounded-full border border-[var(--party-accent)]/40 bg-[var(--party-surface)]/75 px-4 py-2 text-xs font-semibold backdrop-blur-xs shadow-xs">
+                <div className="flex items-center gap-2 rounded-full border border-[var(--party-accent)]/40 bg-[var(--party-surface)] px-4 py-2 text-xs font-semibold shadow-xs">
                   <MapPin size={14} className="text-[var(--party-accent)]" />
-                  <bdi>
-                    {event.venue}
-                    {event.city ? ` · ${event.city}` : ''}
-                  </bdi>
-                  {event.mapUrl && (
-                    <a
-                      href={event.mapUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[var(--party-accent)] hover:opacity-75 ms-1"
-                      aria-label="Google Maps"
-                    >
-                      <ExternalLink size={12} />
-                    </a>
-                  )}
+                  <bdi>{event.venue}{event.city ? ` · ${event.city}` : ''}</bdi>
                 </div>
               )}
             </div>
-          )}
-        </section>
+          </section>
+        )}
 
-        {/* INVITATION MODULAR BLOCKS — Seamless Continuous Flow (Zero Box-Inside-Box Clutter) */}
+        {/* TEMPLATE ARCHITECTURE 4: BOTANICAL ARCH MEDALLION */}
+        {isBabyShower && (
+          <section
+            onClick={handleHeroClick}
+            className={`relative text-center border border-[var(--party-accent)]/30 rounded-t-[160px] rounded-b-[32px] p-8 sm:p-12 shadow-sm backdrop-blur-xs transition-all duration-200 ${
+              isEditMode ? 'cursor-pointer hover:ring-1 hover:ring-[var(--party-accent)]/50' : ''
+            } ${isEditMode && heroSelected && !selectedBlockId ? 'ring-1 ring-[var(--party-accent)]' : ''}`}
+            style={{ backgroundColor: surface }}
+            data-testid="section-hero"
+          >
+            {/* Botanical Olive-Branch Floral Emblem at crown */}
+            <svg className="mx-auto w-12 h-12 text-[var(--party-accent)] opacity-80 mb-3" viewBox="0 0 48 48" fill="none">
+              <path d="M24 8C20 16 14 20 8 22M24 8C28 16 34 20 40 22M24 8V38M24 18C18 22 14 28 12 36M24 18C30 22 34 28 36 36M24 28C20 32 17 38 16 42M24 28C28 32 31 38 32 42" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+
+            {event.logoUrl && <div className="mb-3 flex justify-center">{renderLogo()}</div>}
+
+            <div className="inline-flex items-center gap-2 rounded-full border border-[var(--party-accent)]/40 px-4 py-1 text-[10px] font-bold uppercase tracking-[.18em] text-[var(--party-accent)] mb-3">
+              <bdi>{badgeText}</bdi>
+            </div>
+
+            {event.hostName && (
+              <p className="text-xs sm:text-sm font-semibold tracking-wider uppercase opacity-85 mb-2">
+                <bdi>{event.hostName}</bdi>
+              </p>
+            )}
+
+            <h1 className={`font-display font-bold leading-[1.1] text-[var(--party-primary)] break-words ${titleScaleClass}`} dir="auto">
+              <bdi>{event.title}</bdi>
+            </h1>
+
+            {event.subtitle && (
+              <p className="mt-2 text-sm sm:text-base font-medium opacity-85" dir="auto">
+                <bdi>{event.subtitle}</bdi>
+              </p>
+            )}
+
+            <p className="mx-auto mt-4 max-w-lg break-words text-sm sm:text-base leading-relaxed opacity-90 text-[var(--party-primary)]" dir="auto">
+              <bdi>{event.invitationWording}</bdi>
+            </p>
+
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-2.5">
+              {event.date && (
+                <div className="flex items-center gap-2 rounded-full border border-[var(--party-accent)]/30 bg-black/10 px-4 py-1.5 text-xs font-semibold">
+                  <CalendarDays size={14} className="text-[var(--party-accent)]" />
+                  <time dateTime={event.date}>{formatPartyDate(event.date, effectiveLocale)}</time>
+                  {event.showHijriDate && (
+                    <span className="opacity-75 text-[11px] font-normal ps-1">
+                      &bull; {formatFullHijriDate(event.date, isArabic ? 'ar' : 'en')}
+                    </span>
+                  )}
+                </div>
+              )}
+              {event.venue && (
+                <div className="flex items-center gap-2 rounded-full border border-[var(--party-accent)]/30 bg-black/10 px-4 py-1.5 text-xs font-semibold">
+                  <MapPin size={14} className="text-[var(--party-accent)]" />
+                  <bdi>{event.venue}</bdi>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* 3. MODULAR BLOCKS SECTION — Seamless Continuous Flow */}
         {visibleBlocks.length > 0 && (
           <section className="my-8 space-y-6" data-testid="section-blocks">
             {visibleBlocks.map((block, index) => {
@@ -716,7 +987,7 @@ export function PartyInvitationRenderer({
                     }}
                     meal={meal}
                     setMeal={(val) => onMealChange?.(val)}
-                    invitationLocale={invitationLocale}
+                    invitationLocale={effectiveLocale}
                     templateId={event.templateId}
                     eventVenue={[event.venue, event.city].filter(Boolean).join(' · ')}
                     eventHost={event.hostName}
@@ -733,7 +1004,7 @@ export function PartyInvitationRenderer({
             {event.etiquetteBadges.map((badge, idx) => (
               <span
                 key={idx}
-                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--party-accent)]/30 bg-black/20 px-3 py-1 text-[11px] font-semibold text-[var(--party-accent)] backdrop-blur-xs"
+                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--party-accent)]/30 bg-[var(--party-surface)] px-3.5 py-1 text-[11px] font-semibold text-[var(--party-accent)] shadow-xs"
               >
                 <Sparkles size={11} className="text-[var(--party-accent)]" />
                 <bdi>{badge}</bdi>
@@ -742,7 +1013,7 @@ export function PartyInvitationRenderer({
           </div>
         )}
 
-        {/* RSVP INTERACTION SECTION */}
+        {/* 4. RSVP INTERACTION SECTION */}
         <section className="mt-4 mb-12" data-testid="section-rsvp">
           <AnimatePresence mode="wait">
             {displayedRsvp === 'pending' && !readOnly && (
@@ -751,31 +1022,32 @@ export function PartyInvitationRenderer({
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
-                className="party-card rounded-3xl border border-[var(--party-accent)]/40 bg-[var(--party-surface)]/90 p-6 sm:p-10 text-center shadow-lg backdrop-blur-md"
+                className="party-card rounded-3xl border border-[var(--party-accent)]/40 p-6 sm:p-10 text-center shadow-lg backdrop-blur-md"
+                style={{ backgroundColor: surface }}
               >
                 <p className="text-[10px] uppercase tracking-[.18em] text-[var(--party-accent)] font-bold">
-                  {partyInvitationT(invitationLocale, 'privateFor')} {guestName}
+                  {partyInvitationT(effectiveLocale, 'privateFor')} {guestName}
                 </p>
 
-                <h2 className="mt-3 font-display text-3xl sm:text-4xl text-[var(--party-primary)]">
-                  {invitationT(invitationLocale, 'rsvpTitle')}
+                <h2 className="mt-3 font-display text-3xl sm:text-4xl text-[var(--party-primary)] font-bold">
+                  {invitationT(effectiveLocale, 'rsvpTitle')}
                 </h2>
 
                 {event.rsvpDeadline && (
                   <p className="mx-auto mt-2 max-w-sm text-xs sm:text-sm leading-6 opacity-75">
-                    {partyInvitationT(invitationLocale, 'replyBy')}{' '}
+                    {partyInvitationT(effectiveLocale, 'replyBy')}{' '}
                     <time dateTime={event.rsvpDeadline} className="font-semibold underline underline-offset-2">
-                      {formatPartyDate(event.rsvpDeadline, invitationLocale)}
+                      {formatPartyDate(event.rsvpDeadline, effectiveLocale)}
                     </time>
                   </p>
                 )}
 
                 {/* Companions Counter */}
-                <div className="mx-auto mt-6 flex max-w-xs items-center justify-between rounded-2xl border border-[var(--party-accent)]/40 bg-white/10 p-3">
+                <div className="mx-auto mt-6 flex max-w-xs items-center justify-between rounded-2xl border border-[var(--party-accent)]/40 bg-black/10 p-3">
                   <span className="text-start text-xs font-semibold">
-                    {invitationT(invitationLocale, 'guestCount')}
+                    {invitationT(effectiveLocale, 'guestCount')}
                     <small className="mt-0.5 block text-[10px] opacity-65 font-normal">
-                      {invitationT(invitationLocale, 'allowed')}: {maxGuests}
+                      {invitationT(effectiveLocale, 'allowed')}: {maxGuests}
                     </small>
                   </span>
                   <div className="flex items-center gap-3">
@@ -784,7 +1056,7 @@ export function PartyInvitationRenderer({
                       className="focus-ring flex h-10 w-10 items-center justify-center rounded-full border border-[var(--party-accent)]/50 text-base font-bold transition hover:bg-[var(--party-accent)]/20 disabled:opacity-30"
                       onClick={() => onRsvp?.('pending', totalGuestCount - 1)}
                       disabled={totalGuestCount <= 1}
-                      aria-label={invitationT(invitationLocale, 'decreaseGuests')}
+                      aria-label={invitationT(effectiveLocale, 'decreaseGuests')}
                     >
                       &minus;
                     </button>
@@ -794,7 +1066,7 @@ export function PartyInvitationRenderer({
                       className="focus-ring flex h-10 w-10 items-center justify-center rounded-full border border-[var(--party-accent)]/50 text-base font-bold transition hover:bg-[var(--party-accent)]/20 disabled:opacity-30"
                       onClick={() => onRsvp?.('pending', totalGuestCount + 1)}
                       disabled={totalGuestCount >= maxGuests}
-                      aria-label={invitationT(invitationLocale, 'increaseGuests')}
+                      aria-label={invitationT(effectiveLocale, 'increaseGuests')}
                     >
                       +
                     </button>
@@ -809,7 +1081,7 @@ export function PartyInvitationRenderer({
                     className="focus-ring inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[var(--party-accent)] px-7 py-3 text-xs font-bold uppercase tracking-wider text-black shadow-md transition hover:brightness-110 active:scale-98"
                   >
                     <Check size={16} strokeWidth={2.5} />
-                    <span>{invitationT(invitationLocale, 'attending')}</span>
+                    <span>{invitationT(effectiveLocale, 'attending')}</span>
                   </button>
 
                   <button
@@ -818,13 +1090,13 @@ export function PartyInvitationRenderer({
                     className="focus-ring inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-[var(--party-accent)]/40 bg-transparent px-6 py-3 text-xs font-semibold text-[var(--party-primary)] transition hover:bg-white/10 active:scale-98"
                   >
                     <X size={15} />
-                    <span>{invitationT(invitationLocale, 'declining')}</span>
+                    <span>{invitationT(effectiveLocale, 'declining')}</span>
                   </button>
                 </div>
 
                 <div className="mt-6 flex items-center justify-center gap-2 text-[10px] uppercase tracking-[.12em] opacity-60">
                   <LockKeyhole size={12} />
-                  <span>{partyInvitationT(invitationLocale, 'noAccount')}</span>
+                  <span>{partyInvitationT(effectiveLocale, 'noAccount')}</span>
                 </div>
               </motion.div>
             )}
@@ -834,16 +1106,17 @@ export function PartyInvitationRenderer({
                 key="rsvp-declined"
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="party-card rounded-3xl border border-[var(--party-accent)]/40 bg-[var(--party-surface)]/90 p-8 text-center shadow-lg"
+                className="party-card rounded-3xl border border-[var(--party-accent)]/40 p-8 text-center shadow-lg"
+                style={{ backgroundColor: surface }}
               >
                 <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-[var(--party-accent)] text-[var(--party-accent)]">
                   <Heart size={22} strokeWidth={1.5} />
                 </div>
-                <h2 className="mt-5 font-display text-3xl text-[var(--party-primary)]">
-                  {partyInvitationT(invitationLocale, 'missedTitle')}
+                <h2 className="mt-5 font-display text-3xl text-[var(--party-primary)] font-bold">
+                  {partyInvitationT(effectiveLocale, 'missedTitle')}
                 </h2>
                 <p className="mx-auto mt-2 max-w-sm text-sm opacity-75">
-                  {partyInvitationT(invitationLocale, 'missedBody')}
+                  {partyInvitationT(effectiveLocale, 'missedBody')}
                 </p>
                 {!readOnly && (
                   <button
@@ -852,7 +1125,7 @@ export function PartyInvitationRenderer({
                     data-testid="button-change-rsvp"
                     className="focus-ring mt-6 inline-flex min-h-11 items-center gap-1.5 text-xs font-bold uppercase tracking-[.15em] text-[var(--party-accent)] underline underline-offset-4"
                   >
-                    {partyInvitationT(invitationLocale, 'changeResponse')}
+                    {partyInvitationT(effectiveLocale, 'changeResponse')}
                   </button>
                 )}
               </motion.div>
@@ -866,17 +1139,20 @@ export function PartyInvitationRenderer({
                 className="space-y-8"
               >
                 {/* Confirmation Header Card */}
-                <div className="party-card rounded-3xl border border-[var(--party-accent)]/50 bg-[var(--party-surface)]/95 p-6 sm:p-8 shadow-md backdrop-blur-md">
+                <div
+                  className="party-card rounded-3xl border border-[var(--party-accent)]/50 p-6 sm:p-8 shadow-md backdrop-blur-md"
+                  style={{ backgroundColor: surface }}
+                >
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <p className="text-[10px] uppercase font-bold tracking-[.18em] text-[var(--party-accent)]">
-                        {partyInvitationT(invitationLocale, 'onList')}
+                        {partyInvitationT(effectiveLocale, 'onList')}
                       </p>
                       <h2 className="mt-1 font-display text-2xl sm:text-3xl font-bold text-[var(--party-primary)]">
-                        {partyInvitationT(invitationLocale, 'acceptedTitle')}
+                        {partyInvitationT(effectiveLocale, 'acceptedTitle')}
                       </h2>
                       <p className="mt-1 text-xs sm:text-sm opacity-75">
-                        {partyInvitationT(invitationLocale, 'acceptedBody')}
+                        {partyInvitationT(effectiveLocale, 'acceptedBody')}
                       </p>
                     </div>
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--party-accent)]/20 text-[var(--party-accent)] border border-[var(--party-accent)]/40">
@@ -894,14 +1170,14 @@ export function PartyInvitationRenderer({
                           {guestName}
                         </p>
                         <p className="text-[11px] opacity-60">
-                          {totalGuestCount} {partyInvitationT(invitationLocale, 'guest')} &bull;{' '}
+                          {totalGuestCount} {partyInvitationT(effectiveLocale, 'guest')} &bull;{' '}
                           {token}
                         </p>
                       </div>
                     </div>
 
                     <span className="rounded-full bg-[var(--party-accent)]/15 border border-[var(--party-accent)]/30 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--party-accent)]">
-                      {partyInvitationT(invitationLocale, 'confirmed')}
+                      {partyInvitationT(effectiveLocale, 'confirmed')}
                     </span>
                   </div>
 
@@ -913,32 +1189,34 @@ export function PartyInvitationRenderer({
                         data-testid="button-change-rsvp"
                         className="text-[11px] font-semibold text-[var(--party-accent)] hover:underline"
                       >
-                        {partyInvitationT(invitationLocale, 'changeResponse')}
+                        {partyInvitationT(effectiveLocale, 'changeResponse')}
                       </button>
                     </div>
                   )}
                 </div>
 
                 {/* DIGITAL ADMISSION VIP PASS (Apple Wallet / Mazoom Style) */}
-                <div className="party-pass-card relative overflow-hidden rounded-[28px] border border-[var(--party-accent)]/50 bg-[var(--party-surface)]/95 p-6 sm:p-9 text-center shadow-2xl backdrop-blur-md">
-                  {/* Perforation notch at top */}
+                <div
+                  className="party-pass-card relative overflow-hidden rounded-[28px] border border-[var(--party-accent)]/50 p-6 sm:p-9 text-center shadow-2xl backdrop-blur-md"
+                  style={{ backgroundColor: surface }}
+                >
                   <div className="absolute top-0 inset-x-0 mx-auto h-3 w-16 rounded-b-xl bg-black/40 border-b border-x border-[var(--party-accent)]/30" />
 
                   <div className="pt-2 inline-flex items-center gap-1.5 rounded-full border border-[var(--party-accent)]/30 bg-black/20 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-[var(--party-accent)]">
                     <Sparkles size={11} />
-                    <span>{partyInvitationT(invitationLocale, 'digitalPass')}</span>
+                    <span>{partyInvitationT(effectiveLocale, 'digitalPass')}</span>
                   </div>
 
                   <h3 className="mt-3 font-display text-2xl sm:text-3xl font-bold text-[var(--party-primary)]">
-                    {partyInvitationT(invitationLocale, 'passTitle')}
+                    {partyInvitationT(effectiveLocale, 'passTitle')}
                   </h3>
 
                   <p className="mx-auto mt-1 max-w-xs text-xs sm:text-sm opacity-75">
-                    {partyInvitationT(invitationLocale, 'passBody')}
+                    {partyInvitationT(effectiveLocale, 'passBody')}
                   </p>
 
                   <div className="mx-auto mt-6 w-fit">
-                    <QRPassMark label={partyInvitationT(invitationLocale, 'digitalPass')} />
+                    <QRPassMark label={partyInvitationT(effectiveLocale, 'digitalPass')} />
                   </div>
 
                   <div className="mt-5 rounded-2xl border border-[var(--party-accent)]/25 bg-black/20 p-4 max-w-xs mx-auto text-xs">
@@ -949,17 +1227,24 @@ export function PartyInvitationRenderer({
                       {guestName}
                     </p>
                     <p className="mt-0.5 text-[11px] opacity-70">
-                      {event.title} &bull; {totalGuestCount} {partyInvitationT(invitationLocale, 'guest')}
+                      {event.title} &bull; {totalGuestCount} {partyInvitationT(effectiveLocale, 'guest')}
                     </p>
                     <div className="mt-3 pt-2.5 border-t border-[var(--party-accent)]/20 flex items-center justify-between text-[10px] text-[var(--party-accent)]">
                       <span className="font-semibold uppercase tracking-wider">
-                        {partyInvitationT(invitationLocale, 'confirmedPass')}
+                        {partyInvitationT(effectiveLocale, 'confirmedPass')}
                       </span>
                       <span className="flex items-center gap-1 font-bold">
                         <Check size={11} strokeWidth={3} /> VIP ENTRY
                       </span>
                     </div>
                   </div>
+
+                  {/* Optional Footer Seal Logo */}
+                  {event.logoUrl && (logoPlacement === 'hero-seal' || logoPlacement === 'both-footer') && (
+                    <div className="mt-6 pt-4 border-t border-[var(--party-accent)]/20 flex justify-center">
+                      {renderLogo('max-h-8 opacity-80')}
+                    </div>
+                  )}
                 </div>
               </motion.div>
             )}
@@ -970,14 +1255,24 @@ export function PartyInvitationRenderer({
         <footer className="mt-16 text-center opacity-60">
           <div className="mx-auto mb-4 h-px w-20 bg-[var(--party-accent)]/40" />
           <p className="font-display text-sm sm:text-base italic">
-            {partyInvitationT(invitationLocale, 'madeFor')}
+            {partyInvitationT(effectiveLocale, 'madeFor')}
           </p>
+          {event.logoUrl && (logoPlacement === 'hero-seal' || logoPlacement === 'both-footer') && (
+            <div className="mt-4 flex justify-center">{renderLogo('max-h-7 opacity-70')}</div>
+          )}
         </footer>
       </main>
     </div>
   );
 }
 
+/**
+ * Renders individual modular blocks including the 4 Custom Smart Section layouts:
+ * 1. Editorial Card (default / text)
+ * 2. Feature / Bullet Grid
+ * 3. Image Spotlight
+ * 4. Stats / Speaker Card
+ */
 function RenderBlockItem({
   block,
   index,
@@ -1006,8 +1301,6 @@ function RenderBlockItem({
   eventHost?: string;
 }) {
   const c = block.content;
-  const isCorporate = templateId === 'corporate';
-  const isCustom = templateId === 'custom';
   const isArabic = invitationLocale === 'ar';
 
   if (block.key === 'divider') {
@@ -1019,10 +1312,8 @@ function RenderBlockItem({
   }
 
   return (
-    <article
-      className="party-block-card relative overflow-hidden rounded-2xl border-t border-[var(--party-accent)]/20 bg-[var(--party-surface)]/75 p-5 sm:p-7 shadow-xs backdrop-blur-xs transition"
-    >
-      {/* Block Header (Zero 01 numbers, zero orange stamps!) */}
+    <article className="party-block-card relative overflow-hidden rounded-2xl border-t border-[var(--party-accent)]/20 bg-[var(--party-surface)] p-5 sm:p-7 shadow-xs backdrop-blur-xs transition">
+      {/* Block Header */}
       <div className="mb-5 flex items-center gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--party-accent)]/50 bg-[var(--party-accent)]/15 text-[var(--party-accent)]">
           {block.key === 'catering' && <Utensils size={16} strokeWidth={1.75} />}
@@ -1047,11 +1338,11 @@ function RenderBlockItem({
         </div>
       </div>
 
-      {/* CATERING / MENU BLOCK */}
+      {/* 1. CATERING / HOSPITALITY BLOCK */}
       {block.key === 'catering' && (
         <div>
           {c.mode === 'note' ? (
-            /* Dignified Saudi Hospitality Note Mode (No radio buttons) */
+            /* Dignified Saudi Hospitality Note Mode */
             <div className="flex items-start gap-3 rounded-2xl bg-black/10 p-4 border border-[var(--party-accent)]/20">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--party-accent)]/20 text-[var(--party-accent)]">
                 <Coffee size={16} />
@@ -1114,7 +1405,7 @@ function RenderBlockItem({
         </div>
       )}
 
-      {/* DRESS CODE BLOCK */}
+      {/* 2. DRESS CODE BLOCK */}
       {block.key === 'dress' && (
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
           <div className="max-w-md">
@@ -1150,7 +1441,7 @@ function RenderBlockItem({
         </div>
       )}
 
-      {/* SCHEDULE BLOCK */}
+      {/* 3. SCHEDULE BLOCK */}
       {block.key === 'schedule' && (
         <div className="space-y-0">
           {(c.scheduleItems && c.scheduleItems.length > 0
@@ -1185,7 +1476,7 @@ function RenderBlockItem({
         </div>
       )}
 
-      {/* REGISTRY BLOCK */}
+      {/* 4. REGISTRY / HIGHLIGHTS BLOCK */}
       {block.key === 'registry' && (
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
           <p className="text-sm leading-relaxed opacity-85 max-w-md" dir="auto">
@@ -1202,7 +1493,7 @@ function RenderBlockItem({
         </div>
       )}
 
-      {/* SONG REQUEST BLOCK */}
+      {/* 5. SONG / GUEST NOTE REQUEST BLOCK */}
       {block.key === 'song' && (
         <div>
           <p className="text-xs opacity-75 mb-4" dir="auto">
@@ -1229,7 +1520,7 @@ function RenderBlockItem({
         </div>
       )}
 
-      {/* FAQ BLOCK */}
+      {/* 6. FAQ / ACCESS & GATES BLOCK */}
       {block.key === 'faq' && (
         <div className="divide-y divide-[var(--party-accent)]/20">
           {(c.questions && c.questions.length > 0
@@ -1282,8 +1573,161 @@ function RenderBlockItem({
         </div>
       )}
 
-      {/* TEXT, VENUE, HOST, CTA */}
-      {['text', 'venue', 'host', 'cta'].includes(block.key) && (
+      {/* 7. CUSTOM SMART SECTION ENGINE (text / custom blocks) */}
+      {block.key === 'text' && (
+        <div>
+          {/* Custom Layout Style 1: Feature / Bullet Grid */}
+          {c.customLayout === 'bullet-grid' && c.bullets && c.bullets.length > 0 && (
+            <div className="space-y-2.5">
+              {c.note && (
+                <p className="text-xs sm:text-sm leading-relaxed opacity-85 mb-3" dir="auto">
+                  <bdi>{c.note}</bdi>
+                </p>
+              )}
+              {c.bullets.map((bullet, bIdx) => (
+                <div
+                  key={bIdx}
+                  className="flex items-center gap-3 rounded-xl bg-black/10 border border-[var(--party-accent)]/20 px-3.5 py-2.5"
+                >
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--party-accent)]/20 text-[var(--party-accent)] text-[10px] font-bold">
+                    ✦
+                  </span>
+                  <span className="text-xs sm:text-sm font-medium opacity-90" dir="auto">
+                    <bdi>{bullet}</bdi>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Custom Layout Style 2: Image + Text Spotlight */}
+          {c.customLayout === 'image-spotlight' && (
+            <div className="space-y-3">
+              {c.imageUrl && (
+                <div className="relative rounded-2xl overflow-hidden border border-[var(--party-accent)]/30 max-h-56">
+                  <img src={c.imageUrl} alt={c.heading} className="w-full h-full object-cover" />
+                  {c.badge && (
+                    <span className="absolute top-3 start-3 rounded-full bg-black/60 backdrop-blur-md px-3 py-1 text-[10px] font-bold text-[var(--party-accent)] border border-[var(--party-accent)]/40 shadow-xs">
+                      {c.badge}
+                    </span>
+                  )}
+                </div>
+              )}
+              {c.badge && !c.imageUrl && (
+                <span className="inline-block rounded-full bg-[var(--party-accent)]/20 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--party-accent)]">
+                  {c.badge}
+                </span>
+              )}
+              {c.note && (
+                <p className="whitespace-pre-line text-xs sm:text-sm leading-relaxed opacity-85" dir="auto">
+                  <bdi>{c.note}</bdi>
+                </p>
+              )}
+              {c.bullets && c.bullets.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {c.bullets.map((bullet, bIdx) => (
+                    <div key={bIdx} className="flex items-start gap-2.5 text-xs opacity-85">
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--party-accent)]/20 text-[var(--party-accent)] text-[10px] font-bold">
+                        ✦
+                      </span>
+                      <p className="leading-relaxed flex-1" dir="auto">
+                        <bdi>{bullet}</bdi>
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {c.url && (
+                <a
+                  href={c.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 inline-flex items-center gap-2 rounded-full bg-[var(--party-accent)] px-5 py-2 text-xs font-bold uppercase tracking-wider text-black hover:brightness-110 transition"
+                >
+                  <ExternalLink size={13} />
+                  <span>{c.buttonLabel || (isArabic ? 'المزيد من التفاصيل' : 'Learn More')}</span>
+                </a>
+              )}
+            </div>
+          )}
+
+          {/* Custom Layout Style 3: VIP / Speaker Card or Highlights */}
+          {c.customLayout === 'stats-highlights' && (
+            <div className="space-y-3">
+              {(c.imageUrl || c.badge || c.note) && (
+                <div className="flex flex-col sm:flex-row items-center gap-4 rounded-2xl bg-black/10 border border-[var(--party-accent)]/25 p-4">
+                  {c.imageUrl ? (
+                    <img
+                      src={c.imageUrl}
+                      alt={c.heading}
+                      className="h-20 w-20 rounded-full object-cover border-2 border-[var(--party-accent)]/50 shrink-0 shadow-md"
+                    />
+                  ) : (
+                    <div className="h-16 w-16 rounded-full bg-[var(--party-accent)]/20 border border-[var(--party-accent)]/40 flex items-center justify-center text-[var(--party-accent)] shrink-0">
+                      <Award size={24} />
+                    </div>
+                  )}
+                  <div className="text-center sm:text-start flex-1 min-w-0">
+                    {c.badge && (
+                      <span className="inline-block rounded-full bg-[var(--party-accent)]/20 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[var(--party-accent)] mb-1">
+                        {c.badge}
+                      </span>
+                    )}
+                    <h4 className="font-display text-base font-bold text-[var(--party-primary)]" dir="auto">
+                      <bdi>{c.heading}</bdi>
+                    </h4>
+                    {c.note && (
+                      <p className="text-xs leading-relaxed opacity-80 mt-1" dir="auto">
+                        <bdi>{c.note}</bdi>
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {c.bullets && c.bullets.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  {c.bullets.map((stat, sIdx) => (
+                    <div
+                      key={sIdx}
+                      className="rounded-xl border border-[var(--party-accent)]/20 bg-black/10 p-3 text-center"
+                    >
+                      <p className="text-xs font-bold text-[var(--party-accent)]" dir="auto">
+                        <bdi>{stat}</bdi>
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Default Layout: Editorial Card */}
+          {(!c.customLayout || c.customLayout === 'editorial-card') && (
+            <div>
+              {c.note && (
+                <p className="whitespace-pre-line text-xs sm:text-sm leading-relaxed opacity-85" dir="auto">
+                  <bdi>{c.note}</bdi>
+                </p>
+              )}
+              {c.url && (
+                <a
+                  href={c.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 inline-flex items-center gap-2 rounded-full bg-[var(--party-accent)] px-5 py-2 text-xs font-bold uppercase tracking-wider text-black hover:brightness-110 transition"
+                >
+                  <ExternalLink size={13} />
+                  <span>{c.buttonLabel || (isArabic ? 'فتح الرابط' : 'Open Link')}</span>
+                </a>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 8. VENUE, HOST, CTA BLOCKS */}
+      {['venue', 'host', 'cta'].includes(block.key) && (
         <div>
           {c.note && (
             <p className="whitespace-pre-line text-xs sm:text-sm leading-relaxed opacity-85" dir="auto">

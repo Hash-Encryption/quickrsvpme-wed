@@ -362,7 +362,84 @@ try {
   assert.ok(vipPassHtml.includes('سلطان بن عبدالعزيز'), 'VIP Gate Pass missing guestName');
   assert.ok(vipPassHtml.includes('data-testid="qr-pass"'), 'VIP Gate Pass missing luxury QR pass mark');
 
-  console.log('PASS: loading/disabled controls, chip semantics, CustomerBottomNav, AR/EN Wedding/Party navigation, 10 text contrast pairs, Party multi-block preview/public parity, Phase 2 Saudi blueprints, Arabic seed auto-localization, 4 architectural layouts, VIP gate pass QR.');
+  // Overhaul: Certify Background Modes & Custom Section Layouts
+  for (const bgMode of ['full-pinned', 'frame-9-16', 'hero-banner']) {
+    const bgHtml = renderToStaticMarkup(
+      h(PartyInvitationRenderer, {
+        event: {
+          ...defaultPartyEvent,
+          backgroundImageUrl: 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957',
+          backgroundMode: bgMode,
+          backgroundBlur: 4,
+        },
+        blocks: [],
+        invitationLocale: 'ar',
+      })
+    );
+    assert.ok(bgHtml.includes('https://images.unsplash.com/photo-1544620347-c4fd4a3d5957'), `Missing bg url in mode ${bgMode}`);
+    if (bgMode === 'hero-banner') {
+      assert.ok(bgHtml.includes('h-56'), 'Hero banner mode missing top cover height');
+    }
+  }
+
+  // Overhaul: Certify Custom Smart Section Layouts (editorial-card, bullet-grid, image-spotlight, stats-highlights)
+  const customSectionBlocks = [
+    {
+      id: 'blk-spotlight',
+      key: 'text',
+      enabled: true,
+      label: 'Speaker Spotlight',
+      eyebrow: 'KEYNOTE',
+      content: {
+        heading: 'Eng. Fahad Al-Otaibi',
+        note: 'Executive VP of Innovation',
+        customLayout: 'image-spotlight',
+        imageUrl: 'https://example.com/speaker.jpg',
+        badge: 'VIP Speaker',
+        buttonLabel: 'View Bio',
+        url: 'https://example.com/bio',
+        bullets: ['20+ years of leadership', 'Keynote address'],
+      },
+    },
+    {
+      id: 'blk-bullets',
+      key: 'text',
+      enabled: true,
+      label: 'Guidelines',
+      eyebrow: 'INSTRUCTIONS',
+      content: {
+        heading: 'Valet & Access',
+        customLayout: 'bullet-grid',
+        bullets: ['Gate 4 for VIPs', 'Valet parking available'],
+      },
+    },
+    {
+      id: 'blk-stats',
+      key: 'text',
+      enabled: true,
+      label: 'Impact',
+      eyebrow: 'METRICS',
+      content: {
+        heading: 'Annual Milestones',
+        customLayout: 'stats-highlights',
+        bullets: ['500+ Attendees', '12 Awards Presented', '99% Satisfaction'],
+      },
+    },
+  ];
+
+  const customSectionsHtml = renderToStaticMarkup(
+    h(PartyInvitationRenderer, {
+      event: defaultPartyEvent,
+      blocks: customSectionBlocks,
+      invitationLocale: 'ar',
+    })
+  );
+  assert.ok(customSectionsHtml.includes('Eng. Fahad Al-Otaibi'), 'Missing keynote speaker heading');
+  assert.ok(customSectionsHtml.includes('VIP Speaker'), 'Missing badge in spotlight layout');
+  assert.ok(customSectionsHtml.includes('Gate 4 for VIPs'), 'Missing bullet in bullet-grid layout');
+  assert.ok(customSectionsHtml.includes('500+ Attendees'), 'Missing stat in stats-highlights layout');
+
+  console.log('PASS: loading/disabled controls, chip semantics, CustomerBottomNav, AR/EN Wedding/Party navigation, 10 text contrast pairs, Party multi-block preview/public parity, Phase 2 Saudi blueprints, Arabic seed auto-localization, 4 architectural layouts, VIP gate pass QR, background modes, custom section layouts.');
 } finally {
   if (originalStorage) Object.defineProperty(globalThis, 'localStorage', originalStorage);
   else delete globalThis.localStorage;
