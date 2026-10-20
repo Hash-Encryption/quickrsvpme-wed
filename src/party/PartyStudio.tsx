@@ -54,6 +54,7 @@ import {
   changePartyStyle,
   changePartyTemplate,
   formatPartyDate,
+  getTemplateDefaultBlocks,
   OCCASION_BLUEPRINTS,
   partyStyles,
   partyTemplates,
@@ -270,6 +271,24 @@ export function PartyStudio({
     }
   }, [initialEvent, initialBlocks, initialLocale, rawLogoUrl]);
 
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
+
+  // Auto-Scroll live invitation canvas to active section or block
+  useEffect(() => {
+    if (!currentTab) return;
+    if (currentTab === 'info' || currentTab === 'design') {
+      canvasContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    } else if (currentTab === 'edit-block' && selectedBlockId) {
+      const timer = setTimeout(() => {
+        const el = document.getElementById(`party-block-${selectedBlockId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [currentTab, selectedBlockId]);
+
   // Helper to push history snapshot
   const pushHistory = useCallback(
     (nextEvent: PartyEventData, nextBlocks: StudioBlock[], nextLocale: InvitationLocale) => {
@@ -349,8 +368,10 @@ export function PartyStudio({
   const handleTemplateSwitch = (tplId: PartyTemplateId) => {
     pushHistory(event, blocks, invitationLocale);
     const updated = changePartyTemplate(event, tplId);
+    const updatedBlocks = getTemplateDefaultBlocks(tplId, blocks);
     setEvent(updated);
-    void onSave?.(updated, blocks, invitationLocale);
+    setBlocks(updatedBlocks);
+    void onSave?.(updated, updatedBlocks, invitationLocale);
   };
 
   const handleStyleSwitch = (styleId: string) => {
@@ -480,22 +501,45 @@ export function PartyStudio({
   };
 
   const handleSelectSectionFromPreview = (sec: string) => {
-    if (sec === 'design') setActiveTab('design');
-    else setActiveTab('info');
+    setSelectedBlockId(null);
+    if (sec === 'design') {
+      setActiveTab('design');
+    } else {
+      setActiveTab('info');
+    }
+    canvasContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Logo file upload handler with auto white-background removal
+  // Logo file upload handler with auto white-background removal and immediate brand color extraction & application
   const handleLogoUpload = async (file: File) => {
     const reader = new FileReader();
     reader.onload = async (e) => {
       const dataUrl = e.target?.result as string;
       if (dataUrl) {
         setRawLogoUrl(dataUrl);
-        const processed = autoRemoveWhiteBg
-          ? await processLogoDataUrl(dataUrl, true)
-          : dataUrl;
-        updateEventFields({ logoUrl: processed });
-        void extractBrandColors(dataUrl);
+        setIsExtractingColors(true);
+        try {
+          const processed = autoRemoveWhiteBg
+            ? await processLogoDataUrl(dataUrl, true)
+            : dataUrl;
+          const palette = await extractColorsFromImageDataUrl(processed || dataUrl);
+          setExtractedPalette(palette);
+
+          // Auto-apply Brand Dark theme immediately upon upload
+          const defaultTheme =
+            palette.themes?.dark ||
+            deriveBrandTheme(palette.dominantHex || palette.background, palette.accentHex || palette.accent, 'dark');
+
+          updateEventFields({
+            logoUrl: processed,
+            backgroundColor: defaultTheme.backgroundColor,
+            primaryColor: defaultTheme.primaryColor,
+            accentColor: defaultTheme.accentColor,
+            brandPalette: palette.swatches,
+          });
+        } finally {
+          setIsExtractingColors(false);
+        }
       }
     };
     reader.readAsDataURL(file);
@@ -527,10 +571,11 @@ export function PartyStudio({
     }
   };
 
-  const handleApplyLogoTheme = (mode: 'dark' | 'light' | 'bold') => {
+  const handleApplyLogoTheme = (mode: 'dark' | 'light' | 'bold' | 'vibrant') => {
     if (!extractedPalette) return;
+    const themeKey = mode === 'vibrant' ? 'bold' : mode;
     const theme =
-      extractedPalette.themes?.[mode] ||
+      (mode === 'vibrant' ? (extractedPalette.themes?.vibrant || extractedPalette.themes?.bold) : extractedPalette.themes?.[themeKey]) ||
       deriveBrandTheme(
         extractedPalette.dominantHex || extractedPalette.background,
         extractedPalette.accentHex || extractedPalette.accent,
@@ -542,6 +587,14 @@ export function PartyStudio({
       primaryColor: theme.primaryColor,
       accentColor: theme.accentColor,
       brandPalette: extractedPalette.swatches,
+    });
+  };
+
+  const handleResetToTemplateColors = () => {
+    updateEventFields({
+      backgroundColor: null,
+      primaryColor: null,
+      accentColor: null,
     });
   };
 
@@ -719,9 +772,13 @@ export function PartyStudio({
         </div>
       </div>
 
-      {/* 3. ZONE B1: 8 1-Tap Saudi Occasion & Corporate Blueprints */}
-      <div className="w-full max-w-2xl mx-auto px-4 mt-3 mb-1">
+      {/* 3. ZONE B1: Streamlined Quick Fill Example Bar */}
+      <div className="w-full max-w-2xl mx-auto px-4 mt-2.5 mb-1">
         <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+          <div className="flex items-center gap-1.5 text-[11px] font-bold text-[#0A2E23] bg-[#0A2E23]/8 px-2.5 py-1 rounded-full shrink-0 border border-[#0A2E23]/15 select-none">
+            <Sparkles size={12} className="text-[#D4AF37]" />
+            <span>{isArabic ? '✨ تعبئة نموذج جاهز:' : '✨ Quick Fill Example:'}</span>
+          </div>
           {OCCASION_BLUEPRINTS.map((bp) => {
             const isSelected = event.occasionPresetId === bp.id;
             return (
@@ -729,7 +786,7 @@ export function PartyStudio({
                 key={bp.id}
                 type="button"
                 onClick={() => handleApplyBlueprint(bp)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-semibold whitespace-nowrap transition shrink-0 active:scale-95 ${
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold whitespace-nowrap transition shrink-0 active:scale-95 ${
                   isSelected
                     ? 'border-[#0A2E23] bg-[#0A2E23] text-white shadow-xs'
                     : 'border-[#D4AF37]/40 bg-white/80 text-[#17251F] hover:bg-white'
@@ -772,8 +829,11 @@ export function PartyStudio({
             </div>
 
             <div
+              ref={canvasContainerRef}
               data-testid="party-studio-canvas"
-              className="party-device-frame relative w-full max-w-[430px] rounded-[36px] border-[6px] border-[#2A3B32]/80 bg-white shadow-2xl overflow-hidden transition-all duration-300 max-h-[85vh] overflow-y-auto"
+              className={`party-device-frame relative w-full max-w-[430px] rounded-[36px] border-[6px] border-[#2A3B32]/80 bg-white shadow-2xl overflow-hidden transition-all duration-300 overflow-y-auto pointer-events-auto ${
+                !isDesktop && currentTab ? 'h-[52vh] max-h-[52vh]' : 'max-h-[85vh]'
+              }`}
             >
               {viewMode === 'pass' ? (
                 /* Standalone VIP Gate Pass View with Dynamic Surface / Colors */
@@ -863,38 +923,45 @@ export function PartyStudio({
             </div>
           </div>
 
-          {/* 6. CONTEXTUAL DRAWER (DESKTOP DOCK & MOBILE PEEK SHEET) */}
+          {/* 6. CONTEXTUAL DRAWER (DESKTOP DOCK & UNBLURRED MOBILE SHEET) */}
           <AnimatePresence>
             {!isPreviewOnly && currentTab && (
               <>
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  onClick={() => setActiveTab(null)}
-                  className="fixed inset-0 z-40 bg-black/25 backdrop-blur-[1px] lg:hidden"
-                />
-
                 <motion.aside
                   initial={isDesktop ? undefined : { y: '100%' }}
                   animate={isDesktop ? undefined : { y: 0 }}
                   exit={isDesktop ? undefined : { y: '100%' }}
                   transition={{ type: 'spring', damping: 26, stiffness: 280 }}
-                  className="fixed bottom-0 inset-x-0 z-50 max-h-[48vh] overflow-y-auto rounded-t-[32px] border-t border-[#D4AF37]/40 bg-[#FAF7F2] p-5 sm:p-6 shadow-2xl pb-16 lg:pb-6 lg:static lg:z-auto lg:col-span-5 lg:max-h-[85vh] lg:rounded-[32px] lg:border lg:shadow-xl lg:sticky lg:top-20"
+                  className="fixed bottom-0 inset-x-0 z-40 max-h-[46vh] overflow-y-auto rounded-t-3xl border-t border-black/10 bg-[#FAF7F2] p-5 sm:p-6 shadow-[0_-12px_36px_rgba(0,0,0,0.16)] pb-16 lg:pb-6 lg:static lg:z-auto lg:col-span-5 lg:max-h-[85vh] lg:rounded-[32px] lg:border lg:border-[#D4AF37]/40 lg:shadow-xl lg:sticky lg:top-20"
                   aria-labelledby="party-sheet-title"
                 >
-                  {/* Drawer Drag Pill Header */}
+                  {/* Drawer Header */}
                   <div className="border-b border-[#D4AF37]/25 pb-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full bg-[#0A2E23]" />
-                        <h2 id="party-sheet-title" className="text-base font-bold text-[#0A2E23]">
-                          {currentTab === 'info' && t('infoTab')}
-                          {currentTab === 'design' && (isArabic ? 'الهوية والتصميم والمظهر' : 'Brand & Design')}
-                          {currentTab === 'sections' && (isArabic ? 'أقسام وفقرات الدعوة' : 'Invitation Modules')}
-                          {currentTab === 'edit-block' && `${t('edit')} ${activeBlock?.label || ''}`}
-                          {currentTab === 'add-block' && (isArabic ? 'دليل الأقسام والوحدات' : 'Section Catalog')}
-                        </h2>
+                        {currentTab === 'edit-block' ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveTab('sections');
+                              setSelectedBlockId(null);
+                            }}
+                            className="inline-flex items-center gap-1 text-xs font-bold text-[#0A2E23] hover:underline"
+                          >
+                            <ArrowLeft size={14} className={isArabic ? 'rotate-180' : ''} />
+                            <span>{isArabic ? '← العودة للأقسام' : '← Back to Sections'}</span>
+                          </button>
+                        ) : (
+                          <>
+                            <span className="h-2 w-2 rounded-full bg-[#0A2E23]" />
+                            <h2 id="party-sheet-title" className="text-base font-bold text-[#0A2E23]">
+                              {currentTab === 'info' && t('infoTab')}
+                              {currentTab === 'design' && (isArabic ? 'الهوية والتصميم والمظهر' : 'Brand & Design')}
+                              {currentTab === 'sections' && (isArabic ? 'أقسام وفقرات الدعوة' : 'Invitation Modules')}
+                              {currentTab === 'add-block' && (isArabic ? 'دليل الأقسام والوحدات' : 'Section Catalog')}
+                            </h2>
+                          </>
+                        )}
                       </div>
                       <button
                         type="button"
@@ -1559,55 +1626,72 @@ export function PartyStudio({
                           </div>
                         </div>
 
-                        {/* Real Pixel-Extracted Colors & 3 Brand Theme Buttons */}
-                        <div className="pt-2 border-t border-[#D4AF37]/20 space-y-2">
-                          <span className="block text-xs font-bold text-[#0A2E23]">
-                            ✨ {isArabic ? 'أنماط الألوان المستخرجة من الشعار' : 'Brand Themes from Logo'}:
-                          </span>
+                        {/* Real Pixel-Extracted Colors & 3 Brand Theme Buttons + Reset */}
+                        <div className="pt-3 border-t border-[#D4AF37]/30 space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="block text-xs font-bold text-[#0A2E23]">
+                              🎨 {isArabic ? 'ألوان الشعار المستخرجة' : 'Extracted Logo Colors'}:
+                            </span>
+                            <button
+                              type="button"
+                              onClick={handleResetToTemplateColors}
+                              className="text-[11px] font-semibold text-[#0A2E23] hover:underline inline-flex items-center gap-1"
+                            >
+                              <span>↺</span>
+                              <span>{isArabic ? 'استعادة ألوان القالب' : 'Reset to Template Colors'}</span>
+                            </button>
+                          </div>
 
-                          <div className="grid grid-cols-3 gap-2">
+                          {/* Swatches with hex codes */}
+                          <div className="flex flex-wrap items-center gap-2">
+                            {(extractedPalette?.swatches || event.brandPalette || ['#0B1522', '#D4AF37', '#FAF8F5']).slice(0, 5).map((hex, i) => (
+                              <div
+                                key={i}
+                                className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-black/5 border border-black/10 text-[10px] font-mono font-bold"
+                              >
+                                <span
+                                  className="h-3.5 w-3.5 rounded-full border border-white shadow-2xs"
+                                  style={{ backgroundColor: hex }}
+                                />
+                                <span>{hex.toUpperCase()}</span>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* 3 1-tap Theme Buttons + Reset Button */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
                             <button
                               type="button"
                               onClick={() => handleApplyLogoTheme('dark')}
                               disabled={isExtractingColors}
-                              className="px-2.5 py-2 rounded-xl bg-[#0F1E2E] text-white text-[10px] font-bold border border-[#D4AF37]/40 shadow-xs hover:brightness-110 transition text-center"
+                              className="px-2.5 py-2 rounded-xl bg-[#0B1522] text-white text-[10px] font-bold border border-[#D4AF37]/40 shadow-xs hover:brightness-110 active:scale-95 transition text-center"
                             >
-                              🌙 {isArabic ? 'داكن بالهوية' : 'Brand Dark'}
+                              🌙 {isArabic ? 'داكن بالشعار' : 'Brand Dark'}
                             </button>
                             <button
                               type="button"
                               onClick={() => handleApplyLogoTheme('light')}
                               disabled={isExtractingColors}
-                              className="px-2.5 py-2 rounded-xl bg-[#FAF8F5] text-[#17251F] text-[10px] font-bold border border-[#D4AF37]/40 shadow-xs hover:brightness-105 transition text-center"
+                              className="px-2.5 py-2 rounded-xl bg-[#FAF8F5] text-[#17251F] text-[10px] font-bold border border-[#D4AF37]/40 shadow-xs hover:brightness-95 active:scale-95 transition text-center"
                             >
-                              ☀️ {isArabic ? 'فاتح بالهوية' : 'Brand Light'}
+                              ☀️ {isArabic ? 'فاتح بالشعار' : 'Brand Light'}
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleApplyLogoTheme('bold')}
+                              onClick={() => handleApplyLogoTheme('vibrant')}
                               disabled={isExtractingColors}
-                              className="px-2.5 py-2 rounded-xl bg-[#D4AF37] text-black text-[10px] font-bold shadow-xs hover:brightness-110 transition text-center"
+                              className="px-2.5 py-2 rounded-xl bg-[#D4AF37] text-black text-[10px] font-bold shadow-xs hover:brightness-105 active:scale-95 transition text-center"
                             >
-                              ✨ {isArabic ? 'لون الهوية الكامل' : 'Brand Bold'}
+                              ✨ {isArabic ? 'هوية كاملة' : 'Brand Vibrant'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleResetToTemplateColors}
+                              className="px-2.5 py-2 rounded-xl bg-white text-[#0A2E23] text-[10px] font-bold border border-[#D4AF37]/40 shadow-xs hover:bg-black/5 active:scale-95 transition text-center"
+                            >
+                              ↺ {isArabic ? 'ألوان القالب' : 'Template Colors'}
                             </button>
                           </div>
-
-                          {event.brandPalette && event.brandPalette.length > 0 && (
-                            <div className="flex items-center gap-1.5 pt-1">
-                              <span className="text-[10px] text-[#2D2421]/65">
-                                {isArabic ? 'العينات المستخرجة:' : 'Swatches:'}
-                              </span>
-                              <div className="flex -space-x-1">
-                                {event.brandPalette.map((hex, i) => (
-                                  <span
-                                    key={i}
-                                    className="h-4 w-4 rounded-full border border-white shadow-2xs"
-                                    style={{ backgroundColor: hex }}
-                                  />
-                                ))}
-                              </div>
-                            </div>
-                          )}
                         </div>
                       </div>
                     )}
@@ -1767,63 +1851,215 @@ export function PartyStudio({
                     )}
                   </div>
 
-                  {/* CARD 5: ✉️ 3D WAX SEAL LUXURY ENVELOPE INTRO */}
-                  <div className="rounded-2xl border border-[#D4AF37]/40 bg-white/80 p-4 shadow-xs space-y-4">
+                  {/* CARD 5: 📐 HERO TEXT ALIGNMENT */}
+                  <div className="rounded-2xl border border-[#D4AF37]/40 bg-white/80 p-4 shadow-xs space-y-2">
                     <span className="block text-xs font-bold text-[#0A2E23]">
-                      ✉️ {isArabic ? 'ظرف الدعوة الملكي ثلاثي الأبعاد والختم الشمعي' : '3D Wax Seal Luxury Envelope Intro'}
+                      📐 {isArabic ? 'محاذاة نصوص الغلاف' : 'Hero Text Alignment'}
+                    </span>
+                    <p className="text-[11px] text-[#2D2421]/65 mb-2">
+                      {isArabic
+                        ? 'اختر طريقة ترتيب ومحاذاة الشعار وعناوين الدعوة'
+                        : 'Choose alignment for your cover title, logo, and wording'}
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => updateEventFields({ layout: 'centered' })}
+                        className={`p-3 rounded-xl border text-start transition ${
+                          event.layout === 'centered'
+                            ? 'border-[#0A2E23] bg-[#0A2E23] text-white shadow-xs'
+                            : 'border-[#D4AF37]/40 bg-white text-[#17251F] hover:bg-black/5'
+                        }`}
+                      >
+                        <strong className="block text-xs font-bold">
+                          {isArabic ? 'توسيط كلاسيكي' : 'Centered Classic'}
+                        </strong>
+                        <p className={`text-[10px] mt-0.5 ${event.layout === 'centered' ? 'opacity-80' : 'text-[#2D2421]/60'}`}>
+                          {isArabic ? 'توسيط الشعار وعنوان الدعوة والنصوص' : 'Centers the logo, title, and wording'}
+                        </p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateEventFields({ layout: 'editorial' })}
+                        className={`p-3 rounded-xl border text-start transition ${
+                          event.layout === 'editorial'
+                            ? 'border-[#0A2E23] bg-[#0A2E23] text-white shadow-xs'
+                            : 'border-[#D4AF37]/40 bg-white text-[#17251F] hover:bg-black/5'
+                        }`}
+                      >
+                        <strong className="block text-xs font-bold">
+                          {isArabic ? 'محاذاة جانبية عصرية' : 'Side Editorial'}
+                        </strong>
+                        <p className={`text-[10px] mt-0.5 ${event.layout === 'editorial' ? 'opacity-80' : 'text-[#2D2421]/60'}`}>
+                          {isArabic ? 'محاذاة جانبية للنصوص بأسلوب المجلات والمؤتمرات' : 'Aligns header text to the side like a magazine'}
+                        </p>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* CARD 6: ✍️ FONT STYLE */}
+                  <div className="rounded-2xl border border-[#D4AF37]/40 bg-white/80 p-4 shadow-xs space-y-2">
+                    <span className="block text-xs font-bold text-[#0A2E23]">
+                      ✍️ {isArabic ? 'نوع خط الدعوة' : 'Font Style'}
+                    </span>
+                    <p className="text-[11px] text-[#2D2421]/65 mb-2">
+                      {isArabic ? 'اختر الطابع المطبعي لعناوين ونصوص بطاقة الدعوة' : 'Select typeface character for the invitation'}
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => updateEventFields({ typography: 'display' })}
+                        className={`p-3 rounded-xl border text-start transition ${
+                          event.typography === 'display'
+                            ? 'border-[#0A2E23] bg-[#0A2E23] text-white shadow-xs'
+                            : 'border-[#D4AF37]/40 bg-white text-[#17251F] hover:bg-black/5'
+                        }`}
+                      >
+                        <strong className="block text-sm font-serif font-bold">
+                          {isArabic ? 'خط كلاسيكي فخم' : 'Royal Calligraphic / Serif'}
+                        </strong>
+                        <p className={`text-[10px] mt-0.5 ${event.typography === 'display' ? 'opacity-80' : 'text-[#2D2421]/60'}`}>
+                          {isArabic ? 'خط فخم ومائل للمناسبات الملكية والزواجات' : 'Classical luxury serif calligraphy'}
+                        </p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateEventFields({ typography: 'modern' })}
+                        className={`p-3 rounded-xl border text-start transition ${
+                          event.typography === 'modern'
+                            ? 'border-[#0A2E23] bg-[#0A2E23] text-white shadow-xs'
+                            : 'border-[#D4AF37]/40 bg-white text-[#17251F] hover:bg-black/5'
+                        }`}
+                      >
+                        <strong className="block text-sm font-sans font-bold">
+                          {isArabic ? 'خط عصري واضح' : 'Modern Clean Sans'}
+                        </strong>
+                        <p className={`text-[10px] mt-0.5 ${event.typography === 'modern' ? 'opacity-80' : 'text-[#2D2421]/60'}`}>
+                          {isArabic ? 'خط هندسي عصري بسيط وواضح للشركات والمؤتمرات' : 'Clean, geometric modern sans-serif'}
+                        </p>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* CARD 7: ✨ SCROLL & SPARKLE MOTION */}
+                  <div className="rounded-2xl border border-[#D4AF37]/40 bg-white/80 p-4 shadow-xs space-y-2">
+                    <span className="block text-xs font-bold text-[#0A2E23]">
+                      ✨ {isArabic ? 'تأثيرات الحركة واللمعان' : 'Scroll & Sparkle Effects'}
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => updateEventFields({ motion: 'gentle' })}
+                        className={`p-3 rounded-xl border text-start transition ${
+                          event.motion === 'gentle'
+                            ? 'border-[#0A2E23] bg-[#0A2E23] text-white shadow-xs'
+                            : 'border-[#D4AF37]/40 bg-white text-[#17251F] hover:bg-black/5'
+                        }`}
+                      >
+                        <strong className="block text-xs font-bold">
+                          {isArabic ? 'متحرك مع السحب ✨' : 'Animated Scroll & Shimmer ✨'}
+                        </strong>
+                        <p className={`text-[10px] mt-0.5 ${event.motion === 'gentle' ? 'opacity-80' : 'text-[#2D2421]/60'}`}>
+                          {isArabic ? 'حركة ناعمة وظهور تدريجي مع التمرير' : 'Smooth reveal transitions and light reflections'}
+                        </p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateEventFields({ motion: 'none' })}
+                        className={`p-3 rounded-xl border text-start transition ${
+                          event.motion === 'none'
+                            ? 'border-[#0A2E23] bg-[#0A2E23] text-white shadow-xs'
+                            : 'border-[#D4AF37]/40 bg-white text-[#17251F] hover:bg-black/5'
+                        }`}
+                      >
+                        <strong className="block text-xs font-bold">
+                          {isArabic ? 'ثابت بدون حركة' : 'Static / Simple'}
+                        </strong>
+                        <p className={`text-[10px] mt-0.5 ${event.motion === 'none' ? 'opacity-80' : 'text-[#2D2421]/60'}`}>
+                          {isArabic ? 'عرض فوري ثابت لجميع العناصر بدون مؤثرات' : 'All elements instantly visible with zero animations'}
+                        </p>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* CARD 8: ❖ ORNAMENTAL BORDERS & DIVIDERS */}
+                  <div className="rounded-2xl border border-[#D4AF37]/40 bg-white/80 p-4 shadow-xs">
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={event.decorations !== false}
+                        onChange={(e) => updateEventFields({ decorations: e.target.checked })}
+                        className="mt-0.5 h-4 w-4 rounded text-[#0A2E23]"
+                      />
+                      <div className="flex-1">
+                        <span className="block text-xs font-bold text-[#0A2E23]">
+                          ❖ {isArabic ? 'الزخارف والإطارات الذهبية' : 'Ornamental Borders & Dividers'}
+                        </span>
+                        <p className="text-[11px] text-[#2D2421]/65 mt-0.5">
+                          {isArabic
+                            ? 'إظهار الإطارات الذهبية المزخرفة وفواصل ✦ الأنيقة بين الأقسام'
+                            : 'Shows decorative corner frames and ✦ section dividers on the card'}
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+
+                  {/* CARD 9: 🎟️ INTERACTIVE GUEST FEATURES */}
+                  <div className="rounded-2xl border border-[#D4AF37]/40 bg-white/80 p-4 shadow-xs space-y-3">
+                    <span className="block text-xs font-bold text-[#0A2E23]">
+                      🎟️ {isArabic ? 'مميزات تفاعلية للضيف' : 'Interactive Guest Features'}
                     </span>
                     <p className="text-[11px] text-[#2D2421]/65">
                       {isArabic
-                        ? 'مقدمة سينمائية فاخرة تظهر للضيف عند فتح الرابط، مع ختم شمعي ثلاثي الأبعاد ينكسر ليكشف الدعوة.'
-                        : 'A cinematic opening experience where guests tap an embossed 3D wax seal to break open their royal invitation.'}
+                        ? 'ميزات حية تضيف بعداً تفاعلياً مبشراً للضيف عند استلام الرابط'
+                        : 'Engaging real-time features visible to guests on the web invitation'}
                     </p>
 
-                    <label className="flex items-center gap-2.5 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(event.enableEnvelopeOpener)}
-                        onChange={(e) => updateEventFields({ enableEnvelopeOpener: e.target.checked })}
-                        data-testid="input-toggle-envelope-opener"
-                        className="h-4 w-4 rounded text-[#0A2E23]"
-                      />
-                      <span className="text-xs font-bold text-[#0A2E23]">
-                        {isArabic ? 'تفعيل ظرف الدعوة الملكي (Envelope Opener)' : 'Enable 3D Wax Seal Envelope Intro'}
-                      </span>
-                    </label>
+                    <div className="space-y-3 pt-1">
+                      {/* 1. Countdown & Month Calendar */}
+                      <label className="flex items-start gap-3 cursor-pointer p-2.5 rounded-xl border border-black/10 bg-black/[0.02]">
+                        <input
+                          type="checkbox"
+                          checked={event.showCountdownCalendar !== false}
+                          onChange={(e) => updateEventFields({ showCountdownCalendar: e.target.checked })}
+                          data-testid="input-toggle-countdown-calendar"
+                          className="mt-0.5 h-4 w-4 rounded text-[#0A2E23]"
+                        />
+                        <div className="flex-1">
+                          <span className="block text-xs font-bold text-[#0A2E23]">
+                            ⏳ {isArabic ? 'العداد التنازلي وتقويم الشهر' : 'Live Countdown & Month Calendar'}
+                          </span>
+                          <p className="text-[10px] text-[#2D2421]/60 mt-0.5">
+                            {isArabic
+                              ? 'عداد تنازلي رقمي حي وتقويم شهري يبرز يوم المناسبة بدائرة متوهجة'
+                              : 'Real-time countdown tiles and highlighted month calendar card'}
+                          </p>
+                        </div>
+                      </label>
 
-                    {event.enableEnvelopeOpener && (
-                      <div className="pt-3 border-t border-[#D4AF37]/20 space-y-3">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <label className="block text-xs font-bold text-[#0A2E23]">
-                            <span>{isArabic ? 'حرف أو رمز الختم الشمعي' : 'Wax Seal Monogram'}</span>
+                      {/* 2. 3D Wax Seal Envelope Intro with inline Preview button */}
+                      <div className="p-2.5 rounded-xl border border-black/10 bg-black/[0.02] space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <label className="flex items-start gap-3 cursor-pointer flex-1">
                             <input
-                              value={event.waxSealText || ''}
-                              onChange={(e) => updateEventFields({ waxSealText: e.target.value.slice(0, 4) })}
-                              data-testid="input-wax-seal-text"
-                              placeholder={isArabic ? 'مثال: VIP أو رمز' : 'e.g. VIP'}
-                              maxLength={4}
-                              className="qr-field mt-1.5 font-bold uppercase tracking-widest text-center"
+                              type="checkbox"
+                              checked={Boolean(event.enableEnvelopeOpener)}
+                              onChange={(e) => updateEventFields({ enableEnvelopeOpener: e.target.checked })}
+                              data-testid="input-toggle-envelope-opener"
+                              className="mt-0.5 h-4 w-4 rounded text-[#0A2E23]"
                             />
+                            <div className="flex-1">
+                              <span className="block text-xs font-bold text-[#0A2E23]">
+                                ✉️ {isArabic ? 'ظرف ملكي بالختم عند فتح الرابط' : '3D Wax Seal Envelope Intro'}
+                              </span>
+                              <p className="text-[10px] text-[#2D2421]/60 mt-0.5">
+                                {isArabic
+                                  ? 'مقدمة سينمائية تظهر للضيف بختم شمعي ثلاثي الأبعاد ينكسر عند اللمس'
+                                  : 'Cinematic opening experience where guests tap an embossed 3D wax seal to reveal the invitation'}
+                              </p>
+                            </div>
                           </label>
 
-                          <div className="flex items-center pt-5">
-                            <label className="flex items-center gap-2 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={Boolean(event.useLogoOnWaxSeal)}
-                                onChange={(e) => updateEventFields({ useLogoOnWaxSeal: e.target.checked })}
-                                data-testid="input-toggle-seal-logo"
-                                disabled={!event.logoUrl}
-                                className="h-4 w-4 rounded text-[#0A2E23]"
-                              />
-                              <span className="text-xs font-semibold text-[#0A2E23]">
-                                {isArabic ? 'طباعة شعار الفعالية على الختم' : 'Emboss Brand Logo on Wax Seal'}
-                              </span>
-                            </label>
-                          </div>
-                        </div>
-
-                        <div className="pt-1">
                           <button
                             type="button"
                             onClick={() => {
@@ -1833,14 +2069,46 @@ export function PartyStudio({
                               }
                             }}
                             data-testid="button-preview-envelope"
-                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-[#D4AF37]/50 bg-white hover:bg-black/5 text-xs font-bold text-[#0A2E23] transition"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-[#D4AF37]/50 bg-white hover:bg-black/5 text-[11px] font-bold text-[#0A2E23] transition shrink-0 ms-2 shadow-2xs active:scale-95"
                           >
                             <span>✉️</span>
-                            <span>{isArabic ? 'معاينة تجربة فتح الظرف الآن' : 'Preview Envelope Opening'}</span>
+                            <span>{isArabic ? 'معاينة الآن' : 'Preview Now'}</span>
                           </button>
                         </div>
+
+                        {event.enableEnvelopeOpener && (
+                          <div className="pt-2 border-t border-black/10 space-y-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <label className="block text-[11px] font-bold text-[#0A2E23]">
+                                <span>{isArabic ? 'حرف أو رمز الختم الشمعي' : 'Wax Seal Monogram'}</span>
+                                <input
+                                  value={event.waxSealText || ''}
+                                  onChange={(e) => updateEventFields({ waxSealText: e.target.value.slice(0, 4) })}
+                                  data-testid="input-wax-seal-text"
+                                  placeholder={isArabic ? 'مثال: VIP أو رمز' : 'e.g. VIP'}
+                                  maxLength={4}
+                                  className="qr-field mt-1 text-xs font-bold uppercase tracking-widest text-center"
+                                />
+                              </label>
+
+                              <div className="flex items-end">
+                                <label className="flex items-center gap-2 cursor-pointer text-[11px] font-semibold text-[#0A2E23] pb-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(event.useLogoOnWaxSeal)}
+                                    onChange={(e) => updateEventFields({ useLogoOnWaxSeal: e.target.checked })}
+                                    data-testid="input-toggle-seal-logo"
+                                    disabled={!event.logoUrl}
+                                    className="h-3.5 w-3.5 rounded text-[#0A2E23]"
+                                  />
+                                  <span>{isArabic ? 'طباعة الشعار على الختم' : 'Emboss Brand Logo on Wax Seal'}</span>
+                                </label>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -1995,6 +2263,22 @@ export function PartyStudio({
               {/* SHEET D: UPGRADED CUSTOM BLOCK EDITORS & 4-LAYOUT CUSTOM SECTION BUILDER */}
               {currentTab === 'edit-block' && activeBlock && (
                 <div className="mt-5 space-y-4">
+                  <div className="flex items-center justify-between pb-2 border-b border-[#D4AF37]/25">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('sections');
+                        setSelectedBlockId(null);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-[#D4AF37]/40 bg-white text-xs font-bold text-[#0A2E23] hover:bg-black/5 transition shadow-2xs active:scale-95"
+                    >
+                      <ArrowLeft size={13} className={isArabic ? 'rotate-180' : ''} />
+                      <span>{isArabic ? '← العودة للأقسام' : '← Back to Sections'}</span>
+                    </button>
+                    <span className="text-xs font-bold text-[#0A2E23]">
+                      {activeBlock.label}
+                    </span>
+                  </div>
                   <label className="block text-xs font-bold text-[#0A2E23]">
                     <span>{t('heading')}</span>
                     <input

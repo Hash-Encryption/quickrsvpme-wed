@@ -597,6 +597,7 @@ export function PartyInvitationRenderer({
     '--party-surface': surface,
     '--party-primary': primary,
     '--party-accent': accent,
+    backgroundColor: bg,
   } as CSSProperties;
 
   // Filter visible blocks and auto-localize untouched defaults when in Arabic
@@ -823,6 +824,15 @@ export function PartyInvitationRenderer({
           )}
         </div>
       )}
+
+      {/* Hero Ambient Vignette / Lighting Gradient using active theme colors */}
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-[480px] z-0 overflow-hidden"
+        style={{
+          background: `radial-gradient(circle at 50% 15%, ${accent}22 0%, transparent 72%)`,
+        }}
+        aria-hidden="true"
+      />
 
       {/* Main Luxury Poster Container */}
       <main className="relative z-10 mx-auto max-w-2xl px-5 sm:px-8 pt-6 pb-28">

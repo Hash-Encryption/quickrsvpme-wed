@@ -18,6 +18,8 @@ import {
   type StudioBlock,
   type BlockKey,
   parseEventDateDetails,
+  TEMPLATE_DEFAULT_BLOCK_KEYS,
+  getTemplateDefaultBlocks,
 } from './model.ts';
 import { appTranslations } from '../i18n/app-locale-data.ts';
 import { partyInvitationT, type PartyInvitationKey } from '../i18n/party.ts';
@@ -700,4 +702,84 @@ test('Reel Design: mergePartyEvent safely supports receptionTime, showCountdownC
   assert.equal(merged.enableEnvelopeOpener, true);
   assert.equal(merged.waxSealText, 'VIP');
   assert.equal(merged.useLogoOnWaxSeal, true);
+});
+
+test('Visual Clarity: Bright Birthday palette and refined master template styles', () => {
+  const birthdayDefault = partyStyles[partyTemplates.birthday.defaultStyleId];
+  assert.equal(birthdayDefault.id, 'celebration-berry');
+  assert.equal(birthdayDefault.backgroundColor, '#FFF7F4');
+  assert.equal(birthdayDefault.surfaceColor, '#FFFFFF');
+  assert.equal(birthdayDefault.primaryColor, '#241417');
+  assert.equal(birthdayDefault.accentColor, '#E04F67');
+  assert.equal(birthdayDefault.motif, 'balloons');
+
+  const corporateDefault = partyStyles[partyTemplates.corporate.defaultStyleId];
+  assert.equal(corporateDefault.id, 'executive-navy');
+  assert.equal(corporateDefault.backgroundColor, '#0B1522');
+  assert.equal(corporateDefault.surfaceColor, '#122236');
+  assert.equal(corporateDefault.primaryColor, '#FFFFFF');
+  assert.equal(corporateDefault.accentColor, '#D4AF37');
+
+  const babyShowerDefault = partyStyles[partyTemplates['baby-shower'].defaultStyleId];
+  assert.equal(babyShowerDefault.id, 'sage-botanical');
+  assert.equal(babyShowerDefault.backgroundColor, '#F3F7F4');
+  assert.equal(babyShowerDefault.primaryColor, '#1B2E24');
+  assert.equal(babyShowerDefault.accentColor, '#6E967E');
+
+  const customDefault = partyStyles[partyTemplates.custom.defaultStyleId];
+  assert.equal(customDefault.id, 'luxury-emerald');
+  assert.equal(customDefault.backgroundColor, '#F9F5EB');
+  assert.equal(customDefault.surfaceColor, '#0D2B22');
+  assert.equal(customDefault.accentColor, '#C89D3C');
+});
+
+test('Visual Clarity: Canonical default sections per master template', () => {
+  assert.deepEqual(TEMPLATE_DEFAULT_BLOCK_KEYS.corporate, ['schedule', 'host', 'faq']);
+  assert.deepEqual(TEMPLATE_DEFAULT_BLOCK_KEYS.birthday, ['catering', 'dress', 'song']);
+  assert.deepEqual(TEMPLATE_DEFAULT_BLOCK_KEYS['baby-shower'], ['catering', 'registry', 'song']);
+  assert.deepEqual(TEMPLATE_DEFAULT_BLOCK_KEYS.custom, ['catering', 'faq', 'text']);
+
+  const testBlocks: StudioBlock[] = [
+    { id: '1', key: 'schedule', enabled: false, label: 'Schedule', eyebrow: '', content: { heading: '' } },
+    { id: '2', key: 'catering', enabled: true, label: 'Catering', eyebrow: '', content: { heading: '' } },
+    { id: '3', key: 'host', enabled: false, label: 'Host', eyebrow: '', content: { heading: '' } },
+    { id: '4', key: 'faq', enabled: false, label: 'FAQ', eyebrow: '', content: { heading: '' } },
+    { id: '5', key: 'dress', enabled: false, label: 'Dress', eyebrow: '', content: { heading: '' } },
+  ];
+
+  const corporateBlocks = getTemplateDefaultBlocks('corporate', testBlocks);
+  assert.equal(corporateBlocks.find((b) => b.key === 'schedule')?.enabled, true);
+  assert.equal(corporateBlocks.find((b) => b.key === 'host')?.enabled, true);
+  assert.equal(corporateBlocks.find((b) => b.key === 'faq')?.enabled, true);
+  assert.equal(corporateBlocks.find((b) => b.key === 'catering')?.enabled, false);
+
+  const birthdayBlocks = getTemplateDefaultBlocks('birthday', testBlocks);
+  assert.equal(birthdayBlocks.find((b) => b.key === 'catering')?.enabled, true);
+  assert.equal(birthdayBlocks.find((b) => b.key === 'dress')?.enabled, true);
+  assert.equal(birthdayBlocks.find((b) => b.key === 'schedule')?.enabled, false);
+});
+
+test('Visual Clarity: Logo Brand theme generation and auto-apply mechanics', async () => {
+  const dominant = '#0B2545'; // Dark Navy Brand
+  const accent = '#134074';
+
+  const darkTheme = deriveBrandTheme(dominant, accent, 'dark');
+  assert.equal(darkTheme.name, 'Brand Dark');
+  assert.equal(darkTheme.primaryColor, '#FFFFFF'); // White high contrast
+  assert.ok(darkTheme.backgroundColor.startsWith('#'));
+
+  const lightTheme = deriveBrandTheme(dominant, accent, 'light');
+  assert.equal(lightTheme.name, 'Brand Light');
+  assert.equal(lightTheme.backgroundColor, '#FAF8F5'); // Warm ivory
+  assert.equal(lightTheme.surfaceColor, '#FFFFFF');
+
+  const vibrantTheme = deriveBrandTheme(dominant, accent, 'vibrant');
+  assert.equal(vibrantTheme.name, 'Brand Vibrant');
+  assert.equal(vibrantTheme.backgroundColor, dominant);
+
+  const extracted = await extractColorsFromImageDataUrl('data:image/png;base64,mock');
+  assert.ok(extracted.themes?.dark);
+  assert.ok(extracted.themes?.light);
+  assert.ok(extracted.themes?.bold);
+  assert.ok(extracted.themes?.vibrant);
 });

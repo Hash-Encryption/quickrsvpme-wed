@@ -24,6 +24,7 @@ export type ExtractedPalette = {
     dark: BrandTheme;
     light: BrandTheme;
     bold: BrandTheme;
+    vibrant?: BrandTheme;
   };
 };
 
@@ -185,32 +186,34 @@ export function shadeColor(hex: string, factor: number): string {
 export function deriveBrandTheme(
   dominantHex: string,
   accentHex: string,
-  mode: 'dark' | 'light' | 'bold'
+  mode: 'dark' | 'light' | 'bold' | 'vibrant'
 ): BrandTheme {
   const [dr, dg, db] = hexToRgb(dominantHex);
   const domLum = getRelativeLuminance(dr, dg, db);
 
   if (mode === 'dark') {
-    // Deepen primary brand color into rich, atmospheric dark canvas
-    const deepBg = domLum > 0.3 ? shadeColor(dominantHex, 0.15) : shadeColor(dominantHex, 0.4);
-    // Ensure deepBg is dark enough
+    // Deepen primary brand color into rich, atmospheric dark canvas (luminance ~12%)
+    const deepBg = domLum > 0.3 ? shadeColor(dominantHex, 0.15) : shadeColor(dominantHex, 0.38);
     const [br, bg, bb] = hexToRgb(deepBg);
-    const finalBg = getRelativeLuminance(br, bg, bb) > 0.1 ? mixColors(deepBg, '#0A0E14', 0.65) : deepBg;
+    const bgLum = getRelativeLuminance(br, bg, bb);
+    const finalBg = bgLum > 0.12 ? mixColors(deepBg, '#070B10', 0.7) : deepBg;
+    // Slightly lighter shade (luminance ~18%) for curved sheet / surface
     const surface = mixColors(finalBg, '#FFFFFF', 0.08);
 
     return {
       name: 'Brand Dark',
       backgroundColor: finalBg,
       surfaceColor: surface,
-      primaryColor: '#F8FAFC',
+      primaryColor: '#FFFFFF',
       accentColor: accentHex,
     };
   }
 
   if (mode === 'light') {
-    // Warm alabaster / ivory tinted with 4% of the brand primary
-    const tintedBg = mixColors('#FAF8F5', dominantHex, 0.05);
-    const darkPrimary = domLum < 0.25 ? dominantHex : shadeColor(dominantHex, 0.3);
+    // Warm alabaster / ivory background
+    const tintedBg = '#FAF8F5';
+    // Deep darkened shade of primaryBrandHex for high contrast text
+    const darkPrimary = domLum < 0.2 ? dominantHex : shadeColor(dominantHex, 0.25);
 
     return {
       name: 'Brand Light',
@@ -221,14 +224,14 @@ export function deriveBrandTheme(
     };
   }
 
-  // 'bold': Uses exact extracted brand color as dominant canvas
+  // 'bold' or 'vibrant': Uses exact extracted brand color as dominant canvas
   const bg = dominantHex;
   const isLight = domLum > 0.45;
   const surface = isLight ? mixColors(bg, '#000000', 0.06) : mixColors(bg, '#FFFFFF', 0.12);
   const primary = isLight ? '#0F172A' : '#FFFFFF';
 
   return {
-    name: 'Brand Bold',
+    name: mode === 'vibrant' ? 'Brand Vibrant' : 'Brand Bold',
     backgroundColor: bg,
     surfaceColor: surface,
     primaryColor: primary,
@@ -386,6 +389,7 @@ export async function extractColorsFromImageDataUrl(dataUrl: string): Promise<Ex
     dark: deriveBrandTheme(fallbackDominant, fallbackAccent, 'dark'),
     light: deriveBrandTheme(fallbackDominant, fallbackAccent, 'light'),
     bold: deriveBrandTheme(fallbackDominant, fallbackAccent, 'bold'),
+    vibrant: deriveBrandTheme(fallbackDominant, fallbackAccent, 'vibrant'),
   };
 
   const fallback: ExtractedPalette = {
@@ -432,20 +436,29 @@ export async function extractColorsFromImageDataUrl(dataUrl: string): Promise<Ex
 
           for (let i = 0; i < data.length; i += 4) {
             const alpha = data[i + 3];
-            if (alpha < 120) continue; // Skip transparent pixels
+            // Strictly discard transparent pixels (A < 140)
+            if (alpha < 140) continue;
 
             const rawR = data[i];
             const rawG = data[i + 1];
             const rawB = data[i + 2];
 
-            // Ignore near-white background pixels
-            if (rawR > 235 && rawG > 235 && rawB > 235) continue;
-            // Ignore near-black pixels
-            if (rawR < 20 && rawG < 20 && rawB < 20) continue;
+            // Strictly discard white/near-white pixels (R > 225 && G > 225 && B > 225)
+            if (rawR > 225 && rawG > 225 && rawB > 225) continue;
+            // Discard near-black pixels
+            if (rawR < 15 && rawG < 15 && rawB < 15) continue;
 
             const max = Math.max(rawR, rawG, rawB);
             const min = Math.min(rawR, rawG, rawB);
             const saturation = max === 0 ? 0 : (max - min) / max;
+
+            // Strictly discard neutral gray noise (saturation < 0.15)
+            if (saturation < 0.15) continue;
+
+            const lum = getRelativeLuminance(rawR, rawG, rawB);
+            // Weight each remaining pixel by saturation * luminance balance
+            const lumBalance = Math.max(0.1, 1 - Math.abs(lum - 0.45) * 1.6);
+            const weight = Math.max(1, Math.round(saturation * 12 * lumBalance));
 
             const r = quantize(rawR);
             const g = quantize(rawG);
@@ -455,7 +468,7 @@ export async function extractColorsFromImageDataUrl(dataUrl: string): Promise<Ex
             if (!colorCounts[key]) {
               colorCounts[key] = { count: 0, r, g, b, saturation };
             }
-            colorCounts[key].count += 1 + Math.round(saturation * 3); // Weight chromatic pixels
+            colorCounts[key].count += weight;
           }
 
           const sorted = Object.values(colorCounts).sort((a, b) => b.count - a.count);
@@ -492,6 +505,7 @@ export async function extractColorsFromImageDataUrl(dataUrl: string): Promise<Ex
             dark: deriveBrandTheme(dominantHex, accentHex, 'dark'),
             light: deriveBrandTheme(dominantHex, accentHex, 'light'),
             bold: deriveBrandTheme(dominantHex, accentHex, 'bold'),
+            vibrant: deriveBrandTheme(dominantHex, accentHex, 'vibrant'),
           };
 
           resolve({
