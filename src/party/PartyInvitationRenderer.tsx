@@ -1,4 +1,4 @@
-import { type CSSProperties, useMemo, useState } from 'react';
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowDown,
@@ -19,6 +19,7 @@ import {
   HelpCircle,
   LockKeyhole,
   MapPin,
+  Mic,
   Music2,
   Shirt,
   Sparkles,
@@ -32,6 +33,7 @@ import { invitationT } from '../i18n/invitation.ts';
 import { partyInvitationT, type PartyInvitationKey } from '../i18n/party.ts';
 import {
   formatPartyDate,
+  parseEventDateDetails,
   partyStyles,
   resolvePartyStyleId,
   type PartyEventData,
@@ -41,6 +43,8 @@ import {
 } from './model.ts';
 import { formatFullHijriDate } from '../utils/saudiCalendar.ts';
 import { hexToRgb, getRelativeLuminance, mixColors } from '../utils/brandColorExtractor.ts';
+import { PartyEnvelopeOpener } from './PartyEnvelopeOpener.tsx';
+import './party.css';
 
 export type RSVPStatus = 'pending' | 'accepted' | 'declined';
 export type { BlockKey, BlockContent, StudioBlock };
@@ -75,6 +79,8 @@ export type PartyInvitationRendererProps = {
   onDeleteBlock?: (id: string) => void;
   onDuplicateBlock?: (id: string) => void;
   onChangeTitleScale?: (scale: 'sm' | 'md' | 'lg' | 'xl') => void;
+  forceEnvelopeOpen?: boolean;
+  onEnvelopeOpened?: () => void;
 };
 
 /**
@@ -138,6 +144,303 @@ export function QRPassMark({ label }: { label: string }) {
           ))
         )}
       </div>
+    </div>
+  );
+}
+
+export { parseEventDateDetails };
+
+/**
+ * Live 1-second interval countdown towards event date
+ */
+export function useLiveCountdown(dateStr: string, timeStr = '19:00') {
+  const calculate = () => {
+    if (!dateStr) return { days: 0, hours: 0, minutes: 0, seconds: 0, isPast: false };
+    const [y, m, d] = dateStr.trim().split('-').map(Number);
+    const [hh, mm] = (timeStr || '19:00').split(':').map(Number);
+    const target = new Date(Date.UTC(y || 2026, (m || 1) - 1, d || 1, hh || 0, mm || 0, 0)).getTime();
+    const diff = target - Date.now();
+    if (diff <= 0) {
+      return { days: 0, hours: 0, minutes: 0, seconds: 0, isPast: true };
+    }
+    return {
+      days: Math.floor(diff / (1000 * 60 * 60 * 24)),
+      hours: Math.floor((diff / (1000 * 60 * 60)) % 24),
+      minutes: Math.floor((diff / (1000 * 60)) % 60),
+      seconds: Math.floor((diff / 1000) % 60),
+      isPast: false,
+    };
+  };
+
+  const [timeLeft, setTimeLeft] = useState(calculate);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeLeft(calculate());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [dateStr, timeStr]);
+
+  return timeLeft;
+}
+
+/**
+ * Hardware-Accelerated Scroll-Reveal Motion Wrapper
+ * Immediately visible on SSR/tests and when event.motion === 'none'
+ */
+export function PartyScrollReveal({
+  children,
+  className = '',
+  delay = 0,
+  disabled = false,
+}: {
+  children: ReactNode;
+  className?: string;
+  delay?: number;
+  disabled?: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [isVisible, setIsVisible] = useState(() => {
+    if (typeof window === 'undefined' || typeof IntersectionObserver === 'undefined' || disabled) {
+      return true;
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    if (isVisible || disabled) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setIsVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.08, rootMargin: '0px 0px -30px 0px' }
+    );
+    if (ref.current) observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, [disabled, isVisible]);
+
+  return (
+    <div
+      ref={ref}
+      className={className}
+      style={{
+        opacity: isVisible ? 1 : 0,
+        transform: isVisible ? 'translateY(0) scale(1)' : 'translateY(22px) scale(0.985)',
+        transition: 'opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1), transform 0.65s cubic-bezier(0.16, 1, 0.3, 1)',
+        transitionDelay: `${delay}ms`,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Reel 1 Oversized Architectural Date Lockup + Dual Timing Split Plaque
+ */
+export function EditorialDateLockup({
+  event,
+  effectiveLocale,
+  isArabic,
+  dateDetails,
+}: {
+  event: PartyEventData;
+  effectiveLocale: InvitationLocale;
+  isArabic: boolean;
+  dateDetails: ReturnType<typeof parseEventDateDetails>;
+}) {
+  const timeDisplay = event.timeLabel || event.startTime || (isArabic ? 'بعد صلاة العشاء' : 'Evening');
+  const receptionDisplay = event.receptionTime || event.startTime || (isArabic ? '7:30 م' : '7:30 PM');
+  const mapHref = event.mapUrl || (event.venue || event.city ? `https://maps.google.com/?q=${encodeURIComponent([event.venue, event.city].filter(Boolean).join(' '))}` : undefined);
+
+  return (
+    <div className="text-center my-3 space-y-6" data-testid="editorial-date-lockup">
+      {/* Top Ribbon: Day of Week & Starting Time */}
+      <div className="flex items-center justify-between border-y border-[var(--party-accent)]/30 py-2.5 px-3 text-xs tracking-widest uppercase font-bold text-[var(--party-accent)]">
+        <span>{dateDetails?.dayOfWeek || (isArabic ? 'يوم الحفل' : 'Event Day')}</span>
+        <span>•</span>
+        <span>{isArabic ? `يبدأ: ${timeDisplay}` : `Starts: ${timeDisplay}`}</span>
+      </div>
+
+      {/* Sculpted Center Date Lockup: Oversized Day Numeral beside stacked Month & Year */}
+      <div className="flex items-center justify-center gap-5 sm:gap-7 py-2">
+        <span
+          className="font-serif font-black text-6xl sm:text-7xl lg:text-8xl text-[var(--party-accent)] leading-none tabular-nums drop-shadow-sm select-all"
+        >
+          {dateDetails?.day || '14'}
+        </span>
+        <div className="text-start border-s-2 border-[var(--party-accent)]/40 ps-4">
+          <p className="font-serif font-bold text-xl sm:text-2xl tracking-widest uppercase text-[var(--party-primary)] leading-tight">
+            {dateDetails?.monthName || (isArabic ? 'أكتوبر' : 'October')}
+          </p>
+          <p className="font-mono text-sm sm:text-base font-semibold tracking-wider opacity-70 text-[var(--party-primary)] mt-0.5">
+            {dateDetails?.year || '2026'}
+          </p>
+        </div>
+      </div>
+
+      {/* Umm al-Qura Hijri Date Pill */}
+      {event.showHijriDate !== false && event.date && (
+        <div className="inline-flex items-center gap-2 rounded-full border border-[var(--party-accent)]/35 bg-black/10 px-4 py-1 text-xs font-semibold shadow-xs">
+          <CalendarDays size={13} className="text-[var(--party-accent)]" />
+          <span>{formatFullHijriDate(event.date, isArabic ? 'ar' : 'en')}</span>
+        </div>
+      )}
+
+      {/* Dual Timing Split Row (Saudi Hospitality Standard) */}
+      <div className="grid grid-cols-2 gap-3 max-w-md mx-auto pt-2">
+        {/* Column 1: Reception */}
+        <div className="rounded-2xl border border-[var(--party-accent)]/25 bg-black/10 p-3.5 text-center shadow-xs">
+          <p className="text-[10px] uppercase font-bold tracking-wider text-[var(--party-accent)] mb-1">
+            ☕ {isArabic ? 'استقبال الضيوف' : 'Guest Reception'}
+          </p>
+          <p className="font-mono font-bold text-sm text-[var(--party-primary)]" dir="ltr">
+            {receptionDisplay}
+          </p>
+        </div>
+
+        {/* Column 2: Main Event / Dinner */}
+        <div className="rounded-2xl border border-[var(--party-accent)]/25 bg-black/10 p-3.5 text-center shadow-xs">
+          <p className="text-[10px] uppercase font-bold tracking-wider text-[var(--party-accent)] mb-1">
+            ✨ {isArabic ? 'بدء الحفل والعشاء' : 'Ceremony & Dinner'}
+          </p>
+          <p className="font-mono font-bold text-sm text-[var(--party-primary)]" dir="ltr">
+            {timeDisplay}
+          </p>
+        </div>
+      </div>
+
+      {/* Editorial Venue & Google Maps Plaque */}
+      {(event.venue || event.city) && (
+        <div className="rounded-2xl border border-[var(--party-accent)]/30 bg-black/10 p-4 max-w-md mx-auto text-center shadow-xs">
+          <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-[var(--party-accent)] mb-1">
+            <MapPin size={15} />
+            <bdi>{event.venue}</bdi>
+          </div>
+          {event.city && (
+            <p className="text-xs opacity-75 mb-3">{event.city}</p>
+          )}
+          {mapHref && (
+            <a
+              href={mapHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="link-google-maps"
+              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--party-accent)]/50 bg-[var(--party-accent)]/15 hover:bg-[var(--party-accent)]/25 px-4 py-1.5 text-[11px] font-bold text-[var(--party-accent)] transition shadow-xs active:scale-95"
+            >
+              <span>{isArabic ? 'فتح الموقع في الخرائط 📍' : 'Open in Google Maps 📍'}</span>
+              <ExternalLink size={12} />
+            </a>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Embedded Live 4-Tile Countdown + High-Contrast Circled Month Calendar Card
+ */
+export function CountdownAndCalendarSheet({
+  event,
+  dateDetails,
+  isArabic,
+}: {
+  event: PartyEventData;
+  dateDetails: ReturnType<typeof parseEventDateDetails>;
+  isArabic: boolean;
+}) {
+  const timeLeft = useLiveCountdown(event.date, event.startTime);
+
+  const weekdayHeaders = isArabic
+    ? ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
+    : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  return (
+    <div className="mt-8 space-y-6" data-testid="section-countdown-calendar">
+      {/* 1. Live 4-Tile Countdown */}
+      <div className="space-y-2">
+        <span className="block text-[10px] uppercase font-bold tracking-[.2em] text-center text-[var(--party-accent)]">
+          ⏳ {isArabic ? 'العد التنازلي للمناسبة' : 'Live Event Countdown'}
+        </span>
+        <div className="grid grid-cols-4 gap-2 sm:gap-3 max-w-sm sm:max-w-md mx-auto">
+          {[
+            { label: isArabic ? 'يوم' : 'Days', value: timeLeft.days },
+            { label: isArabic ? 'ساعة' : 'Hours', value: timeLeft.hours },
+            { label: isArabic ? 'دقيقة' : 'Mins', value: timeLeft.minutes },
+            { label: isArabic ? 'ثانية' : 'Secs', value: timeLeft.seconds },
+          ].map((tile) => (
+            <div
+              key={tile.label}
+              className="rounded-2xl border border-[var(--party-accent)]/30 bg-black/15 p-2.5 sm:p-3 text-center shadow-xs"
+            >
+              <span className="block font-mono font-black text-xl sm:text-2xl text-[var(--party-accent)] leading-tight tabular-nums">
+                {String(tile.value).padStart(2, '0')}
+              </span>
+              <span className="block text-[10px] font-bold opacity-75 uppercase tracking-wider mt-0.5">
+                {tile.label}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 2. Embedded High-Contrast Month Calendar Card */}
+      {dateDetails && (
+        <div className="rounded-2xl p-5 shadow-lg border border-[var(--party-accent)]/35 bg-[#FAF6EE] text-[#18181B] max-w-sm sm:max-w-md mx-auto">
+          {/* Calendar Header */}
+          <div className="flex items-center justify-between border-b border-[#18181B]/15 pb-2.5 mb-3">
+            <span className="font-serif font-bold text-sm sm:text-base text-[#18181B]">
+              📅 {dateDetails.monthName} {dateDetails.year}
+            </span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-[#18181B]/60">
+              {isArabic ? 'تقويم المناسبة' : 'Calendar'}
+            </span>
+          </div>
+
+          {/* 7-Column Weekday Header */}
+          <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-[#18181B]/60 mb-2">
+            {weekdayHeaders.map((w, idx) => (
+              <span key={idx} className="truncate">{w.slice(0, 3)}</span>
+            ))}
+          </div>
+
+          {/* Month Day Grid */}
+          <div className="grid grid-cols-7 gap-1 text-center text-xs">
+            {/* Blank offset days */}
+            {Array.from({ length: dateDetails.firstDayOfWeek }).map((_, idx) => (
+              <div key={`empty-${idx}`} className="h-7 w-7" />
+            ))}
+
+            {/* Calendar Days */}
+            {Array.from({ length: dateDetails.totalDays }, (_, i) => i + 1).map((d) => {
+              const isEventDay = d === dateDetails.day;
+              return (
+                <div key={d} className="flex items-center justify-center h-7 w-7 mx-auto">
+                  {isEventDay ? (
+                    <span
+                      data-testid="calendar-event-day"
+                      className="bg-[var(--party-accent)] text-[#091119] font-bold rounded-full w-7 h-7 flex items-center justify-center shadow-md ring-4 ring-[var(--party-accent)]/25 animate-pulse"
+                      title={isArabic ? 'موعد المناسبة' : 'Event Date'}
+                    >
+                      {d}
+                    </span>
+                  ) : (
+                    <span className="text-[#18181B]/80 font-medium">{d}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -246,13 +549,27 @@ export function PartyInvitationRenderer({
   onDeleteBlock,
   onDuplicateBlock,
   onChangeTitleScale,
+  forceEnvelopeOpen = false,
+  onEnvelopeOpened,
 }: PartyInvitationRendererProps) {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const [localSong, setLocalSong] = useState(song);
   const [heroSelected, setHeroSelected] = useState(false);
+  const [envelopeDismissed, setEnvelopeDismissed] = useState(false);
+
+  useEffect(() => {
+    if (forceEnvelopeOpen) {
+      setEnvelopeDismissed(false);
+    }
+  }, [forceEnvelopeOpen]);
 
   const effectiveLocale: InvitationLocale = invitationLocale ?? (uiLocale === 'en' ? 'en' : 'ar');
   const isArabic = effectiveLocale === 'ar';
+
+  const dateDetails = useMemo(() => {
+    return parseEventDateDetails(event.date, isArabic ? 'ar' : 'en');
+  }, [event.date, isArabic]);
+
   const styleKey = resolvePartyStyleId(event.templateId, event.styleId);
   const style = partyStyles[styleKey] ?? partyStyles['luxury-emerald'];
 
@@ -379,6 +696,26 @@ export function PartyInvitationRenderer({
       lang={effectiveLocale}
       dir={localeDirection(effectiveLocale)}
     >
+      {/* 0. 3D WAX SEAL LUXURY ENVELOPE INTRO */}
+      {(event.enableEnvelopeOpener || forceEnvelopeOpen) && !envelopeDismissed && (!isEditMode || forceEnvelopeOpen) && (
+        <PartyEnvelopeOpener
+          title={event.title}
+          hostName={event.hostName}
+          logoUrl={event.logoUrl}
+          useLogoOnWaxSeal={event.useLogoOnWaxSeal}
+          waxSealText={event.waxSealText}
+          backgroundColor={bg}
+          primaryColor={primary}
+          accentColor={accent}
+          locale={isArabic ? 'ar' : 'en'}
+          isOpen={envelopeDismissed}
+          onOpen={() => {
+            setEnvelopeDismissed(true);
+            onEnvelopeOpened?.();
+          }}
+        />
+      )}
+
       {/* 1. BACKGROUND ENGINE (Zero Tiling/Repeating + 3 Fill Modes + Blur) */}
       {event.backgroundImageUrl && (
         <>
@@ -646,6 +983,31 @@ export function PartyInvitationRenderer({
                 </p>
               </div>
             </div>
+
+            {/* Ambient Floating Dust */}
+            {event.motion !== 'none' && (
+              <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+                <div className="absolute top-1/4 start-1/4 h-1.5 w-1.5 rounded-full bg-[var(--party-accent)]/40 animate-floating-dust" />
+                <div className="absolute top-1/2 end-1/3 h-2 w-2 rounded-full bg-[var(--party-accent)]/30 animate-floating-dust" style={{ animationDelay: '3s' }} />
+                <div className="absolute bottom-1/4 start-1/3 h-1 w-1 rounded-full bg-[var(--party-accent)]/50 animate-floating-dust" style={{ animationDelay: '6s' }} />
+              </div>
+            )}
+
+            {/* Scroll Down Micro-Indicator */}
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                const el = document.getElementById('party-invitation-body');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="pt-6 pb-2 flex flex-col items-center justify-center gap-1 cursor-pointer transition opacity-75 hover:opacity-100 animate-scroll-pulse text-center select-none"
+              aria-label={isArabic ? 'اسحب للتفاصيل' : 'Scroll down for details'}
+            >
+              <span className="text-[10px] uppercase font-bold tracking-[.2em] text-[var(--party-accent)]">
+                {isArabic ? 'اسحب للتفاصيل' : 'Scroll for Details'}
+              </span>
+              <ChevronDown size={14} className="text-[var(--party-accent)]" />
+            </div>
           </section>
         )}
 
@@ -739,6 +1101,31 @@ export function PartyInvitationRenderer({
                 <bdi>{event.venue}{event.city ? ` · ${event.city}` : ''}</bdi>
               </div>
             )}
+
+            {/* Ambient Floating Dust */}
+            {event.motion !== 'none' && (
+              <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+                <div className="absolute top-1/4 start-1/4 h-1.5 w-1.5 rounded-full bg-[var(--party-accent)]/40 animate-floating-dust" />
+                <div className="absolute top-1/2 end-1/3 h-2 w-2 rounded-full bg-[var(--party-accent)]/30 animate-floating-dust" style={{ animationDelay: '3s' }} />
+                <div className="absolute bottom-1/4 start-1/3 h-1 w-1 rounded-full bg-[var(--party-accent)]/50 animate-floating-dust" style={{ animationDelay: '6s' }} />
+              </div>
+            )}
+
+            {/* Scroll Down Micro-Indicator */}
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                const el = document.getElementById('party-invitation-body');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="pt-6 pb-2 flex flex-col items-center justify-center gap-1 cursor-pointer transition opacity-75 hover:opacity-100 animate-scroll-pulse text-center select-none"
+              aria-label={isArabic ? 'اسحب للتفاصيل' : 'Scroll down for details'}
+            >
+              <span className="text-[10px] uppercase font-bold tracking-[.2em] text-[var(--party-accent)]">
+                {isArabic ? 'اسحب للتفاصيل' : 'Scroll for Details'}
+              </span>
+              <ChevronDown size={14} className="text-[var(--party-accent)]" />
+            </div>
           </section>
         )}
 
@@ -811,6 +1198,31 @@ export function PartyInvitationRenderer({
                 </div>
               )}
             </div>
+
+            {/* Ambient Floating Dust */}
+            {event.motion !== 'none' && (
+              <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+                <div className="absolute top-1/4 start-1/4 h-1.5 w-1.5 rounded-full bg-[var(--party-accent)]/40 animate-floating-dust" />
+                <div className="absolute top-1/2 end-1/3 h-2 w-2 rounded-full bg-[var(--party-accent)]/30 animate-floating-dust" style={{ animationDelay: '3s' }} />
+                <div className="absolute bottom-1/4 start-1/3 h-1 w-1 rounded-full bg-[var(--party-accent)]/50 animate-floating-dust" style={{ animationDelay: '6s' }} />
+              </div>
+            )}
+
+            {/* Scroll Down Micro-Indicator */}
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                const el = document.getElementById('party-invitation-body');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="pt-6 pb-2 flex flex-col items-center justify-center gap-1 cursor-pointer transition opacity-75 hover:opacity-100 animate-scroll-pulse text-center select-none"
+              aria-label={isArabic ? 'اسحب للتفاصيل' : 'Scroll down for details'}
+            >
+              <span className="text-[10px] uppercase font-bold tracking-[.2em] text-[var(--party-accent)]">
+                {isArabic ? 'اسحب للتفاصيل' : 'Scroll for Details'}
+              </span>
+              <ChevronDown size={14} className="text-[var(--party-accent)]" />
+            </div>
           </section>
         )}
 
@@ -874,147 +1286,219 @@ export function PartyInvitationRenderer({
                 </div>
               )}
             </div>
-          </section>
-        )}
 
-        {/* 3. MODULAR BLOCKS SECTION — Seamless Continuous Flow */}
-        {visibleBlocks.length > 0 && (
-          <section className="my-8 space-y-6" data-testid="section-blocks">
-            {visibleBlocks.map((block, index) => {
-              const isSelected = isEditMode && selectedBlockId === block.id;
+            {/* Ambient Floating Dust */}
+            {event.motion !== 'none' && (
+              <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+                <div className="absolute top-1/4 start-1/4 h-1.5 w-1.5 rounded-full bg-[var(--party-accent)]/40 animate-floating-dust" />
+                <div className="absolute top-1/2 end-1/3 h-2 w-2 rounded-full bg-[var(--party-accent)]/30 animate-floating-dust" style={{ animationDelay: '3s' }} />
+                <div className="absolute bottom-1/4 start-1/3 h-1 w-1 rounded-full bg-[var(--party-accent)]/50 animate-floating-dust" style={{ animationDelay: '6s' }} />
+              </div>
+            )}
 
-              return (
-                <div
-                  key={block.id}
-                  id={`party-block-${block.id}`}
-                  data-testid={`party-block-${block.key}`}
-                  onClick={() => {
-                    if (isEditMode) {
-                      setHeroSelected(false);
-                      onSelectBlock?.(block.id);
-                    }
-                  }}
-                  className={`relative transition-all duration-200 ${
-                    isEditMode
-                      ? 'cursor-pointer hover:ring-1 hover:ring-[var(--party-accent)]/50 rounded-2xl p-1'
-                      : ''
-                  } ${
-                    isSelected
-                      ? 'ring-1 ring-[var(--party-accent)] shadow-xl bg-black/10 rounded-2xl'
-                      : ''
-                  }`}
-                >
-                  {/* On-Canvas Floating Action Pill Bar for Block */}
-                  {isEditMode && isSelected && (
-                    <div
-                      className="absolute -top-4 inset-x-0 mx-auto z-30 flex items-center justify-center gap-1 p-1 rounded-full bg-[#18201C]/95 text-white border border-[var(--party-accent)]/60 shadow-2xl backdrop-blur-md w-fit max-w-[95%]"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => onSelectBlock?.(block.id)}
-                        data-testid={`button-edit-block-${block.id}`}
-                        aria-label={`Edit ${block.label}`}
-                        className="flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-semibold bg-[var(--party-accent)] text-black hover:brightness-110 transition"
-                      >
-                        <Edit3 size={11} />
-                        <span>{isArabic ? 'تعديل' : 'Edit'}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onMoveBlock?.(index, -1)}
-                        disabled={index === 0}
-                        data-testid={`button-move-up-${block.id}`}
-                        aria-label={`Move Up ${block.label}`}
-                        className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-30 transition"
-                        title="Move Up"
-                      >
-                        <ArrowUp size={12} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onMoveBlock?.(index, 1)}
-                        disabled={index === visibleBlocks.length - 1}
-                        data-testid={`button-move-down-${block.id}`}
-                        aria-label={`Move Down ${block.label}`}
-                        className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-30 transition"
-                        title="Move Down"
-                      >
-                        <ArrowDown size={12} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onDuplicateBlock?.(block.id)}
-                        data-testid={`button-duplicate-${block.id}`}
-                        aria-label={`Duplicate ${block.label}`}
-                        className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition"
-                        title="Duplicate"
-                      >
-                        <Copy size={12} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onToggleBlock?.(block.id)}
-                        data-testid={`button-toggle-${block.id}`}
-                        aria-label={`Toggle ${block.label}`}
-                        className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition"
-                        title="Hide Block"
-                      >
-                        <EyeOff size={12} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onDeleteBlock?.(block.id)}
-                        data-testid={`button-delete-${block.id}`}
-                        aria-label={`Delete ${block.label}`}
-                        className="flex h-7 w-7 items-center justify-center rounded-full bg-[#B4534B]/20 text-[#FF8F87] hover:bg-[#B4534B]/40 transition"
-                        title="Delete Block"
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    </div>
-                  )}
-
-                  <RenderBlockItem
-                    block={block}
-                    index={index}
-                    openFaq={openFaq}
-                    setOpenFaq={setOpenFaq}
-                    song={isEditMode ? song : localSong}
-                    setSong={(val) => {
-                      setLocalSong(val);
-                      onSongChange?.(val);
-                    }}
-                    meal={meal}
-                    setMeal={(val) => onMealChange?.(val)}
-                    invitationLocale={effectiveLocale}
-                    templateId={event.templateId}
-                    eventVenue={[event.venue, event.city].filter(Boolean).join(' · ')}
-                    eventHost={event.hostName}
-                  />
-                </div>
-              );
-            })}
-          </section>
-        )}
-
-        {/* ETIQUETTE & ACCESS BADGES */}
-        {event.etiquetteBadges && event.etiquetteBadges.length > 0 && (
-          <div className="flex flex-wrap items-center justify-center gap-2 my-8">
-            {event.etiquetteBadges.map((badge, idx) => (
-              <span
-                key={idx}
-                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--party-accent)]/30 bg-[var(--party-surface)] px-3.5 py-1 text-[11px] font-semibold text-[var(--party-accent)] shadow-xs"
-              >
-                <Sparkles size={11} className="text-[var(--party-accent)]" />
-                <bdi>{badge}</bdi>
+            {/* Scroll Down Micro-Indicator */}
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                const el = document.getElementById('party-invitation-body');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="pt-6 pb-2 flex flex-col items-center justify-center gap-1 cursor-pointer transition opacity-75 hover:opacity-100 animate-scroll-pulse text-center select-none"
+              aria-label={isArabic ? 'اسحب للتفاصيل' : 'Scroll down for details'}
+            >
+              <span className="text-[10px] uppercase font-bold tracking-[.2em] text-[var(--party-accent)]">
+                {isArabic ? 'اسحب للتفاصيل' : 'Scroll for Details'}
               </span>
-            ))}
-          </div>
+              <ChevronDown size={14} className="text-[var(--party-accent)]" />
+            </div>
+          </section>
         )}
 
-        {/* 4. RSVP INTERACTION SECTION */}
-        <section className="mt-4 mb-12" data-testid="section-rsvp">
+        {/* CURVED LUXURY EDITORIAL BODY SHEET */}
+        <div
+          id="party-invitation-body"
+          className="rounded-t-[36px] -mt-6 relative z-10 px-5 py-8 sm:px-8 sm:py-10 shadow-[0_-18px_45px_rgba(0,0,0,0.28)] border-t border-[var(--party-accent)]/35 overflow-hidden"
+          style={{ backgroundColor: surface }}
+        >
+          {/* Inner double-hairline ornamental frame */}
+          <div
+            className="pointer-events-none absolute inset-3 rounded-[28px] border border-[var(--party-accent)]/15"
+            aria-hidden="true"
+          />
+
+          {/* EDITORIAL DATE LOCKUP (Reel Upgrade 2) */}
+          <PartyScrollReveal disabled={event.motion === 'none'}>
+            <EditorialDateLockup
+              event={event}
+              effectiveLocale={effectiveLocale}
+              isArabic={isArabic}
+              dateDetails={dateDetails}
+            />
+          </PartyScrollReveal>
+
+          {/* COUNTDOWN & CALENDAR (Reel Upgrade 3) */}
+          {event.showCountdownCalendar !== false && (
+            <PartyScrollReveal delay={120} disabled={event.motion === 'none'}>
+              <CountdownAndCalendarSheet
+                event={event}
+                dateDetails={dateDetails}
+                isArabic={isArabic}
+              />
+            </PartyScrollReveal>
+          )}
+
+          {/* Delicate Ornamental Divider */}
+          <div className="my-10 flex items-center justify-center gap-4 text-[var(--party-accent)]/60" aria-hidden="true">
+            <span className="h-px flex-1 bg-gradient-to-r from-transparent via-[var(--party-accent)]/35 to-transparent" />
+            <span className="text-xs">✦</span>
+            <span className="h-px flex-1 bg-gradient-to-r from-transparent via-[var(--party-accent)]/35 to-transparent" />
+          </div>
+
+          {/* 3. MODULAR BLOCKS SECTION — Seamless Continuous Flow */}
+          {visibleBlocks.length > 0 && (
+            <section className="my-8 space-y-6" data-testid="section-blocks">
+              {visibleBlocks.map((block, index) => {
+                const isSelected = isEditMode && selectedBlockId === block.id;
+
+                return (
+                  <PartyScrollReveal
+                    key={block.id}
+                    delay={Math.min(index * 60, 300)}
+                    disabled={event.motion === 'none'}
+                  >
+                    <div
+                      id={`party-block-${block.id}`}
+                      data-testid={`party-block-${block.key}`}
+                      onClick={() => {
+                        if (isEditMode) {
+                          setHeroSelected(false);
+                          onSelectBlock?.(block.id);
+                        }
+                      }}
+                      className={`relative transition-all duration-200 ${
+                        isEditMode
+                          ? 'cursor-pointer hover:ring-1 hover:ring-[var(--party-accent)]/50 rounded-2xl p-1'
+                          : ''
+                      } ${
+                        isSelected
+                          ? 'ring-1 ring-[var(--party-accent)] shadow-xl bg-black/10 rounded-2xl'
+                          : ''
+                      }`}
+                    >
+                      {/* On-Canvas Floating Action Pill Bar for Block */}
+                      {isEditMode && isSelected && (
+                        <div
+                          className="absolute -top-4 inset-x-0 mx-auto z-30 flex items-center justify-center gap-1 p-1 rounded-full bg-[#18201C]/95 text-white border border-[var(--party-accent)]/60 shadow-2xl backdrop-blur-md w-fit max-w-[95%]"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => onSelectBlock?.(block.id)}
+                            data-testid={`button-edit-block-${block.id}`}
+                            aria-label={`Edit ${block.label}`}
+                            className="flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-semibold bg-[var(--party-accent)] text-black hover:brightness-110 transition"
+                          >
+                            <Edit3 size={11} />
+                            <span>{isArabic ? 'تعديل' : 'Edit'}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onMoveBlock?.(index, -1)}
+                            disabled={index === 0}
+                            data-testid={`button-move-up-${block.id}`}
+                            aria-label={`Move Up ${block.label}`}
+                            className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-30 transition"
+                            title="Move Up"
+                          >
+                            <ArrowUp size={12} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onMoveBlock?.(index, 1)}
+                            disabled={index === visibleBlocks.length - 1}
+                            data-testid={`button-move-down-${block.id}`}
+                            aria-label={`Move Down ${block.label}`}
+                            className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-30 transition"
+                            title="Move Down"
+                          >
+                            <ArrowDown size={12} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onDuplicateBlock?.(block.id)}
+                            data-testid={`button-duplicate-${block.id}`}
+                            aria-label={`Duplicate ${block.label}`}
+                            className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition"
+                            title="Duplicate"
+                          >
+                            <Copy size={12} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onToggleBlock?.(block.id)}
+                            data-testid={`button-toggle-${block.id}`}
+                            aria-label={`Toggle ${block.label}`}
+                            className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition"
+                            title="Hide Block"
+                          >
+                            <EyeOff size={12} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onDeleteBlock?.(block.id)}
+                            data-testid={`button-delete-${block.id}`}
+                            aria-label={`Delete ${block.label}`}
+                            className="flex h-7 w-7 items-center justify-center rounded-full bg-[#B4534B]/20 text-[#FF8F87] hover:bg-[#B4534B]/40 transition"
+                            title="Delete Block"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      )}
+
+                      <RenderBlockItem
+                        block={block}
+                        index={index}
+                        openFaq={openFaq}
+                        setOpenFaq={setOpenFaq}
+                        song={isEditMode ? song : localSong}
+                        setSong={(val) => {
+                          setLocalSong(val);
+                          onSongChange?.(val);
+                        }}
+                        meal={meal}
+                        setMeal={(val) => onMealChange?.(val)}
+                        invitationLocale={effectiveLocale}
+                        templateId={event.templateId}
+                        eventVenue={[event.venue, event.city].filter(Boolean).join(' · ')}
+                        eventHost={event.hostName}
+                      />
+                    </div>
+                  </PartyScrollReveal>
+                );
+              })}
+            </section>
+          )}
+
+          {/* ETIQUETTE & ACCESS BADGES */}
+          {event.etiquetteBadges && event.etiquetteBadges.length > 0 && (
+            <PartyScrollReveal disabled={event.motion === 'none'}>
+              <div className="flex flex-wrap items-center justify-center gap-2 my-8">
+                {event.etiquetteBadges.map((badge, idx) => (
+                  <span
+                    key={idx}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-[var(--party-accent)]/30 bg-[var(--party-surface)] px-3.5 py-1 text-[11px] font-semibold text-[var(--party-accent)] shadow-xs"
+                  >
+                    <Sparkles size={11} className="text-[var(--party-accent)]" />
+                    <bdi>{badge}</bdi>
+                  </span>
+                ))}
+              </div>
+            </PartyScrollReveal>
+          )}
+
+          {/* 4. RSVP INTERACTION SECTION */}
+          <section className="mt-4 mb-12" data-testid="section-rsvp">
           <AnimatePresence mode="wait">
             {displayedRsvp === 'pending' && !readOnly && (
               <motion.div
@@ -1261,6 +1745,7 @@ export function PartyInvitationRenderer({
             <div className="mt-4 flex justify-center">{renderLogo('max-h-7 opacity-70')}</div>
           )}
         </footer>
+        </div>
       </main>
     </div>
   );
@@ -1441,38 +1926,75 @@ function RenderBlockItem({
         </div>
       )}
 
-      {/* 3. SCHEDULE BLOCK */}
+      {/* 3. SCHEDULE BLOCK (Vertical Gold-Spine Icon Timeline) */}
       {block.key === 'schedule' && (
-        <div className="space-y-0">
-          {(c.scheduleItems && c.scheduleItems.length > 0
-            ? c.scheduleItems.map((item) => [item.time, item.title])
-            : isArabic
-            ? [
-                ['8:30 PM', 'الاستقبال والقهوة السعودية'],
-                ['9:30 PM', 'مراسم الحفل والترحيب'],
-                ['10:00 PM', 'مأدبة العشاء الفاخرة'],
-                ['11:00 PM', 'الاحتفاء والختام'],
-              ]
-            : [
-                ['18:00', partyInvitationT(invitationLocale, 'arrival')],
-                ['19:00', partyInvitationT(invitationLocale, 'ceremony')],
-                ['20:00', partyInvitationT(invitationLocale, 'dinner')],
-                ['21:30', partyInvitationT(invitationLocale, 'dancing')],
-              ]
-          ).map(([time, text]) => (
-            <div
-              key={time + text}
-              className="flex items-center gap-4 border-s-2 border-[var(--party-accent)]/40 py-3 ps-4 relative"
-            >
-              <span className="absolute -start-[5px] top-4.5 h-2 w-2 rounded-full bg-[var(--party-accent)]" />
-              <span className="font-mono text-xs font-bold text-[var(--party-accent)] w-20 shrink-0" dir="ltr">
-                {time}
-              </span>
-              <span className="text-sm font-semibold opacity-90" dir="auto">
-                <bdi>{text}</bdi>
-              </span>
-            </div>
-          ))}
+        <div className="relative py-2">
+          {/* Central Glowing Vertical Gold/Accent Spine */}
+          <div
+            className="absolute top-2 bottom-2 start-6 sm:start-7 w-[2px] bg-gradient-to-b from-transparent via-[var(--party-accent)]/65 to-transparent pointer-events-none"
+            aria-hidden="true"
+          />
+
+          <div className="space-y-4 sm:space-y-5 relative">
+            {(c.scheduleItems && c.scheduleItems.length > 0
+              ? c.scheduleItems.map((item) => [item.time, item.title])
+              : isArabic
+              ? [
+                  ['8:30 PM', 'الاستقبال والقهوة السعودية'],
+                  ['9:30 PM', 'مراسم الحفل والترحيب'],
+                  ['10:00 PM', 'مأدبة العشاء الفاخرة'],
+                  ['11:00 PM', 'الاحتفاء والختام'],
+                ]
+              : [
+                  ['18:00', partyInvitationT(invitationLocale, 'arrival')],
+                  ['19:00', partyInvitationT(invitationLocale, 'ceremony')],
+                  ['20:00', partyInvitationT(invitationLocale, 'dinner')],
+                  ['21:30', partyInvitationT(invitationLocale, 'dancing')],
+                ]
+            ).map(([time, text], idx) => {
+              const lower = text.toLowerCase();
+              const isCoffee = /قهو|استقبال|welcome|coffee|reception/i.test(lower);
+              const isSpeech = /كلم|خطاب|مراسم|keynote|speech|ceremony/i.test(lower);
+              const isDinner = /عشاء|بوفيه|مأدب|طعام|dinner|suhoor|dining/i.test(lower);
+              const isAward = /تكريم|جائز|احتفاء|award|honor|milestone/i.test(lower);
+
+              return (
+                <div
+                  key={time + text + idx}
+                  className="flex items-start gap-3.5 sm:gap-5 group"
+                >
+                  {/* Glowing Milestone Node with contextual icon */}
+                  <div className="relative z-10 flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-2xl border border-[var(--party-accent)]/50 bg-[var(--party-surface)] text-[var(--party-accent)] shadow-md transition group-hover:scale-105 group-hover:border-[var(--party-accent)]">
+                    {isCoffee && <Coffee size={18} strokeWidth={1.8} />}
+                    {isSpeech && <Mic size={18} strokeWidth={1.8} />}
+                    {isDinner && <Utensils size={18} strokeWidth={1.8} />}
+                    {isAward && <Award size={18} strokeWidth={1.8} />}
+                    {!isCoffee && !isSpeech && !isDinner && !isAward && (
+                      <Clock size={18} strokeWidth={1.8} />
+                    )}
+                    {/* Glowing pulse ring */}
+                    <span className="absolute -inset-1 rounded-2xl bg-[var(--party-accent)]/15 blur-xs -z-10 opacity-0 group-hover:opacity-100 transition" />
+                  </div>
+
+                  {/* Editorial Activity Card */}
+                  <div className="flex-1 min-w-0 rounded-2xl border border-[var(--party-accent)]/25 bg-black/10 p-3.5 sm:p-4 text-start shadow-xs transition group-hover:bg-black/15">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span
+                        className="font-mono text-xs font-bold tracking-wider text-[var(--party-accent)] uppercase"
+                        dir="ltr"
+                      >
+                        {time}
+                      </span>
+                      <span className="h-1.5 w-1.5 rounded-full bg-[var(--party-accent)]/50" />
+                    </div>
+                    <h4 className="text-sm font-semibold opacity-95 text-[var(--party-primary)] leading-snug" dir="auto">
+                      <bdi>{text}</bdi>
+                    </h4>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

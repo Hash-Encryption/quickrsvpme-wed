@@ -17,6 +17,7 @@ import {
   type PartyTemplateId,
   type StudioBlock,
   type BlockKey,
+  parseEventDateDetails,
 } from './model.ts';
 import { appTranslations } from '../i18n/app-locale-data.ts';
 import { partyInvitationT, type PartyInvitationKey } from '../i18n/party.ts';
@@ -659,4 +660,44 @@ test('Overhaul: Custom Smart Section data model supports 4 layouts with bullets,
   assert.equal(block.content.buttonLabel, 'عرض السيرة الذاتية');
   assert.equal(block.content.bullets?.length, 2);
   assert.equal(block.content.imageUrl?.includes('unsplash'), true);
+});
+
+test('Reel Design: parseEventDateDetails calculates day, month, year, weekday and month calendar coordinates', () => {
+  const arDetails = parseEventDateDetails('2026-10-14', 'ar');
+  assert.ok(arDetails !== null);
+  assert.equal(arDetails.year, 2026);
+  assert.equal(arDetails.day, 14);
+  assert.equal(arDetails.monthIdx, 9);
+  assert.equal(arDetails.totalDays, 31);
+  assert.ok(typeof arDetails.firstDayOfWeek === 'number');
+  assert.ok(arDetails.dayOfWeek.length > 0);
+  assert.ok(arDetails.monthName.length > 0);
+
+  const enDetails = parseEventDateDetails('2026-10-14', 'en');
+  assert.ok(enDetails !== null);
+  assert.equal(enDetails.year, 2026);
+  assert.equal(enDetails.day, 14);
+  assert.equal(enDetails.monthName, 'October');
+  assert.equal(enDetails.dayOfWeek, 'Wednesday');
+
+  // Edge cases
+  assert.equal(parseEventDateDetails('', 'en'), null);
+  assert.equal(parseEventDateDetails('invalid-date', 'en'), null);
+});
+
+test('Reel Design: mergePartyEvent safely supports receptionTime, showCountdownCalendar, and 3D wax envelope intro fields', () => {
+  const merged = mergePartyEvent({
+    ...defaultPartyEvent,
+    receptionTime: '7:30 م',
+    showCountdownCalendar: true,
+    enableEnvelopeOpener: true,
+    waxSealText: 'VIP',
+    useLogoOnWaxSeal: true,
+  });
+
+  assert.equal(merged.receptionTime, '7:30 م');
+  assert.equal(merged.showCountdownCalendar, true);
+  assert.equal(merged.enableEnvelopeOpener, true);
+  assert.equal(merged.waxSealText, 'VIP');
+  assert.equal(merged.useLogoOnWaxSeal, true);
 });

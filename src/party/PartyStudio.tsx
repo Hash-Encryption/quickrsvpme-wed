@@ -243,6 +243,22 @@ export function PartyStudio({
   const [autoRemoveWhiteBg, setAutoRemoveWhiteBg] = useState(true);
   const [rawLogoUrl, setRawLogoUrl] = useState<string | null>(initialEvent.logoUrl || null);
   const [extractedPalette, setExtractedPalette] = useState<ExtractedPalette | null>(null);
+  const [replayEnvelope, setReplayEnvelope] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth >= 1024;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const update = (e: MediaQueryListEvent | MediaQueryList) => setIsDesktop(e.matches);
+    setIsDesktop(mq.matches);
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+
+  const currentTab: DrawerTab = activeTab || (isDesktop ? 'info' : null);
 
   // Sync props when initial changes externally
   useEffect(() => {
@@ -731,226 +747,209 @@ export function PartyStudio({
         </div>
       </div>
 
-      {/* 4. ZONE B2: Dominant Central Canvas with Seamless Luxury Poster */}
-      <main className="relative flex-1 overflow-y-auto px-3 sm:px-6 py-4 pb-28 sm:pb-32 flex justify-center">
-        <div
-          data-testid="party-studio-canvas"
-          className="party-device-frame relative w-full max-w-[430px] rounded-[36px] border-[6px] border-[#2A3B32]/80 bg-white shadow-2xl overflow-hidden transition-all duration-300"
-        >
-          {viewMode === 'pass' ? (
-            /* Standalone VIP Gate Pass View with Dynamic Surface / Colors */
-            <div
-              className="min-h-[100dvh] text-white p-6 sm:p-8 flex flex-col items-center justify-center text-center transition-colors"
-              style={{ backgroundColor: activeBg }}
-            >
-              <div
-                className="party-pass-card relative w-full overflow-hidden rounded-[28px] border p-6 sm:p-8 text-center shadow-2xl backdrop-blur-md"
-                style={{
-                  backgroundColor: activeSurface,
-                  borderColor: `${activeAccent}60`,
-                  color: activePrimary,
-                }}
+      {/* 4. MAIN STUDIO WORKSPACE: Desktop Split-Screen & Mobile Stack */}
+      <main className="relative flex-1 overflow-y-auto px-3 sm:px-6 py-4 pb-28 sm:pb-32 lg:pb-12 max-w-7xl mx-auto w-full">
+        <div className="w-full lg:grid lg:grid-cols-12 lg:gap-8 lg:items-start">
+          {/* Canvas Column (lg:col-span-7) */}
+          <div className="lg:col-span-7 flex flex-col items-center lg:sticky lg:top-20">
+            {/* Action Bar above Canvas (Replay Envelope) */}
+            <div className="mb-2.5 flex items-center justify-between w-full max-w-[430px] px-1">
+              <button
+                type="button"
+                onClick={() => setReplayEnvelope(true)}
+                data-testid="button-replay-envelope"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full border border-[#D4AF37]/50 bg-white/90 hover:bg-white text-xs font-bold text-[#0A2E23] transition shadow-2xs active:scale-95"
               >
-                <div className="absolute top-0 inset-x-0 mx-auto h-3 w-16 rounded-b-xl bg-black/40 border-b border-x border-[var(--party-accent)]/30" />
+                <span>✉️</span>
+                <span>{isArabic ? 'تجربة فتح الظرف الملكي' : 'Replay Envelope'}</span>
+              </button>
+
+              <span className="text-[11px] font-semibold text-[#2D2421]/60">
+                {viewMode === 'invitation'
+                  ? (isArabic ? 'معاينة حية ومباشرة' : 'Live Interactive Canvas')
+                  : (isArabic ? 'بطاقة الدخول' : 'Gate Pass')}
+              </span>
+            </div>
+
+            <div
+              data-testid="party-studio-canvas"
+              className="party-device-frame relative w-full max-w-[430px] rounded-[36px] border-[6px] border-[#2A3B32]/80 bg-white shadow-2xl overflow-hidden transition-all duration-300 max-h-[85vh] overflow-y-auto"
+            >
+              {viewMode === 'pass' ? (
+                /* Standalone VIP Gate Pass View with Dynamic Surface / Colors */
                 <div
-                  className="pt-2 inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-widest"
-                  style={{
-                    backgroundColor: 'rgba(0,0,0,0.2)',
-                    borderColor: `${activeAccent}50`,
-                    color: activeAccent,
-                  }}
+                  className="min-h-[100dvh] text-white p-6 sm:p-8 flex flex-col items-center justify-center text-center transition-colors"
+                  style={{ backgroundColor: activeBg }}
                 >
-                  <Sparkles size={11} />
-                  <span>{isArabic ? 'بطاقة الدخول الرقمية · VIP' : 'DIGITAL GATE PASS'}</span>
-                </div>
-                <h3 className="mt-4 font-display text-2xl font-bold" style={{ color: activePrimary }}>
-                  {event.title}
-                </h3>
-                {event.hostName && (
-                  <p className="mt-1 text-xs opacity-75">{event.hostName}</p>
-                )}
-                <div className="mx-auto mt-6 w-fit">
-                  <QRPassMark label="VIP Pass QR" />
-                </div>
-                <div
-                  className="mt-5 rounded-2xl border p-4 text-xs text-start"
-                  style={{
-                    backgroundColor: 'rgba(0,0,0,0.2)',
-                    borderColor: `${activeAccent}35`,
-                  }}
-                >
-                  <div className="flex justify-between items-center">
-                    <span className="font-mono font-bold tracking-widest" style={{ color: activeAccent }}>
-                      VIP-2026-PASS
-                    </span>
-                    <span
-                      className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full"
+                  <div
+                    className="party-pass-card relative w-full overflow-hidden rounded-[28px] border p-6 sm:p-8 text-center shadow-2xl backdrop-blur-md"
+                    style={{
+                      backgroundColor: activeSurface,
+                      borderColor: `${activeAccent}60`,
+                      color: activePrimary,
+                    }}
+                  >
+                    <div className="absolute top-0 inset-x-0 mx-auto h-3 w-16 rounded-b-xl bg-black/40 border-b border-x border-[var(--party-accent)]/30" />
+                    <div
+                      className="pt-2 inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-widest"
                       style={{
-                        backgroundColor: `${activeAccent}25`,
+                        backgroundColor: 'rgba(0,0,0,0.2)',
+                        borderColor: `${activeAccent}50`,
                         color: activeAccent,
                       }}
                     >
-                      {isArabic ? 'دخول مؤكد' : 'CONFIRMED'}
-                    </span>
+                      <Sparkles size={11} />
+                      <span>{isArabic ? 'بطاقة الدخول الرقمية · VIP' : 'DIGITAL GATE PASS'}</span>
+                    </div>
+                    <h3 className="mt-4 font-display text-2xl font-bold" style={{ color: activePrimary }}>
+                      {event.title}
+                    </h3>
+                    {event.hostName && (
+                      <p className="mt-1 text-xs opacity-75">{event.hostName}</p>
+                    )}
+                    <div className="mx-auto mt-6 w-fit">
+                      <QRPassMark label="VIP Pass QR" />
+                    </div>
+                    <div
+                      className="mt-5 rounded-2xl border p-4 text-xs text-start"
+                      style={{
+                        backgroundColor: 'rgba(0,0,0,0.2)',
+                        borderColor: `${activeAccent}35`,
+                      }}
+                    >
+                      <div className="flex justify-between items-center">
+                        <span className="font-mono font-bold tracking-widest" style={{ color: activeAccent }}>
+                          VIP-2026-PASS
+                        </span>
+                        <span
+                          className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full"
+                          style={{
+                            backgroundColor: `${activeAccent}25`,
+                            color: activeAccent,
+                          }}
+                        >
+                          {isArabic ? 'دخول مؤكد' : 'CONFIRMED'}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs font-semibold">{isArabic ? 'الضيف الكريم' : 'VIP Guest'}</p>
+                      <p className="mt-0.5 text-[11px] opacity-70">
+                        {formatPartyDate(event.date, invitationLocale)} &bull;{' '}
+                        {event.venue || (isArabic ? 'الموقع' : 'Venue')}
+                      </p>
+                    </div>
                   </div>
-                  <p className="mt-2 text-xs font-semibold">{isArabic ? 'الضيف الكريم' : 'VIP Guest'}</p>
-                  <p className="mt-0.5 text-[11px] opacity-70">
-                    {formatPartyDate(event.date, invitationLocale)} &bull;{' '}
-                    {event.venue || (isArabic ? 'الموقع' : 'Venue')}
-                  </p>
                 </div>
-              </div>
+              ) : (
+                /* Seamless Luxury Poster View */
+                <PartyInvitationRenderer
+                  event={event}
+                  blocks={blocks}
+                  invitationLocale={invitationLocale}
+                  uiLocale={appLocale}
+                  isEditMode={!isPreviewOnly}
+                  preview={isPreviewOnly}
+                  selectedBlockId={selectedBlockId}
+                  onSelectBlock={handleSelectBlockFromPreview}
+                  onSelectSection={handleSelectSectionFromPreview}
+                  onMoveBlock={handleMoveBlock}
+                  onToggleBlock={handleToggleBlock}
+                  onDeleteBlock={handleDeleteBlock}
+                  onDuplicateBlock={handleDuplicateBlock}
+                  onChangeTitleScale={(scale) => updateEventFields({ titleScale: scale })}
+                  forceEnvelopeOpen={replayEnvelope}
+                  onEnvelopeOpened={() => setReplayEnvelope(false)}
+                />
+              )}
             </div>
-          ) : (
-            /* Seamless Luxury Poster View */
-            <PartyInvitationRenderer
-              event={event}
-              blocks={blocks}
-              invitationLocale={invitationLocale}
-              uiLocale={appLocale}
-              isEditMode={!isPreviewOnly}
-              preview={isPreviewOnly}
-              selectedBlockId={selectedBlockId}
-              onSelectBlock={handleSelectBlockFromPreview}
-              onSelectSection={handleSelectSectionFromPreview}
-              onMoveBlock={handleMoveBlock}
-              onToggleBlock={handleToggleBlock}
-              onDeleteBlock={handleDeleteBlock}
-              onDuplicateBlock={handleDuplicateBlock}
-              onChangeTitleScale={(scale) => updateEventFields({ titleScale: scale })}
-            />
-          )}
-        </div>
-      </main>
+          </div>
 
-      {/* 5. ZONE C: 4 Organized Studio Bottom Tabs */}
-      {!isPreviewOnly && (
-        <nav
-          className="fixed bottom-0 inset-x-0 z-30 flex items-center justify-around border-t border-[#D4AF37]/35 bg-[#FAF7F2]/95 px-4 py-2.5 backdrop-blur-md shadow-lg"
-          aria-label={t('guestExperience')}
-        >
-          {/* Details / Information Tab */}
-          <button
-            type="button"
-            onClick={() => setActiveTab(activeTab === 'info' ? null : 'info')}
-            data-testid="tab-party-info"
-            className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition ${
-              activeTab === 'info'
-                ? 'text-[#0A2E23] font-bold'
-                : 'text-[#2D2421]/65 hover:text-[#0A2E23]'
-            }`}
-          >
-            <span
-              className={`flex h-9 w-9 items-center justify-center rounded-xl transition ${
-                activeTab === 'info' ? 'bg-[#0A2E23] text-white shadow-xs' : 'bg-transparent'
-              }`}
-            >
-              <FileText size={18} />
-            </span>
-            <span className="text-[11px] font-semibold">{t('infoTab')}</span>
-          </button>
-
-          {/* Design / Brand Tab */}
-          <button
-            type="button"
-            onClick={() => setActiveTab(activeTab === 'design' ? null : 'design')}
-            data-testid="tab-party-design"
-            className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition ${
-              activeTab === 'design'
-                ? 'text-[#0A2E23] font-bold'
-                : 'text-[#2D2421]/65 hover:text-[#0A2E23]'
-            }`}
-          >
-            <span
-              className={`flex h-9 w-9 items-center justify-center rounded-xl transition ${
-                activeTab === 'design' ? 'bg-[#0A2E23] text-white shadow-xs' : 'bg-transparent'
-              }`}
-            >
-              <Palette size={18} />
-            </span>
-            <span className="text-[11px] font-semibold">{t('designTab')}</span>
-          </button>
-
-          {/* Sections List Tab */}
-          <button
-            type="button"
-            onClick={() => setActiveTab(activeTab === 'sections' ? null : 'sections')}
-            data-testid="tab-party-sections"
-            className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition ${
-              activeTab === 'sections'
-                ? 'text-[#0A2E23] font-bold'
-                : 'text-[#2D2421]/65 hover:text-[#0A2E23]'
-            }`}
-          >
-            <span
-              className={`flex h-9 w-9 items-center justify-center rounded-xl transition ${
-                activeTab === 'sections' ? 'bg-[#0A2E23] text-white shadow-xs' : 'bg-transparent'
-              }`}
-            >
-              <Layers size={18} />
-            </span>
-            <span className="text-[11px] font-semibold">{t('sectionsTab')}</span>
-          </button>
-
-          {/* Add Section Tab */}
-          <button
-            type="button"
-            onClick={() => setActiveTab(activeTab === 'add-block' ? null : 'add-block')}
-            data-testid="button-add-section"
-            className="flex flex-col items-center gap-1 p-2 rounded-2xl text-[#0A2E23] hover:opacity-85 transition"
-          >
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#0A2E23] text-white shadow-xs">
-              <Plus size={20} strokeWidth={2.5} />
-            </span>
-            <span className="text-[11px] font-bold">{t('addSection')}</span>
-          </button>
-        </nav>
-      )}
-
-      {/* 6. CONTEXTUAL DRAWER (BOTTOM SHEET) */}
-      <AnimatePresence>
-        {activeTab && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setActiveTab(null)}
-              className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs"
-            />
-
-            <motion.aside
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 26, stiffness: 280 }}
-              className="fixed bottom-0 inset-x-0 z-50 max-h-[82vh] overflow-y-auto rounded-t-[32px] border-t border-[#D4AF37]/40 bg-[#FAF7F2] p-5 sm:p-6 shadow-2xl"
-              aria-labelledby="party-sheet-title"
-            >
-              {/* Drawer Drag Pill Header */}
-              <div className="flex items-center justify-between border-b border-[#D4AF37]/25 pb-3">
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-[#0A2E23]" />
-                  <h2 id="party-sheet-title" className="text-base font-bold text-[#0A2E23]">
-                    {activeTab === 'info' && t('infoTab')}
-                    {activeTab === 'design' && (isArabic ? 'الهوية والتصميم والمظهر' : 'Brand & Design')}
-                    {activeTab === 'sections' && (isArabic ? 'أقسام وفقرات الدعوة' : 'Invitation Modules')}
-                    {activeTab === 'edit-block' && `${t('edit')} ${activeBlock?.label || ''}`}
-                    {activeTab === 'add-block' && (isArabic ? 'دليل الأقسام والوحدات' : 'Section Catalog')}
-                  </h2>
-                </div>
-                <button
-                  type="button"
+          {/* 6. CONTEXTUAL DRAWER (DESKTOP DOCK & MOBILE PEEK SHEET) */}
+          <AnimatePresence>
+            {!isPreviewOnly && currentTab && (
+              <>
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
                   onClick={() => setActiveTab(null)}
-                  className="flex h-8 w-8 items-center justify-center rounded-full bg-black/5 text-[#2D2421] hover:bg-black/10 transition"
-                  aria-label={isArabic ? 'إغلاق' : 'Close'}
+                  className="fixed inset-0 z-40 bg-black/25 backdrop-blur-[1px] lg:hidden"
+                />
+
+                <motion.aside
+                  initial={isDesktop ? undefined : { y: '100%' }}
+                  animate={isDesktop ? undefined : { y: 0 }}
+                  exit={isDesktop ? undefined : { y: '100%' }}
+                  transition={{ type: 'spring', damping: 26, stiffness: 280 }}
+                  className="fixed bottom-0 inset-x-0 z-50 max-h-[48vh] overflow-y-auto rounded-t-[32px] border-t border-[#D4AF37]/40 bg-[#FAF7F2] p-5 sm:p-6 shadow-2xl pb-16 lg:pb-6 lg:static lg:z-auto lg:col-span-5 lg:max-h-[85vh] lg:rounded-[32px] lg:border lg:shadow-xl lg:sticky lg:top-20"
+                  aria-labelledby="party-sheet-title"
                 >
-                  <X size={16} />
-                </button>
-              </div>
+                  {/* Drawer Drag Pill Header */}
+                  <div className="border-b border-[#D4AF37]/25 pb-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-[#0A2E23]" />
+                        <h2 id="party-sheet-title" className="text-base font-bold text-[#0A2E23]">
+                          {currentTab === 'info' && t('infoTab')}
+                          {currentTab === 'design' && (isArabic ? 'الهوية والتصميم والمظهر' : 'Brand & Design')}
+                          {currentTab === 'sections' && (isArabic ? 'أقسام وفقرات الدعوة' : 'Invitation Modules')}
+                          {currentTab === 'edit-block' && `${t('edit')} ${activeBlock?.label || ''}`}
+                          {currentTab === 'add-block' && (isArabic ? 'دليل الأقسام والوحدات' : 'Section Catalog')}
+                        </h2>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab(null)}
+                        className="flex h-8 w-8 items-center justify-center rounded-full bg-black/5 text-[#2D2421] hover:bg-black/10 transition lg:hidden"
+                        aria-label={isArabic ? 'إغلاق' : 'Close'}
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+
+                    {/* Quick Tab Switcher inside Drawer/Dock */}
+                    <div className="flex items-center gap-1 p-1 rounded-xl bg-black/[0.04] border border-[#D4AF37]/25 text-xs font-semibold mt-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('info')}
+                        className={`flex-1 py-1.5 rounded-lg transition ${
+                          currentTab === 'info' ? 'bg-[#0A2E23] text-white shadow-xs' : 'text-[#2D2421]/70 hover:text-[#0A2E23]'
+                        }`}
+                      >
+                        {t('infoTab')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('design')}
+                        className={`flex-1 py-1.5 rounded-lg transition ${
+                          currentTab === 'design' ? 'bg-[#0A2E23] text-white shadow-xs' : 'text-[#2D2421]/70 hover:text-[#0A2E23]'
+                        }`}
+                      >
+                        {t('designTab')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('sections')}
+                        className={`flex-1 py-1.5 rounded-lg transition ${
+                          currentTab === 'sections' || currentTab === 'edit-block' ? 'bg-[#0A2E23] text-white shadow-xs' : 'text-[#2D2421]/70 hover:text-[#0A2E23]'
+                        }`}
+                      >
+                        {t('sectionsTab')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('add-block')}
+                        className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1 ${
+                          currentTab === 'add-block' ? 'bg-[#0A2E23] text-white shadow-xs' : 'text-[#0A2E23] hover:bg-black/5'
+                        }`}
+                      >
+                        <Plus size={14} strokeWidth={2.5} />
+                        <span>{t('addSection')}</span>
+                      </button>
+                    </div>
+                  </div>
 
               {/* SHEET A: DETAILS (EVENT INFO) */}
-              {activeTab === 'info' && (
+              {currentTab === 'info' && (
                 <div className="mt-5 space-y-4">
                   {/* Title Scale Selector */}
                   <div>
@@ -1072,6 +1071,22 @@ export function PartyStudio({
                     </div>
                   </div>
 
+                  {/* Countdown & Month Calendar Toggle */}
+                  <div className="rounded-2xl border border-[#D4AF37]/40 bg-white/70 p-4">
+                    <label className="flex items-center gap-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={event.showCountdownCalendar !== false}
+                        onChange={(e) => updateEventFields({ showCountdownCalendar: e.target.checked })}
+                        data-testid="input-toggle-countdown-calendar"
+                        className="h-4 w-4 rounded text-[#0A2E23]"
+                      />
+                      <span className="text-xs font-bold text-[#0A2E23]">
+                        ⏳ {isArabic ? 'إظهار العداد التنازلي المباشر وتقويم الشهر الدائري' : 'Show Live Countdown & Circled Month Calendar'}
+                      </span>
+                    </label>
+                  </div>
+
                   {/* Saudi Time Anchors */}
                   <div>
                     <span className="block text-xs font-bold text-[#0A2E23] mb-1.5">
@@ -1094,6 +1109,31 @@ export function PartyStudio({
                         </button>
                       ))}
                     </div>
+                  </div>
+
+                  {/* Reception & Event Start Times */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="block text-xs font-bold text-[#0A2E23]">
+                      <span>☕ {isArabic ? 'وقت استقبال الضيوف والترحيب' : 'Guest Reception Time'}</span>
+                      <input
+                        value={event.receptionTime || ''}
+                        onChange={(e) => updateEventFields({ receptionTime: e.target.value })}
+                        data-testid="input-party-reception-time"
+                        placeholder={isArabic ? 'مثال: 7:30 م' : 'e.g. 7:30 PM'}
+                        className="qr-field mt-1.5"
+                      />
+                    </label>
+
+                    <label className="block text-xs font-bold text-[#0A2E23]">
+                      <span>✨ {isArabic ? 'توقيت بدء الفعالية والعشاء' : 'Event Start Time'}</span>
+                      <input
+                        value={event.startTime || ''}
+                        onChange={(e) => updateEventFields({ startTime: e.target.value })}
+                        data-testid="input-party-start-time"
+                        placeholder={isArabic ? 'مثال: 8:30 م' : 'e.g. 8:30 PM'}
+                        className="qr-field mt-1.5"
+                      />
+                    </label>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1185,7 +1225,7 @@ export function PartyStudio({
               )}
 
               {/* SHEET B: REVAMPED DESIGN (4 SLEEK STUDIO CARDS) */}
-              {activeTab === 'design' && (
+              {currentTab === 'design' && (
                 <div className="mt-5 space-y-6">
                   {/* CARD 1: 🏛️ LAYOUT ARCHITECTURE (4 GRAPHICAL WIREFRAME CARDS) */}
                   <div className="rounded-2xl border border-[#D4AF37]/40 bg-white/80 p-4 shadow-xs">
@@ -1726,11 +1766,87 @@ export function PartyStudio({
                       </div>
                     )}
                   </div>
+
+                  {/* CARD 5: ✉️ 3D WAX SEAL LUXURY ENVELOPE INTRO */}
+                  <div className="rounded-2xl border border-[#D4AF37]/40 bg-white/80 p-4 shadow-xs space-y-4">
+                    <span className="block text-xs font-bold text-[#0A2E23]">
+                      ✉️ {isArabic ? 'ظرف الدعوة الملكي ثلاثي الأبعاد والختم الشمعي' : '3D Wax Seal Luxury Envelope Intro'}
+                    </span>
+                    <p className="text-[11px] text-[#2D2421]/65">
+                      {isArabic
+                        ? 'مقدمة سينمائية فاخرة تظهر للضيف عند فتح الرابط، مع ختم شمعي ثلاثي الأبعاد ينكسر ليكشف الدعوة.'
+                        : 'A cinematic opening experience where guests tap an embossed 3D wax seal to break open their royal invitation.'}
+                    </p>
+
+                    <label className="flex items-center gap-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(event.enableEnvelopeOpener)}
+                        onChange={(e) => updateEventFields({ enableEnvelopeOpener: e.target.checked })}
+                        data-testid="input-toggle-envelope-opener"
+                        className="h-4 w-4 rounded text-[#0A2E23]"
+                      />
+                      <span className="text-xs font-bold text-[#0A2E23]">
+                        {isArabic ? 'تفعيل ظرف الدعوة الملكي (Envelope Opener)' : 'Enable 3D Wax Seal Envelope Intro'}
+                      </span>
+                    </label>
+
+                    {event.enableEnvelopeOpener && (
+                      <div className="pt-3 border-t border-[#D4AF37]/20 space-y-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <label className="block text-xs font-bold text-[#0A2E23]">
+                            <span>{isArabic ? 'حرف أو رمز الختم الشمعي' : 'Wax Seal Monogram'}</span>
+                            <input
+                              value={event.waxSealText || ''}
+                              onChange={(e) => updateEventFields({ waxSealText: e.target.value.slice(0, 4) })}
+                              data-testid="input-wax-seal-text"
+                              placeholder={isArabic ? 'مثال: VIP أو رمز' : 'e.g. VIP'}
+                              maxLength={4}
+                              className="qr-field mt-1.5 font-bold uppercase tracking-widest text-center"
+                            />
+                          </label>
+
+                          <div className="flex items-center pt-5">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(event.useLogoOnWaxSeal)}
+                                onChange={(e) => updateEventFields({ useLogoOnWaxSeal: e.target.checked })}
+                                data-testid="input-toggle-seal-logo"
+                                disabled={!event.logoUrl}
+                                className="h-4 w-4 rounded text-[#0A2E23]"
+                              />
+                              <span className="text-xs font-semibold text-[#0A2E23]">
+                                {isArabic ? 'طباعة شعار الفعالية على الختم' : 'Emboss Brand Logo on Wax Seal'}
+                              </span>
+                            </label>
+                          </div>
+                        </div>
+
+                        <div className="pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReplayEnvelope(true);
+                              if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                                setActiveTab(null);
+                              }
+                            }}
+                            data-testid="button-preview-envelope"
+                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-[#D4AF37]/50 bg-white hover:bg-black/5 text-xs font-bold text-[#0A2E23] transition"
+                          >
+                            <span>✉️</span>
+                            <span>{isArabic ? 'معاينة تجربة فتح الظرف الآن' : 'Preview Envelope Opening'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
               {/* SHEET C: SECTIONS (MODULAR BLOCKS LIST) */}
-              {activeTab === 'sections' && (
+              {currentTab === 'sections' && (
                 <div className="mt-5 space-y-4">
                   <div className="flex items-center justify-between">
                     <p className="text-xs text-[#2D2421]/70">
@@ -1877,7 +1993,7 @@ export function PartyStudio({
               )}
 
               {/* SHEET D: UPGRADED CUSTOM BLOCK EDITORS & 4-LAYOUT CUSTOM SECTION BUILDER */}
-              {activeTab === 'edit-block' && activeBlock && (
+              {currentTab === 'edit-block' && activeBlock && (
                 <div className="mt-5 space-y-4">
                   <label className="block text-xs font-bold text-[#0A2E23]">
                     <span>{t('heading')}</span>
@@ -2553,7 +2669,7 @@ export function PartyStudio({
               )}
 
               {/* SHEET E: CATEGORIZED SECTION CATALOG FOR SAUDI & CORPORATE EVENTS */}
-              {activeTab === 'add-block' && (
+              {currentTab === 'add-block' && (
                 <div className="mt-5 space-y-5">
                   {/* Top Featured Hero Card: Create Custom Smart Section */}
                   <div
@@ -2737,6 +2853,92 @@ export function PartyStudio({
           </>
         )}
       </AnimatePresence>
+        </div>
+      </main>
+
+      {/* 5. ZONE C: 4 Organized Studio Bottom Tabs (Mobile Only) */}
+      {!isPreviewOnly && (
+        <nav
+          className="fixed bottom-0 inset-x-0 z-30 flex items-center justify-around border-t border-[#D4AF37]/35 bg-[#FAF7F2]/95 px-4 py-2.5 backdrop-blur-md shadow-lg lg:hidden"
+          aria-label={t('guestExperience')}
+        >
+          {/* Details / Information Tab */}
+          <button
+            type="button"
+            onClick={() => setActiveTab(activeTab === 'info' ? null : 'info')}
+            data-testid="tab-party-info"
+            className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition ${
+              currentTab === 'info'
+                ? 'text-[#0A2E23] font-bold'
+                : 'text-[#2D2421]/65 hover:text-[#0A2E23]'
+            }`}
+          >
+            <span
+              className={`flex h-9 w-9 items-center justify-center rounded-xl transition ${
+                currentTab === 'info' ? 'bg-[#0A2E23] text-white shadow-xs' : 'bg-transparent'
+              }`}
+            >
+              <FileText size={18} />
+            </span>
+            <span className="text-[11px] font-semibold">{t('infoTab')}</span>
+          </button>
+
+          {/* Design / Brand Tab */}
+          <button
+            type="button"
+            onClick={() => setActiveTab(activeTab === 'design' ? null : 'design')}
+            data-testid="tab-party-design"
+            className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition ${
+              currentTab === 'design'
+                ? 'text-[#0A2E23] font-bold'
+                : 'text-[#2D2421]/65 hover:text-[#0A2E23]'
+            }`}
+          >
+            <span
+              className={`flex h-9 w-9 items-center justify-center rounded-xl transition ${
+                currentTab === 'design' ? 'bg-[#0A2E23] text-white shadow-xs' : 'bg-transparent'
+              }`}
+            >
+              <Palette size={18} />
+            </span>
+            <span className="text-[11px] font-semibold">{t('designTab')}</span>
+          </button>
+
+          {/* Sections List Tab */}
+          <button
+            type="button"
+            onClick={() => setActiveTab(activeTab === 'sections' ? null : 'sections')}
+            data-testid="tab-party-sections"
+            className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition ${
+              currentTab === 'sections'
+                ? 'text-[#0A2E23] font-bold'
+                : 'text-[#2D2421]/65 hover:text-[#0A2E23]'
+            }`}
+          >
+            <span
+              className={`flex h-9 w-9 items-center justify-center rounded-xl transition ${
+                currentTab === 'sections' ? 'bg-[#0A2E23] text-white shadow-xs' : 'bg-transparent'
+              }`}
+            >
+              <Layers size={18} />
+            </span>
+            <span className="text-[11px] font-semibold">{t('sectionsTab')}</span>
+          </button>
+
+          {/* Add Section Tab */}
+          <button
+            type="button"
+            onClick={() => setActiveTab(activeTab === 'add-block' ? null : 'add-block')}
+            data-testid="button-add-section"
+            className="flex flex-col items-center gap-1 p-2 rounded-2xl text-[#0A2E23] hover:opacity-85 transition"
+          >
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#0A2E23] text-white shadow-xs">
+              <Plus size={20} strokeWidth={2.5} />
+            </span>
+            <span className="text-[11px] font-bold">{t('addSection')}</span>
+          </button>
+        </nav>
+      )}
     </div>
   );
 }

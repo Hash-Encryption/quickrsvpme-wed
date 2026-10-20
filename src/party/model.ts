@@ -100,6 +100,11 @@ export type PartyEventData = {
   hijriDate?: string;
   showHijriDate?: boolean;
   timeLabel?: string;
+  receptionTime?: string;
+  showCountdownCalendar?: boolean;
+  enableEnvelopeOpener?: boolean;
+  waxSealText?: string | null;
+  useLogoOnWaxSeal?: boolean;
   mapUrl?: string;
   etiquetteBadges?: string[];
 };
@@ -437,6 +442,11 @@ export function mergePartyEvent(value: Partial<PartyEventData> | null | undefine
   if (value?.hijriDate !== undefined) result.hijriDate = typeof value.hijriDate === 'string' ? value.hijriDate : undefined;
   if (value?.showHijriDate !== undefined) result.showHijriDate = Boolean(value.showHijriDate);
   if (value?.timeLabel !== undefined) result.timeLabel = typeof value.timeLabel === 'string' ? value.timeLabel : undefined;
+  if (value?.receptionTime !== undefined) result.receptionTime = typeof value.receptionTime === 'string' ? value.receptionTime : undefined;
+  if (value?.showCountdownCalendar !== undefined) result.showCountdownCalendar = Boolean(value.showCountdownCalendar);
+  if (value?.enableEnvelopeOpener !== undefined) result.enableEnvelopeOpener = Boolean(value.enableEnvelopeOpener);
+  if (value?.waxSealText !== undefined) result.waxSealText = typeof value.waxSealText === 'string' ? value.waxSealText : null;
+  if (value?.useLogoOnWaxSeal !== undefined) result.useLogoOnWaxSeal = Boolean(value.useLogoOnWaxSeal);
   if (value?.mapUrl !== undefined) result.mapUrl = typeof value.mapUrl === 'string' ? value.mapUrl : undefined;
   if (value?.etiquetteBadges !== undefined && Array.isArray(value.etiquetteBadges)) result.etiquetteBadges = value.etiquetteBadges.filter((b): b is string => typeof b === 'string');
 
@@ -499,6 +509,43 @@ export function formatPartyDate(value: string, locale: InvitationLocale): string
   return Number.isNaN(date.getTime())
     ? value
     : new Intl.DateTimeFormat(locale === 'ar' ? 'ar-SA' : 'en-GB', { day: 'numeric', month: 'long', year: 'numeric' }).format(date);
+}
+
+/**
+ * Safely parses Gregorian event date details and month grid coordinates
+ */
+export function parseEventDateDetails(dateStr: string, locale: 'ar' | 'en') {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr.trim())) {
+    return null;
+  }
+  const [yStr, mStr, dStr] = dateStr.trim().split('-');
+  const year = parseInt(yStr, 10);
+  const monthIdx = parseInt(mStr, 10) - 1;
+  const day = parseInt(dStr, 10);
+  const dateObj = new Date(Date.UTC(year, monthIdx, day, 12, 0, 0));
+
+  const dayOfWeek = dateObj.toLocaleDateString(locale === 'ar' ? 'ar-SA' : 'en-US', {
+    weekday: 'long',
+    timeZone: 'UTC',
+  });
+
+  const monthName = dateObj.toLocaleDateString(locale === 'ar' ? 'ar-SA' : 'en-US', {
+    month: 'long',
+    timeZone: 'UTC',
+  });
+
+  const firstDayOfWeek = new Date(Date.UTC(year, monthIdx, 1, 12, 0, 0)).getUTCDay();
+  const totalDays = new Date(Date.UTC(year, monthIdx + 1, 0, 12, 0, 0)).getUTCDate();
+
+  return {
+    year,
+    monthIdx,
+    day,
+    dayOfWeek,
+    monthName,
+    firstDayOfWeek,
+    totalDays,
+  };
 }
 
 export type OccasionBlueprint = {
