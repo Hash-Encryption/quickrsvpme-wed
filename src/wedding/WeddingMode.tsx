@@ -28,6 +28,7 @@ import {
   normalizeWeddingRsvpDraft,
   floralThemes,
   weddingFonts,
+  resolveInvitationTitle,
   type ArabicFont,
   type FloralTheme,
   type WeddingEventData,
@@ -47,7 +48,10 @@ import {
   type WeddingLayoutPreset,
   type WeddingMotionPreset,
   type WeddingTransformBlockId,
+  type BlockTransform,
 } from "./presentation";
+import { QRPassMark } from "../party/PartyInvitationRenderer";
+import { PartyEnvelopeOpener } from "../party/PartyEnvelopeOpener";
 import { WeddingMotionLayer } from "./WeddingMotionLayer";
 import { WeddingSceneEngine } from "./WeddingSceneEngine";
 import { WeddingVisualLayer } from "./WeddingVisualLayer";
@@ -89,6 +93,9 @@ type WeddingRendererProps = {
   onSelectBlock?: (id: WeddingTransformBlockId) => void;
   onMoveBlock?: (id: WeddingTransformBlockId, x: number, y: number) => void;
   onMoveGlobal?: (x: number, y: number) => void;
+  onUpdateBlockTransform?: (id: WeddingTransformBlockId, patch: Partial<BlockTransform>) => void;
+  onAutoBalance?: () => void;
+  onOpenDirectEdit?: (id: WeddingTransformBlockId) => void;
   forceSettled?: boolean;
 };
 
@@ -105,6 +112,18 @@ type WeddingStyleProperties = CSSProperties & {
   "--wedding-progress-muted": string;
 };
 
+function resolveCoupleMonogram(event: WeddingEventData, locale: InvitationLocale): string {
+  if (event.waxSealMonogram?.trim()) {
+    return event.waxSealMonogram.trim();
+  }
+  const g = event.groomName?.trim() ? event.groomName.trim()[0] : "";
+  const b = event.brideName?.trim() ? event.brideName.trim()[0] : "";
+  if (g && b) return `${g} & ${b}`;
+  if (g) return g;
+  if (b) return b;
+  return locale === "ar" ? "ف & ر" : "F & R";
+}
+
 export function WeddingInvitationRenderer({
   event,
   guest,
@@ -117,6 +136,9 @@ export function WeddingInvitationRenderer({
   onSelectBlock,
   onMoveBlock,
   onMoveGlobal,
+  onUpdateBlockTransform,
+  onAutoBalance,
+  onOpenDirectEdit,
   forceSettled,
 }: WeddingRendererProps) {
   const template =
@@ -129,6 +151,8 @@ export function WeddingInvitationRenderer({
   const layoutPreset = WeddingLayoutPresets[presentation.layoutPresetId];
   const motionPreset = WeddingMotionPresets[presentation.motionPresetId];
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [guestEnvelopeDismissed, setGuestEnvelopeDismissed] = useState(!event.enableEnvelopeOpener || preview);
+  const coupleMonogram = resolveCoupleMonogram(event, event.invitationLocale);
   const theme = floralThemes[event.style.floralTheme] ?? floralThemes["neutral-ivory"];
   const scenes = resolveWeddingScenes(event, guest, rsvpStatus);
   const semanticBlocks = resolveWeddingSemanticBlocks(event, guest, rsvpStatus);
@@ -156,54 +180,75 @@ export function WeddingInvitationRenderer({
   };
 
   return (
-    <WeddingSceneEngine
-      locale={event.invitationLocale}
-      scenes={scenes}
-      timings={canonicalWeddingSceneTimings}
-      cueTimes={cueTimes}
-      timelineEnd={weddingTimelineEnd}
-      musicUrl={event.musicUrl}
-      backgroundMediaUrl={event.backgroundMediaUrl}
-      preview={preview}
-      style={style}
-      forceSettled={forceSettled}
-      renderScene={(_scene, playback) => (
-        <WeddingInvitationSceneRenderer
-          blocks={semanticBlocks}
-          playback={playback}
-          layoutPreset={layoutPreset}
-          motionPreset={motionPreset}
-          templateId={template.id as WeddingVisualTemplateId}
-          visual={event.visual}
-          safeZone={presentation.safeZone}
-          onOpenRsvp={() => setDrawerOpen(true)}
-          readOnly={readOnly}
+    <>
+      {event.enableEnvelopeOpener && !preview && !guestEnvelopeDismissed && (
+        <PartyEnvelopeOpener
+          title={resolveInvitationTitle("wedding", event, "Wedding")}
+          hostName={event.hostNames || event.familyNames}
+          waxSealText={coupleMonogram}
+          backgroundColor={event.style.backgroundColor || "#0C2D24"}
+          accentColor={event.style.accentColor || "#D4AF37"}
           locale={event.invitationLocale}
-          transforms={presentation.transforms}
-          selectedBlock={selectedBlock}
-          onSelectBlock={onSelectBlock}
-          onMoveBlock={onMoveBlock}
-          onMoveGlobal={onMoveGlobal}
+          isOpen={guestEnvelopeDismissed}
+          onOpen={() => setGuestEnvelopeDismissed(true)}
         />
       )}
-      overlay={
-        <AnimatePresence>
-          {drawerOpen && !readOnly && (
-            <WeddingRSVPDrawer
-              guest={guest}
-              locale={event.invitationLocale}
-              status={rsvpStatus}
-              response={rsvpResponse}
-              onClose={() => setDrawerOpen(false)}
-              onSubmit={async (response) => {
-                await onSubmit(response);
-                setDrawerOpen(false);
-              }}
-            />
-          )}
-        </AnimatePresence>
-      }
-    />
+      <WeddingSceneEngine
+        locale={event.invitationLocale}
+        scenes={scenes}
+        timings={canonicalWeddingSceneTimings}
+        cueTimes={cueTimes}
+        timelineEnd={weddingTimelineEnd}
+        musicUrl={event.musicUrl}
+        backgroundMediaUrl={event.backgroundMediaUrl || event.videoUrl}
+        preview={preview}
+        style={style}
+        forceSettled={forceSettled}
+        renderScene={(_scene, playback) => (
+          <WeddingInvitationSceneRenderer
+            blocks={semanticBlocks}
+            playback={playback}
+            layoutPreset={layoutPreset}
+            motionPreset={motionPreset}
+            templateId={template.id as WeddingVisualTemplateId}
+            visual={event.visual}
+            safeZone={presentation.safeZone}
+            onOpenRsvp={() => setDrawerOpen(true)}
+            readOnly={readOnly}
+            locale={event.invitationLocale}
+            transforms={presentation.transforms}
+            selectedBlock={selectedBlock}
+            onSelectBlock={onSelectBlock}
+            onMoveBlock={onMoveBlock}
+            onMoveGlobal={onMoveGlobal}
+            onUpdateBlockTransform={onUpdateBlockTransform}
+            onAutoBalance={onAutoBalance}
+            onOpenDirectEdit={onOpenDirectEdit}
+            eventStyle={event.style}
+            videoUrl={event.videoUrl || event.backgroundMediaUrl}
+            etiquetteBadges={event.etiquetteBadges}
+            venueMapUrl={event.mapUrl}
+          />
+        )}
+        overlay={
+          <AnimatePresence>
+            {drawerOpen && !readOnly && (
+              <WeddingRSVPDrawer
+                guest={guest}
+                locale={event.invitationLocale}
+                status={rsvpStatus}
+                response={rsvpResponse}
+                onClose={() => setDrawerOpen(false)}
+                onSubmit={async (response) => {
+                  await onSubmit(response);
+                  setDrawerOpen(false);
+                }}
+              />
+            )}
+          </AnimatePresence>
+        }
+      />
+    </>
   );
 }
 
@@ -223,6 +268,13 @@ function WeddingInvitationSceneRenderer({
   onSelectBlock,
   onMoveBlock,
   onMoveGlobal,
+  onUpdateBlockTransform,
+  onAutoBalance,
+  onOpenDirectEdit,
+  eventStyle,
+  videoUrl,
+  etiquetteBadges,
+  venueMapUrl,
 }: {
   blocks: ReadonlyArray<WeddingSemanticBlock>;
   playback: {
@@ -245,6 +297,13 @@ function WeddingInvitationSceneRenderer({
   onSelectBlock?: (id: WeddingTransformBlockId) => void;
   onMoveBlock?: (id: WeddingTransformBlockId, x: number, y: number) => void;
   onMoveGlobal?: (x: number, y: number) => void;
+  onUpdateBlockTransform?: (id: WeddingTransformBlockId, patch: Partial<BlockTransform>) => void;
+  onAutoBalance?: () => void;
+  onOpenDirectEdit?: (id: WeddingTransformBlockId) => void;
+  eventStyle?: WeddingEventData["style"];
+  videoUrl?: string;
+  etiquetteBadges?: string[];
+  venueMapUrl?: string;
 }) {
   const direction = localeDirection(locale);
   const artworkMode = visual.source === "uploaded-background" ? visual.fitMode : "template";
@@ -267,6 +326,8 @@ function WeddingInvitationSceneRenderer({
         elapsed={playback.elapsed}
         isPlaying={playback.isPlaying}
         resolved={playback.reduceMotion || playback.settleScene || frame.final}
+        style={eventStyle}
+        videoUrl={videoUrl}
       />
       <div className="wedding-content wedding-content--complete">
         <WeddingMotionLayer
@@ -284,12 +345,19 @@ function WeddingInvitationSceneRenderer({
           onSelectBlock={onSelectBlock}
           onMoveBlock={onMoveBlock}
           onMoveGlobal={onMoveGlobal}
+          onUpdateBlockTransform={onUpdateBlockTransform}
+          onAutoBalance={onAutoBalance}
+          onOpenDirectEdit={onOpenDirectEdit}
+          entranceStyle={eventStyle?.textEntranceStyle}
+          entranceSpeed={eventStyle?.textEntranceSpeed}
           renderBlock={(block) => (
             <WeddingSemanticBlockContent
               block={block}
               onOpenRsvp={onOpenRsvp}
               readOnly={readOnly}
               locale={locale}
+              etiquetteBadges={etiquetteBadges}
+              venueMapUrl={venueMapUrl}
             />
           )}
         />
@@ -303,11 +371,15 @@ function WeddingSemanticBlockContent({
   onOpenRsvp,
   readOnly,
   locale,
+  etiquetteBadges,
+  venueMapUrl,
 }: {
   block: WeddingSemanticBlock;
   onOpenRsvp: () => void;
   readOnly: boolean;
   locale: InvitationLocale;
+  etiquetteBadges?: string[];
+  venueMapUrl?: string;
 }) {
   if (block.id === "opening")
     return (
@@ -374,15 +446,50 @@ function WeddingSemanticBlockContent({
     );
   return (
     <div className="wedding-scene wedding-rsvp-reveal">
+      {/* 1-Tap Saudi Wedding Etiquette Badges */}
+      {etiquetteBadges && etiquetteBadges.length > 0 && (
+        <div className="wedding-etiquette-pills" aria-label="ملاحظات الدعوة">
+          {etiquetteBadges.map((badge, idx) => (
+            <span key={idx} className="wedding-etiquette-pill">
+              {badge}
+            </span>
+          ))}
+        </div>
+      )}
+
       <p className="wedding-rsvp-guest">{invitationT(locale, "privateInvitation")} {block.guestName}</p>
-      {!readOnly && <button
-        className="wedding-rsvp-button"
-        onClick={onOpenRsvp}
-        data-testid="button-wedding-rsvp"
-      >
-        <span>{invitationT(locale, block.status === "pending" ? "confirmAttendance" : "editResponse")}</span>
-        {block.deadline && <small>{block.deadline}</small>}
-      </button>}
+
+      {/* Functional In-Frame Action Bar: 📍 Location + ✓ Confirm Attendance */}
+      <div className="wedding-action-dock">
+        <a
+          href={venueMapUrl || 'https://maps.google.com'}
+          target="_blank"
+          rel="noreferrer"
+          className="wedding-action-btn wedding-action-btn--location"
+          data-testid="button-wedding-location"
+        >
+          <MapPin size={14} />
+          <span>{invitationT(locale, "viewLocation")}</span>
+        </a>
+
+        {!readOnly && (
+          <button
+            type="button"
+            className="wedding-action-btn wedding-action-btn--rsvp wedding-rsvp-button"
+            onClick={onOpenRsvp}
+            data-testid="button-wedding-rsvp"
+          >
+            <Check size={14} />
+            <span>{invitationT(locale, block.status === "pending" ? "confirmAttendance" : "editResponse")}</span>
+          </button>
+        )}
+      </div>
+
+      {block.deadline && (
+        <small className="block mt-1.5 text-[10px] opacity-75 text-center">
+          {block.deadline}
+        </small>
+      )}
     </div>
   );
 }
@@ -401,6 +508,15 @@ function PrincipalNames({
   const longest = Math.max(...lines.map((line) => line.length));
   const lengthClass =
     longest > 24 ? "is-very-long" : longest > 14 ? "is-long" : "";
+  if (lines.length === 2) {
+    return (
+      <div className={`wedding-name-stack wedding-name-stack--2 ${lengthClass}`}>
+        <span>{lines[0]}</span>
+        <i>{invitationT(locale, "and")}</i>
+        <span>{lines[1]}</span>
+      </div>
+    );
+  }
   return (
     <div
       className={`wedding-name-stack wedding-name-stack--${lines.length} ${lengthClass}`}
@@ -408,7 +524,6 @@ function PrincipalNames({
       {lines.map((line, index) => (
         <span key={`${line}-${index}`}>{line}</span>
       ))}
-      {lines.length === 2 && <i>{invitationT(locale, "and")}</i>}
     </div>
   );
 }
@@ -568,6 +683,30 @@ function WeddingRSVPDrawer({
             </div>
           </div>
         )}
+        {attendance === "accepted" && (
+          <div className="rounded-2xl bg-white/95 border border-[#D4AF37]/50 p-4 shadow-md text-center my-3" data-testid="wedding-vip-gate-pass">
+            <div className="flex items-center justify-between border-b border-[#D4AF37]/20 pb-2 mb-3">
+              <span className="text-[10px] font-bold tracking-wider text-[#8B7040] uppercase">
+                {locale === 'ar' ? 'بطاقة دخول رقمية VIP' : 'Digital VIP Gate Pass'}
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-[#0C2D24]/10 px-2 py-0.5 text-[10px] font-bold text-[#0C2D24]">
+                <Check size={11} className="text-[#D4AF37]" />
+                {locale === 'ar' ? 'مصرح بالدخول' : 'Access Granted'}
+              </span>
+            </div>
+            <div className="flex justify-center mb-3">
+              <QRPassMark label="VIP Entry Pass" />
+            </div>
+            <div className="text-xs font-bold text-[#0C2D24] mb-1">
+              {guest.name}
+            </div>
+            <div className="text-[11px] text-[#68615A]">
+              {locale === 'ar'
+                ? `حامل البطاقة + ${Math.max(0, guestCount - 1)} مرافق · الرمز: ${guest.passId || 'VIP-ENTRY'}`
+                : `Pass Holder + ${Math.max(0, guestCount - 1)} guests · Ref: ${guest.passId || 'VIP-ENTRY'}`}
+            </div>
+          </div>
+        )}
         <label className="wedding-message">
           <span>
             {invitationT(locale, "message")} <small>({invitationT(locale, "optional")})</small>
@@ -638,6 +777,10 @@ export function WeddingStudio({
   const [replayKey, setReplayKey] = useState(0);
   const [isSettled, setIsSettled] = useState(false);
   const [transientVisual, setTransientVisual] = useState<WeddingEventData["visual"] | null>(null);
+  const [replayEnvelope, setReplayEnvelope] = useState(false);
+  const [envelopeDismissed, setEnvelopeDismissed] = useState(false);
+
+  const coupleMonogram = resolveCoupleMonogram(event, locale);
 
   const dragRef = useRef<{
     pointerId: number;
@@ -669,6 +812,23 @@ export function WeddingStudio({
         },
       },
     });
+  const updateBlockTransform = (id: WeddingTransformBlockId, patch: Partial<BlockTransform>) => {
+    const current = event.presentation.transforms.blocks[id] ?? defaultWeddingTransform;
+    updatePresentation({
+      transforms: {
+        ...event.presentation.transforms,
+        blocks: {
+          ...event.presentation.transforms.blocks,
+          [id]: { ...current, ...patch },
+        },
+      },
+    });
+  };
+  const autoBalanceLayout = () => {
+    updatePresentation({
+      transforms: resetWeddingLayoutTransforms(),
+    });
+  };
 
   const positioning = event.visual.source === "uploaded-background" && event.visual.fitMode === "fill";
   const previewEvent = transientVisual ? { ...event, visual: transientVisual } : event;
@@ -709,6 +869,10 @@ export function WeddingStudio({
   };
 
   const handleSelectBlock = (blockId: WeddingTransformBlockId) => {
+    setSelectedBlock(blockId);
+  };
+
+  const handleOpenDirectEdit = (blockId: WeddingTransformBlockId) => {
     setSelectedBlock(blockId);
     const targetMap: Record<WeddingTransformBlockId, WeddingDirectEditTarget> = {
       principals: "principals",
@@ -779,6 +943,19 @@ export function WeddingStudio({
         <div className="wedding-studio-toolbar-right">
           <button
             type="button"
+            onClick={() => {
+              setEnvelopeDismissed(false);
+              setReplayEnvelope(true);
+            }}
+            data-testid="button-preview-envelope"
+            aria-label={locale === 'ar' ? 'تجربة الظرف' : 'Preview Envelope'}
+            className="focus-ring wedding-toolbar-btn"
+            title={locale === 'ar' ? 'تجربة فتح الظرف الملكي' : 'Preview 3D Envelope'}
+          >
+            <span>✉️ {locale === 'ar' ? 'تجربة الظرف' : 'Envelope'}</span>
+          </button>
+          <button
+            type="button"
             onClick={handleReplay}
             data-testid="button-replay-invitation"
             aria-label={w("replay")}
@@ -823,6 +1000,8 @@ export function WeddingStudio({
               if (
                 !target.closest(".wedding-custom-block") &&
                 !target.closest(".wedding-global-drag-handle") &&
+                !target.closest(".wedding-canvas-tools") &&
+                !target.closest(".wedding-floating-toolbar") &&
                 !target.closest(".wedding-position-surface")
               ) {
                 handleSelectArtwork();
@@ -841,6 +1020,9 @@ export function WeddingStudio({
               onSelectBlock={handleSelectBlock}
               onMoveBlock={moveBlock}
               onMoveGlobal={moveContent}
+              onUpdateBlockTransform={updateBlockTransform}
+              onAutoBalance={autoBalanceLayout}
+              onOpenDirectEdit={handleOpenDirectEdit}
               forceSettled={isSettled}
             />
             {positioning && (
@@ -914,6 +1096,24 @@ export function WeddingStudio({
           <span>{w("more")}</span>
         </button>
       </nav>
+
+      {/* Optional 3D Luxury Couple Monogram Wax Seal Envelope Opener */}
+      {(event.enableEnvelopeOpener || replayEnvelope) && !envelopeDismissed && (
+        <PartyEnvelopeOpener
+          title={resolveInvitationTitle("wedding", event, "Wedding")}
+          hostName={event.hostNames || event.familyNames}
+          waxSealText={coupleMonogram}
+          backgroundColor={event.style.backgroundColor || "#0C2D24"}
+          accentColor={event.style.accentColor || "#D4AF37"}
+          locale={event.invitationLocale}
+          isOpen={envelopeDismissed}
+          onOpen={() => {
+            setEnvelopeDismissed(true);
+            setReplayEnvelope(false);
+            handleReplay();
+          }}
+        />
+      )}
 
       {/* Contextual Bottom Sheet with Backdrop */}
       {isSheetOpen && (

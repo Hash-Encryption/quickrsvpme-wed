@@ -33,7 +33,14 @@ export const weddingTransformBlockIds = [
   "opening", "occasion", "hosts", "principals", "date-time", "venue", "rsvp",
 ] as const;
 export type WeddingTransformBlockId = (typeof weddingTransformBlockIds)[number];
-export type WeddingTransform = { scale: number; x: number; y: number };
+export type WeddingTransform = {
+  scale: number;
+  x: number;
+  y: number;
+  color?: string;
+  hidden?: boolean;
+};
+export type BlockTransform = WeddingTransform;
 export type WeddingLayoutTransforms = {
   global: WeddingTransform;
   blocks: Partial<Record<WeddingTransformBlockId, WeddingTransform>>;
@@ -234,6 +241,8 @@ export function normalizeWeddingTransform(value: unknown, block = false): Weddin
     scale: clamp(transform.scale, block ? 0.75 : 0.8, block ? 1.35 : 1.25, 1),
     x: clamp(transform.x, block ? -0.25 : -0.18, block ? 0.25 : 0.18, 0),
     y: clamp(transform.y, block ? -0.25 : -0.22, block ? 0.25 : 0.22, 0),
+    ...(typeof transform.color === "string" && transform.color.trim() ? { color: transform.color.trim() } : {}),
+    ...(transform.hidden ? { hidden: true } : {}),
   };
 }
 

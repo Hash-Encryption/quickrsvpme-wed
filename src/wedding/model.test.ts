@@ -11,6 +11,8 @@ import {
   normalizeWeddingRsvpDraft,
   resolveInvitationTitle,
   WeddingTemplateRegistry,
+  SAUDI_DAWAH_PRESETS,
+  SAUDI_ETIQUETTE_OPTIONS,
   type EventMode,
 } from "./model.ts";
 import {
@@ -29,6 +31,7 @@ import {
   WeddingMotionPresets,
   resolveWeddingMotionTarget,
   resolveWeddingSafeZone,
+  normalizeWeddingTransform,
   normalizeWeddingLayoutTransforms,
   resetWeddingLayoutTransforms,
   selectWeddingLayoutPreset,
@@ -858,4 +861,75 @@ test("invitation title resolves per event mode", () => {
     }),
     "دعوة زفاف",
   );
+});
+
+test("Phase 3: WeddingTransform supports optional color override and hidden toggle", () => {
+  const custom = normalizeWeddingTransform({
+    scale: 1.1,
+    x: 0.05,
+    y: -0.05,
+    color: "#D4AF37",
+    hidden: true,
+  });
+  assert.equal(custom.scale, 1.1);
+  assert.equal(custom.x, 0.05);
+  assert.equal(custom.y, -0.05);
+  assert.equal(custom.color, "#D4AF37");
+  assert.equal(custom.hidden, true);
+
+  const reset = normalizeWeddingTransform({ scale: 1, x: 0, y: 0, color: "", hidden: false });
+  assert.equal(reset.color, undefined);
+  assert.equal(reset.hidden, undefined);
+});
+
+test("Phase 3: auto-balance / reset transforms harmonizes blocks", () => {
+  const resetLayout = resetWeddingLayoutTransforms();
+  assert.deepEqual(resetLayout.global, { scale: 1, x: 0, y: 0 });
+  assert.deepEqual(resetLayout.blocks, {});
+});
+
+test("Phase 3: WeddingEventData merges and preserves living atmosphere, videoUrl, wax seal and etiquette", () => {
+  const merged = mergeWeddingEvent({
+    videoUrl: "https://example.com/loop.mp4",
+    enableEnvelopeOpener: true,
+    waxSealMonogram: "ف & ر",
+    etiquetteBadges: ["ممنوع التصوير", "جنة الأطفال منازلهم"],
+    style: {
+      ...defaultWeddingEvent.style,
+      backgroundOverlayOpacity: 0.35,
+      ambientOverlayEffect: "gold-dust",
+      breathingZoom: true,
+      textEntranceStyle: "royal-rise",
+      textEntranceSpeed: "slow",
+    },
+  });
+
+  assert.equal(merged.videoUrl, "https://example.com/loop.mp4");
+  assert.equal(merged.enableEnvelopeOpener, true);
+  assert.equal(merged.waxSealMonogram, "ف & ر");
+  assert.deepEqual(merged.etiquetteBadges, ["ممنوع التصوير", "جنة الأطفال منازلهم"]);
+  assert.equal(merged.style.backgroundOverlayOpacity, 0.35);
+  assert.equal(merged.style.ambientOverlayEffect, "gold-dust");
+  assert.equal(merged.style.breathingZoom, true);
+  assert.equal(merged.style.textEntranceStyle, "royal-rise");
+  assert.equal(merged.style.textEntranceSpeed, "slow");
+});
+
+test("Phase 3: Saudi Da'wah presets and etiquette options have complete bilingual coverage", () => {
+  assert.equal(SAUDI_DAWAH_PRESETS.length, 5);
+  for (const preset of SAUDI_DAWAH_PRESETS) {
+    assert.ok(preset.id);
+    assert.ok(preset.nameAr);
+    assert.ok(preset.nameEn);
+    assert.ok(preset.openingAr);
+    assert.ok(preset.openingEn);
+    assert.ok(preset.invitationAr);
+    assert.ok(preset.invitationEn);
+  }
+
+  assert.equal(SAUDI_ETIQUETTE_OPTIONS.length, 4);
+  assert.ok(SAUDI_ETIQUETTE_OPTIONS.includes("جنة الأطفال منازلهم"));
+  assert.ok(SAUDI_ETIQUETTE_OPTIONS.includes("ممنوع التصوير"));
+  assert.ok(SAUDI_ETIQUETTE_OPTIONS.includes("الدخول ببطاقة الدعوة الشخصية"));
+  assert.ok(SAUDI_ETIQUETTE_OPTIONS.includes("تتوفر خدمة صف السيارات (Valet)"));
 });

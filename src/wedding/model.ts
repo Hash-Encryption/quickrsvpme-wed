@@ -1,10 +1,13 @@
 import {
   canonicalWeddingSceneTimings,
   resolveWeddingPresentation,
+  type BlockTransform,
   type WeddingPresentation,
   type WeddingSceneId,
   type WeddingTemplatePresentation,
+  type WeddingTransform,
 } from "./presentation.ts";
+export type { BlockTransform, WeddingTransform };
 import {
   resolveWeddingVisualSelection,
   type WeddingVisualSelection,
@@ -17,12 +20,72 @@ export type FloralTheme =
   "blush" | "dusty-blue" | "lavender" | "champagne" | "sage" | "neutral-ivory";
 export type ArabicFont = "amiri" | "reem-kufi" | "ibm-plex-arabic";
 
+export const SAUDI_DAWAH_PRESETS = [
+  {
+    id: "royal",
+    nameAr: "ملكي رسمي",
+    nameEn: "Royal Traditional",
+    openingAr: "بسم الله الرحمن الرحيم",
+    openingEn: "In the Name of God, Most Gracious, Most Merciful",
+    invitationAr: "يتشرفان بدعوتكم لحضور حفل الزفاف المبارك وتناول طعام العشاء، وبحضوركم تكتمل الأفراح والمسرات",
+    invitationEn: "Cordially invite you to honor us with your presence at the wedding ceremony and dinner",
+  },
+  {
+    id: "poetic",
+    nameAr: "شاعري دافئ",
+    nameEn: "Warm & Poetic",
+    openingAr: "وَمِنْ آيَاتِهِ أَنْ خَلَقَ لَكُم مِّنْ أَنفُسِكُمْ أَزْوَاجًا لِّتَسْكُنُوا إِلَيْهَا",
+    openingEn: "And among His signs is that He created for you mates from among yourselves",
+    invitationAr: "في ليلة من ليالي الأنس والفرح، نسعد بمشاركتكم لنا بهجة العمر وجميل اللحظات",
+    invitationEn: "On a night of joyous harmony, we delight in celebrating with you this blessed union",
+  },
+  {
+    id: "women",
+    nameAr: "دعوة خاصة بالسيدات",
+    nameEn: "Women's Reception",
+    openingAr: "بسم الله الرحمن الرحيم",
+    openingEn: "In the Name of God, Most Gracious, Most Merciful",
+    invitationAr: "يسرنا دعوتكم لحضور حفل زفاف ابنتنا الغالية، سائلين المولى لهما دوام السعادة والوفاق (دعوة خاصة بالسيدات)",
+    invitationEn: "Joyfully invite you to the wedding reception celebrating our beloved bride (Ladies Reception)",
+  },
+  {
+    id: "men",
+    nameAr: "دعوة خاصة بالرجال",
+    nameEn: "Men's Ceremony",
+    openingAr: "بسم الله الرحمن الرحيم",
+    openingEn: "In the Name of God, Most Gracious, Most Merciful",
+    invitationAr: "يتشرف بدعوتكم لحضور حفل الزفاف وتناول طعام العشاء ومشاركتنا أبهى ليالي العمر (حفل الرجال)",
+    invitationEn: "Cordially invites you to the wedding ceremony and dinner (Men's Ceremony)",
+  },
+  {
+    id: "modern",
+    nameAr: "عصري مختصر",
+    nameEn: "Modern Brief",
+    openingAr: "بسم الله نبدأ حكايتنا",
+    openingEn: "Together with our families",
+    invitationAr: "يسعدنا ويشرفنا حضوركم ومشاركتنا فرحة زواجنا",
+    invitationEn: "Invite you to join us as we celebrate our wedding day",
+  },
+] as const;
+
+export const SAUDI_ETIQUETTE_OPTIONS = [
+  "جنة الأطفال منازلهم",
+  "ممنوع التصوير",
+  "الدخول ببطاقة الدعوة الشخصية",
+  "تتوفر خدمة صف السيارات (Valet)",
+] as const;
+
 export type WeddingStyle = {
   backgroundColor: string;
   accentColor: string;
   floralTheme: FloralTheme;
   displayFont: ArabicFont;
   bodyFont: ArabicFont;
+  backgroundOverlayOpacity?: number;  // 0 to 0.75 readability dimmer/scrim
+  ambientOverlayEffect?: 'gold-dust' | 'palace-rays' | 'soft-shimmer' | 'none';
+  breathingZoom?: boolean;            // Subtle slow cinematic Ken Burns zoom on background artwork
+  textEntranceStyle?: 'royal-rise' | 'calligraphic-glow' | 'soft-fade' | 'instant';
+  textEntranceSpeed?: 'slow' | 'normal' | 'fast';
 };
 
 export type WeddingEventData = {
@@ -48,11 +111,15 @@ export type WeddingEventData = {
   rsvpDeadline: string;
   musicUrl: string;
   backgroundMediaUrl: string;
+  videoUrl?: string;
   invitationVariant: WeddingVariant;
   customWording: string;
   visual: WeddingVisualSelection;
   style: WeddingStyle;
   presentation: WeddingPresentation;
+  enableEnvelopeOpener?: boolean;
+  waxSealMonogram?: string;
+  etiquetteBadges?: string[];
 };
 
 export type WeddingGuestData = {
@@ -261,16 +328,27 @@ export const defaultWeddingEvent: WeddingEventData = {
   rsvpDeadline: "يرجى التأكيد قبل 10 مايو",
   musicUrl: "",
   backgroundMediaUrl: "",
+  videoUrl: "",
   invitationVariant: "both",
   customWording: "",
   visual: { source: "template" },
-  style: WeddingTemplateRegistry["soft-floral-garden"].defaults,
+  style: {
+    ...WeddingTemplateRegistry["soft-floral-garden"].defaults,
+    backgroundOverlayOpacity: 0,
+    ambientOverlayEffect: "gold-dust",
+    breathingZoom: false,
+    textEntranceStyle: "royal-rise",
+    textEntranceSpeed: "normal",
+  },
   presentation: {
     layoutPresetId: "centered-elegance",
     motionPresetId: "soft-dissolve",
     safeZone: "auto",
     transforms: { global: { scale: 1, x: 0, y: 0 }, blocks: {} },
   },
+  enableEnvelopeOpener: false,
+  waxSealMonogram: "",
+  etiquetteBadges: ["جنة الأطفال منازلهم"],
 };
 
 export const defaultWeddingGuest: WeddingGuestData = {
@@ -307,6 +385,10 @@ export function mergeWeddingEvent(
       persisted.presentation,
       template.presentation,
     ),
+    enableEnvelopeOpener: typeof persisted.enableEnvelopeOpener === "boolean" ? persisted.enableEnvelopeOpener : false,
+    waxSealMonogram: typeof persisted.waxSealMonogram === "string" ? persisted.waxSealMonogram : "",
+    etiquetteBadges: Array.isArray(persisted.etiquetteBadges) ? persisted.etiquetteBadges : ["جنة الأطفال منازلهم"],
+    videoUrl: typeof persisted.videoUrl === "string" ? persisted.videoUrl : (persisted.backgroundMediaUrl || ""),
   };
 }
 

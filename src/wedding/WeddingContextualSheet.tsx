@@ -22,6 +22,8 @@ import {
   weddingFonts,
   deriveHijriDateFromGregorian,
   deriveDayOfWeekFromGregorian,
+  SAUDI_DAWAH_PRESETS,
+  SAUDI_ETIQUETTE_OPTIONS,
   type ArabicFont,
   type FloralTheme,
   type WeddingEventData,
@@ -47,6 +49,10 @@ import {
 import { localeDirection, type InvitationLocale } from "../i18n/locale";
 import { useAppLocale } from "../i18n/app-locale";
 import { weddingBuilderT } from "../i18n/wedding-builder";
+import { DualHijriCalendar } from "../components/DualHijriCalendar";
+import { formatDualDateSummary } from "../utils/saudiCalendar";
+
+export { SAUDI_DAWAH_PRESETS, SAUDI_ETIQUETTE_OPTIONS };
 
 export type WeddingEditorTab = "information" | "design" | "motion" | "more";
 export type WeddingDirectEditTarget =
@@ -368,7 +374,29 @@ export function WeddingContextualSheet({
             {/* Date Section */}
             {(!directTarget || directTarget === "date-time") && (
               <fieldset className="rounded-2xl border border-[#D4AF37]/30 bg-white/70 p-4 shadow-2xs">
-                <legend className="px-2 text-xs font-bold text-[#0C2D24]">{w("dateSection")}</legend>
+                {!directTarget && <legend className="px-2 text-xs font-bold text-[#0C2D24]">{w("dateSection")}</legend>}
+
+                {/* Dual Hijri & Gregorian Calendar */}
+                <div className="rounded-2xl border border-[#D4AF37]/40 bg-white/80 p-3 mb-3">
+                  <span className="block text-xs font-bold text-[#0C2D24] mb-2">
+                    📅 {locale === 'ar' ? 'التقويم المزدوج (هجري وميلادي)' : 'Dual Hijri & Gregorian Calendar'}
+                  </span>
+                  <DualHijriCalendar
+                    value={event.gregorianDate}
+                    onChange={(greg: string) => {
+                      const derivedHijri = deriveHijriDateFromGregorian(greg, locale) || formatDualDateSummary(greg, locale);
+                      const derivedDay = deriveDayOfWeekFromGregorian(greg, locale) || "";
+                      onUpdate({
+                        gregorianDate: greg,
+                        hijriDate: derivedHijri,
+                        eventDay: derivedDay,
+                        showHijriDate: true,
+                      });
+                    }}
+                    locale={locale === 'ar' ? 'ar' : 'en'}
+                  />
+                </div>
+
                 <div className="wedding-fields mt-2" dir={contentDir}>
                   <label>
                     <span>{w("gregorian")}</span>
@@ -423,7 +451,31 @@ export function WeddingContextualSheet({
             {/* Timing Section */}
             {(!directTarget || directTarget === "date-time") && (
               <fieldset className="rounded-2xl border border-[#D4AF37]/30 bg-white/70 p-4 shadow-2xs">
-                <legend className="px-2 text-xs font-bold text-[#0C2D24]">{w("timingSection")}</legend>
+                {!directTarget && <legend className="px-2 text-xs font-bold text-[#0C2D24]">{w("timingSection")}</legend>}
+
+                {/* 1-Tap Saudi Wedding Timing Chips */}
+                <div className="mb-3">
+                  <span className="block text-[11px] font-bold text-[#8B7040] mb-1.5">
+                    ⏰ {locale === 'ar' ? 'أوقات الزفاف السعودية الشائعة (الاستقبال / الحفل)' : 'Popular Saudi Wedding Timing'}
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {['بعد صلاة العشاء', '8:30 PM', '9:00 PM', '9:30 PM', '10:30 PM', '11:00 PM'].map((timeStr) => (
+                      <button
+                        key={timeStr}
+                        type="button"
+                        onClick={() => onUpdate({ startTime: timeStr })}
+                        className={`rounded-full px-2.5 py-1 text-[11px] font-semibold border transition ${
+                          event.startTime === timeStr
+                            ? 'bg-[#0C2D24] text-[#D4AF37] border-[#D4AF37]'
+                            : 'bg-white/80 text-[#0C2D24] border-[#D4AF37]/40 hover:bg-[#D4AF37]/15'
+                        }`}
+                      >
+                        {timeStr}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="wedding-fields mt-2" dir={contentDir}>
                   <label>
                     <span>{w("start")}</span>
@@ -454,7 +506,7 @@ export function WeddingContextualSheet({
             {/* Venue & Location */}
             {(!directTarget || directTarget === "venue") && (
               <fieldset className="rounded-2xl border border-[#D4AF37]/30 bg-white/70 p-4 shadow-2xs">
-                <legend className="px-2 text-xs font-bold text-[#0C2D24]">{w("venueSection")}</legend>
+                {!directTarget && <legend className="px-2 text-xs font-bold text-[#0C2D24]">{w("venueSection")}</legend>}
                 <div className="wedding-fields mt-2" dir={contentDir}>
                   <label>
                     <span>{w("venue")}</span>
@@ -490,7 +542,65 @@ export function WeddingContextualSheet({
             {/* Wording & Hosts */}
             {(!directTarget || directTarget === "occasion" || directTarget === "opening" || directTarget === "hosts") && (
               <fieldset className="rounded-2xl border border-[#D4AF37]/30 bg-white/70 p-4 shadow-2xs">
-                <legend className="px-2 text-xs font-bold text-[#0C2D24]">{w("wordingSection")}</legend>
+                {!directTarget && <legend className="px-2 text-xs font-bold text-[#0C2D24]">{w("wordingSection")}</legend>}
+
+                {/* 5 1-Tap Saudi Da'wah Presets */}
+                <div className="mb-3">
+                  <span className="block text-[11px] font-bold text-[#8B7040] mb-1.5">
+                    📜 {locale === 'ar' ? 'ديباجات زفاف ملكية جاهزة (بنقرة واحدة)' : 'Royal Saudi Wedding Da\'wah Presets'}
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {SAUDI_DAWAH_PRESETS.map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => {
+                          onUpdate({
+                            openingWording: locale === 'ar' ? preset.openingAr : preset.openingEn,
+                            invitationWording: locale === 'ar' ? preset.invitationAr : preset.invitationEn,
+                          });
+                        }}
+                        className="rounded-full px-2.5 py-1 text-[11px] font-semibold border border-[#D4AF37]/50 bg-white/80 text-[#0C2D24] hover:bg-[#D4AF37]/20 transition"
+                      >
+                        ✨ {locale === 'ar' ? preset.nameAr : preset.nameEn}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 1-Tap Saudi Wedding Etiquette Badges */}
+                <div className="mb-3 pt-2 border-t border-[#D4AF37]/20">
+                  <span className="block text-[11px] font-bold text-[#8B7040] mb-1.5">
+                    🏷️ {locale === 'ar' ? 'ملاحظات الدعوة (تظهر في أسفل بطاقة الزفاف)' : 'Wedding Etiquette Badges (Bottom Micro-Pills)'}
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {SAUDI_ETIQUETTE_OPTIONS.map((badge) => {
+                      const active = (event.etiquetteBadges || []).includes(badge);
+                      return (
+                        <button
+                          key={badge}
+                          type="button"
+                          onClick={() => {
+                            const current = event.etiquetteBadges || [];
+                            const next = active
+                              ? current.filter((b) => b !== badge)
+                              : [...current, badge];
+                            onUpdate({ etiquetteBadges: next });
+                          }}
+                          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold border transition flex items-center gap-1 ${
+                            active
+                              ? 'bg-[#0C2D24] text-[#D4AF37] border-[#D4AF37]'
+                              : 'bg-white/80 text-[#0C2D24] border-[#D4AF37]/40 hover:bg-[#D4AF37]/15'
+                          }`}
+                        >
+                          {active && <Check size={11} />}
+                          <span>{badge}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <div className="wedding-fields mt-2" dir={contentDir}>
                   <label className="is-wide">
                     <span>{w("opening")}</span>
@@ -831,6 +941,135 @@ export function WeddingContextualSheet({
                 </div>
               </div>
             </section>
+
+            {/* 4. Living Video Atmosphere & Background Overlays */}
+            <section className="rounded-2xl border border-[#D4AF37]/30 bg-white/70 p-4 shadow-2xs space-y-4">
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-[#8B7040]">
+                  {locale === "ar" ? "المؤثرات الحية وتحسين القراءة" : "Living Atmosphere & Readability"}
+                </h4>
+                <p className="mt-1 text-xs text-[#756F66]">
+                  {locale === "ar"
+                    ? "إضفاء طابع سينمائي حيوي على الخلفية وضبط تباين النصوص لتبدو كفيديو فاخر"
+                    : "Add living motion effects and adjust background contrast for crisp, luxurious calligraphy"}
+                </p>
+              </div>
+
+              {/* Readability Dimmer / Scrim Slider */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-[#68615a]">
+                    {locale === "ar" ? "تعتيم الخلفية لسهولة القراءة" : "Readability Dimmer (Background Scrim)"}
+                  </span>
+                  <span className="font-bold text-[#0C2D24]">
+                    {Math.round((event.style.backgroundOverlayOpacity ?? 0) * 100)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="0.75"
+                  step="0.05"
+                  value={event.style.backgroundOverlayOpacity ?? 0}
+                  onChange={(e) => updateStyle({ backgroundOverlayOpacity: Number(e.target.value) })}
+                  className="w-full accent-[#0C2D24]"
+                  data-testid="slider-readability-dimmer"
+                />
+              </div>
+
+              {/* Living Video Atmosphere Effect */}
+              <div>
+                <span className="block text-xs font-semibold text-[#68615a] mb-2">
+                  {locale === "ar" ? "المؤثرات الحية للخلفية" : "Living Atmosphere Effect"}
+                </span>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" aria-label="Living Atmosphere Effect">
+                  {[
+                    { id: "none", labelAr: "بدون", labelEn: "None", icon: "⊘" },
+                    { id: "gold-dust", labelAr: "ذرات الذهب", labelEn: "Gold Dust", icon: "✨" },
+                    { id: "palace-rays", labelAr: "أشعة القصر", labelEn: "Palace Rays", icon: "☀️" },
+                    { id: "soft-shimmer", labelAr: "بريق ناعم", labelEn: "Soft Shimmer", icon: "💫" },
+                  ].map((effect) => {
+                    const active = (event.style.ambientOverlayEffect ?? "none") === effect.id;
+                    return (
+                      <button
+                        key={effect.id}
+                        type="button"
+                        onClick={() => updateStyle({ ambientOverlayEffect: effect.id as any })}
+                        data-testid={`button-ambient-${effect.id}`}
+                        aria-pressed={active}
+                        className={`flex items-center justify-center gap-1.5 min-h-10 px-3 py-2 rounded-xl border text-xs font-semibold transition ${
+                          active
+                            ? "bg-[#0C2D24] text-[#F3E5AB] border-[#0C2D24] shadow-xs"
+                            : "bg-[#FFFDF9] text-[#615a53] border-[#d8cec1] hover:border-[#D4AF37]"
+                        }`}
+                      >
+                        <span aria-hidden="true">{effect.icon}</span>
+                        <span>{locale === "ar" ? effect.labelAr : effect.labelEn}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Breathing Zoom Toggle */}
+              <div className="pt-2 border-t border-[#F0EBE1]">
+                <label className="flex items-center justify-between cursor-pointer py-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base" aria-hidden="true">🌬️</span>
+                    <div>
+                      <span className="block text-xs font-bold text-[#0C2D24]">
+                        {locale === "ar" ? "حركة تنفس هادئة للمشهد" : "Subtle Breathing Motion (Slow Zoom)"}
+                      </span>
+                      <span className="block text-[11px] text-[#756F66]">
+                        {locale === "ar"
+                          ? "حركة تقريب سينمائية بطيئة تعطي إحساس الفيديو للصور الثابتة"
+                          : "Subtle slow cinematic zoom bringing static photos to life"}
+                      </span>
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(event.style.breathingZoom)}
+                    onChange={(e) => updateStyle({ breathingZoom: e.target.checked })}
+                    data-testid="toggle-breathing-zoom"
+                    className="h-4 w-4 rounded border-gray-300 text-[#0C2D24] accent-[#0C2D24] focus:ring-[#0C2D24]"
+                  />
+                </label>
+              </div>
+
+              {/* Background Video URL direct field in Design tab */}
+              <div className="pt-2 border-t border-[#F0EBE1] space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label htmlFor="input-design-video-url" className="text-xs font-semibold text-[#68615a]">
+                    {locale === "ar" ? "رابط فيديو الخلفية المباشر (MP4 / WebM)" : "Direct Background Video URL (MP4 / WebM)"}
+                  </label>
+                  {(event.videoUrl || event.backgroundMediaUrl) && (
+                    <span className="inline-flex items-center gap-1 text-[11px] text-[#0C2D24] font-medium">
+                      <span className="h-2 w-2 rounded-full bg-[#0C2D24]" />
+                      {w("videoConfigured")}
+                    </span>
+                  )}
+                </div>
+                <input
+                  id="input-design-video-url"
+                  type="url"
+                  placeholder="https://.../video.mp4"
+                  dir="ltr"
+                  value={event.videoUrl || event.backgroundMediaUrl || ""}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    onUpdate({ videoUrl: val, backgroundMediaUrl: val });
+                  }}
+                  data-testid="input-background-video-url"
+                  className="qr-field-inline min-h-11 w-full rounded-xl px-3 text-xs"
+                />
+                <p className="text-[11px] text-[#756F66]">
+                  {locale === "ar"
+                    ? "رابط مباشر لملف فيديو 9:16 يعمل بتكرار سلس كخلفية حية خلف الخطوط الملكية"
+                    : "Direct 9:16 video loop behind the calligraphy for a live motion invitation"}
+                </p>
+              </div>
+            </section>
           </div>
         )}
 
@@ -910,6 +1149,123 @@ export function WeddingContextualSheet({
               </button>
             </div>
 
+            {/* Text Entrance Style & Speed Section */}
+            <div className="rounded-2xl border border-[#D4AF37]/30 bg-white/70 p-4 shadow-2xs space-y-4">
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-[#8B7040]">
+                  {locale === "ar" ? "طريقة وتوقيت تدفق الخط العربي" : "Calligraphic Entrance Flow & Speed"}
+                </h4>
+                <p className="mt-1 text-xs text-[#756F66]">
+                  {locale === "ar"
+                    ? "تخصيص تسلسل ظهور الآية، أسماء العائلتين، العروسين، والتفاصيل كفيديو موشن جرافيكس"
+                    : "Choreograph how each calligraphic block emerges sequentially like a motion graphics video"}
+                </p>
+              </div>
+
+              {/* Entrance Style Selection */}
+              <div>
+                <span className="block text-xs font-semibold text-[#68615a] mb-2">
+                  {locale === "ar" ? "أسلوب حركة النصوص" : "Entrance Style"}
+                </span>
+                <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label="Text Entrance Style">
+                  {[
+                    {
+                      id: "royal-rise",
+                      labelAr: "ارتقاء ملكي",
+                      labelEn: "Royal Rise",
+                      descAr: "صعود تدريجي ناعم مع توهج ذهبي خفيف",
+                      descEn: "Smooth upward emergence with golden glow",
+                    },
+                    {
+                      id: "calligraphic-glow",
+                      labelAr: "توهج خطي",
+                      labelEn: "Calligraphic Glow",
+                      descAr: "ظهور بانبثاق وتوهج خطوط أصيلة",
+                      descEn: "Soft radiant illumination of calligraphy",
+                    },
+                    {
+                      id: "soft-fade",
+                      labelAr: "تلاشي حريري",
+                      labelEn: "Soft Fade",
+                      descAr: "تدرج شفافية سينمائي ناعم",
+                      descEn: "Gentle cinematic dissolve",
+                    },
+                    {
+                      id: "instant",
+                      labelAr: "فوري ومباشر",
+                      labelEn: "Instant",
+                      descAr: "ظهور النص مباشرة بدون تأخير",
+                      descEn: "Direct display without animation delay",
+                    },
+                  ].map((style) => {
+                    const active = (event.style.textEntranceStyle ?? "royal-rise") === style.id;
+                    return (
+                      <button
+                        key={style.id}
+                        type="button"
+                        onClick={() => {
+                          updateStyle({ textEntranceStyle: style.id as any });
+                          onReplay?.();
+                        }}
+                        data-testid={`button-entrance-${style.id}`}
+                        aria-pressed={active}
+                        className={`p-3 rounded-xl border text-start transition ${
+                          active
+                            ? "border-[#0C2D24] bg-[#0C2D24]/5 shadow-xs"
+                            : "border-[#D4AF37]/30 bg-white hover:border-[#0C2D24]"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <strong className="text-xs font-bold text-[#0C2D24]">
+                            {locale === "ar" ? style.labelAr : style.labelEn}
+                          </strong>
+                          {active && <Check size={14} className="text-[#0C2D24]" />}
+                        </div>
+                        <p className="mt-1 text-[11px] text-[#756F66]">
+                          {locale === "ar" ? style.descAr : style.descEn}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Entrance Speed Selection */}
+              <div>
+                <span className="block text-xs font-semibold text-[#68615a] mb-2">
+                  {locale === "ar" ? "سرعة التدفق الزمني" : "Pacing & Speed"}
+                </span>
+                <div className="grid grid-cols-3 gap-2" role="group" aria-label="Text Entrance Speed">
+                  {[
+                    { id: "slow", labelAr: "هادئ وملكي", labelEn: "Slow & Regal" },
+                    { id: "normal", labelAr: "طبيعي معتدل", labelEn: "Balanced" },
+                    { id: "fast", labelAr: "سريع وحيوي", labelEn: "Brisk" },
+                  ].map((speed) => {
+                    const active = (event.style.textEntranceSpeed ?? "normal") === speed.id;
+                    return (
+                      <button
+                        key={speed.id}
+                        type="button"
+                        onClick={() => {
+                          updateStyle({ textEntranceSpeed: speed.id as any });
+                          onReplay?.();
+                        }}
+                        data-testid={`button-speed-${speed.id}`}
+                        aria-pressed={active}
+                        className={`min-h-10 px-2 py-1.5 rounded-xl border text-center text-xs font-semibold transition ${
+                          active
+                            ? "bg-[#0C2D24] text-white border-[#0C2D24]"
+                            : "bg-white text-[#615a53] border-[#d8cec1] hover:border-[#D4AF37]"
+                        }`}
+                      >
+                        {locale === "ar" ? speed.labelAr : speed.labelEn}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
             {/* Quick Replay button */}
             <div className="pt-2">
               <button
@@ -927,6 +1283,59 @@ export function WeddingContextualSheet({
         {/* ======================= TAB: MORE ======================= */}
         {activeTab === "more" && (
           <div className="space-y-6">
+            {/* 3D Couple Monogram Wax Seal Envelope */}
+            <div className="rounded-2xl border border-[#D4AF37]/35 bg-white/70 p-4 shadow-2xs space-y-3.5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#8B7040]">
+                    {locale === "ar" ? "ظرف الفخامة بختم الشمع الملكي (3D)" : "Luxury 3D Wax Seal Envelope"}
+                  </h4>
+                  <p className="mt-1 text-xs text-[#756F66]">
+                    {locale === "ar"
+                      ? "ظرف فاخر بختم شمعي يفتحه الضيف بلمسة قبل عرض بطاقة الزفاف"
+                      : "Interactive royal envelope with couple monogram wax seal opening experience"}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={event.enableEnvelopeOpener !== false}
+                    onChange={(e) => onUpdate({ enableEnvelopeOpener: e.target.checked })}
+                    data-testid="toggle-envelope-opener"
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0C2D24]"></div>
+                </label>
+              </div>
+
+              {event.enableEnvelopeOpener !== false && (
+                <div className="pt-2 border-t border-[#F0EBE1] space-y-2">
+                  <label htmlFor="input-wax-seal-monogram" className="block text-xs font-semibold text-[#68615a]">
+                    {locale === "ar" ? "نقش الختم الشمعي (حرفان أو رمز)" : "Wax Seal Monogram (2 letters or symbol)"}
+                  </label>
+                  <input
+                    id="input-wax-seal-monogram"
+                    type="text"
+                    value={event.waxSealMonogram || ""}
+                    onChange={(e) => onUpdate({ waxSealMonogram: e.target.value })}
+                    placeholder={
+                      event.groomName && event.brideName
+                        ? `${event.groomName.trim().charAt(0)} & ${event.brideName.trim().charAt(0)}`
+                        : "ف & ر"
+                    }
+                    data-testid="input-wax-seal-monogram"
+                    maxLength={10}
+                    className="qr-field-inline min-h-11 w-full rounded-xl px-3 text-xs font-bold text-center tracking-wider"
+                  />
+                  <p className="text-[11px] text-[#756F66]">
+                    {locale === "ar"
+                      ? "مثال: ف & ر (فيصل وريم) أو F&R ليتم نقشها ثلاثية الأبعاد على الختم الشمعي"
+                      : "Example: F&R or couple initials embossed directly on the 3D wax seal"}
+                  </p>
+                </div>
+              )}
+            </div>
+
             {/* Layout Preset selection */}
             <div>
               <h3 className="text-xs font-bold uppercase tracking-wider text-[#8B7040] mb-3">
@@ -1045,25 +1454,25 @@ export function WeddingContextualSheet({
                 </div>
 
                 <input
-                  value={event.backgroundMediaUrl}
-                  onChange={(e) => onUpdate({ backgroundMediaUrl: e.target.value })}
+                  value={event.backgroundMediaUrl || event.videoUrl || ""}
+                  onChange={(e) => onUpdate({ backgroundMediaUrl: e.target.value, videoUrl: e.target.value })}
                   placeholder="https://.../video.mp4"
                   dir="ltr"
                   className="qr-field-inline min-h-11 w-full rounded-xl px-3 text-xs"
                 />
 
-                {isStreamingVideoLink(event.backgroundMediaUrl) && (
+                {isStreamingVideoLink(event.backgroundMediaUrl || event.videoUrl || "") && (
                   <div className="flex items-start gap-2 rounded-xl bg-[#b4534b]/10 p-2.5 text-xs text-[#8c302b]" role="alert">
                     <AlertCircle size={15} className="shrink-0 mt-0.5 text-[#8c302b]" />
                     <span>{w("streamingWarning")}</span>
                   </div>
                 )}
 
-                {event.backgroundMediaUrl && (
+                {(event.backgroundMediaUrl || event.videoUrl) && (
                   <div className="flex items-center gap-2 pt-1">
                     <button
                       type="button"
-                      onClick={() => onUpdate({ backgroundMediaUrl: "" })}
+                      onClick={() => onUpdate({ backgroundMediaUrl: "", videoUrl: "" })}
                       className="qr-button qr-button--danger text-xs inline-flex items-center gap-1.5"
                     >
                       <Trash2 size={13} />

@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import type { WeddingVisualTemplateId } from "./model";
+import type { WeddingStyle, WeddingVisualTemplateId } from "./model";
 import type { WeddingVisualSelection } from "./upload";
 
 type RuntimeStyle = CSSProperties & {
@@ -14,6 +14,8 @@ export function WeddingVisualLayer({
   elapsed = 0,
   isPlaying = false,
   resolved = false,
+  style,
+  videoUrl,
 }: {
   templateId: WeddingVisualTemplateId;
   visual: WeddingVisualSelection;
@@ -21,6 +23,8 @@ export function WeddingVisualLayer({
   elapsed?: number;
   isPlaying?: boolean;
   resolved?: boolean;
+  style?: WeddingStyle;
+  videoUrl?: string;
 }) {
   const focal = visual.source === "uploaded-background"
     ? visual.focalPoint
@@ -32,9 +36,10 @@ export function WeddingVisualLayer({
     animationPlayState: isPlaying ? "running" : "paused",
   };
   let artwork: ReactNode;
+  const isBreathing = Boolean(style?.breathingZoom && !resolved);
   if (visual.source === "uploaded-background") {
     artwork = <img
-      className={`wedding-uploaded-artwork wedding-uploaded-artwork--${visual.fitMode}`}
+      className={`wedding-uploaded-artwork wedding-uploaded-artwork--${visual.fitMode} ${isBreathing ? "wedding-breathing-zoom" : ""}`}
       src={visual.uploadedBackground.dataUrl}
       alt=""
       draggable={false}
@@ -59,14 +64,41 @@ export function WeddingVisualLayer({
     );
   }
 
+  const ambientEffect = style?.ambientOverlayEffect && style.ambientOverlayEffect !== "none"
+    ? style.ambientOverlayEffect
+    : null;
+  const dimmerOpacity = typeof style?.backgroundOverlayOpacity === "number" && style.backgroundOverlayOpacity > 0
+    ? Math.min(0.75, Math.max(0, style.backgroundOverlayOpacity))
+    : 0;
+
   return (
     <div className="wedding-visual-layer" aria-hidden="true">
+      {videoUrl && (
+        <video
+          className="wedding-background-video"
+          src={videoUrl}
+          autoPlay={isPlaying}
+          loop
+          muted
+          playsInline
+          aria-hidden="true"
+        />
+      )}
       <div
         className={`wedding-visual-runtime wedding-visual-runtime--${backgroundMotion} ${resolved ? "is-resolved" : ""}`}
         style={runtimeStyle}
       >
         {artwork}
       </div>
+      {dimmerOpacity > 0 && (
+        <div
+          className="wedding-readability-dimmer"
+          style={{ opacity: dimmerOpacity }}
+        />
+      )}
+      {ambientEffect && (
+        <div className={`wedding-ambient-effect--${ambientEffect}`} />
+      )}
     </div>
   );
 }
